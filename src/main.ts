@@ -10,9 +10,6 @@ import { ResponseInterceptor } from './common/interceptors/response.interceptor'
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
     logger: ['log', 'warn', 'error'],
-<<<<<<< HEAD
-  });
-=======
     bodyParser: false,
   });
 
@@ -20,7 +17,6 @@ async function bootstrap() {
   const express = await import('express');
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ limit: '10mb', extended: true }));
->>>>>>> 60a7bff7cfb3b5e6ac63493445b0db5cfc2b037d
 
   const config = app.get(ConfigService);
   const port = config.get<number>('port') ?? 3001;
