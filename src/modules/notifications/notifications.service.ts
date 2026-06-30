@@ -37,12 +37,18 @@ export class NotificationsService {
   }
 
   // ── Application submitted ──────────────────────────────────────────────────
-  async notifyApplicationSubmitted(userId: string, applicationNumber: string, email: string) {
+  async notifyApplicationSubmitted(
+    userId: string,
+    applicationNumber: string,
+    email: string,
+    parentLink: string,
+    collegeLink: string,
+  ) {
     const title = 'Application Submitted Successfully';
     const message = `Your education loan application ${applicationNumber} has been successfully submitted. Our team will review it within 3-5 business days.`;
 
     await this.createDatabaseNotification(userId, title, message);
-    await this.sendApplicationSubmittedEmail(email, applicationNumber);
+    await this.sendApplicationSubmittedEmail(email, applicationNumber, parentLink, collegeLink);
   }
 
   // ── Email helpers ──────────────────────────────────────────────────────────
@@ -50,7 +56,7 @@ export class NotificationsService {
     const frontendUrl = this.config.get<string>('app.frontendUrl');
     const link = `${frontendUrl}/auth/verify-email?token=${token}`;
 
-    await this.sendEmail(email, 'Verify your Cliq Edu Loan account', `
+    await this.sendEmail(email, 'Verify your GenZ Loan account', `
       <h2>Welcome to Cliq Edu Loan!</h2>
       <p>Please verify your email address by clicking the link below:</p>
       <a href="${link}" style="background:#4F46E5;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;">Verify Email</a>
@@ -63,7 +69,7 @@ export class NotificationsService {
     const frontendUrl = this.config.get<string>('app.frontendUrl');
     const link = `${frontendUrl}/auth/reset-password?token=${token}`;
 
-    await this.sendEmail(email, 'Reset your Cliq Edu Loan password', `
+    await this.sendEmail(email, 'Reset your GenZ Loan password', `
       <h2>Password Reset Request</h2>
       <p>Click the button below to reset your password. This link expires in 1 hour.</p>
       <a href="${link}" style="background:#4F46E5;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;">Reset Password</a>
@@ -71,12 +77,46 @@ export class NotificationsService {
     `);
   }
 
-  async sendApplicationSubmittedEmail(email: string, applicationNumber: string) {
-    await this.sendEmail(email, 'Your loan application has been submitted — Cliq Edu Loan', `
+  async sendApplicationSubmittedEmail(
+    email: string,
+    applicationNumber: string,
+    parentLink: string,
+    collegeLink: string,
+  ) {
+    await this.sendEmail(email, 'Your loan application has been submitted — GenZ Loan', `
       <h2>Application Submitted!</h2>
       <p>Your education loan application <strong>${applicationNumber}</strong> has been successfully submitted.</p>
       <p>Our loan officers will review your application within 3-5 business days. You will be notified of any updates.</p>
-      <p>Thank you for choosing Cliq Edu Loan.</p>
+      <hr />
+      <h3>Share these links</h3>
+      <p><strong>Parent verification link</strong> — share this with your parent/guardian so they can view the application:</p>
+      <a href="${parentLink}" style="background:#4F46E5;color:#fff;padding:10px 20px;border-radius:6px;text-decoration:none;display:inline-block;margin-bottom:12px;">Parent Verification Link</a>
+      <p><strong>College verification link</strong> — share this with your institution so they can upload the required documents:</p>
+      <a href="${collegeLink}" style="background:#0D9488;color:#fff;padding:10px 20px;border-radius:6px;text-decoration:none;display:inline-block;">College Verification Link</a>
+      <p style="margin-top:16px;font-size:13px;color:#6B7280;">Both links are valid for 3 days. Keep them confidential.</p>
+      <p>Thank you for choosing GenZ Loan.</p>
+    `);
+  }
+
+  async sendParentVerificationLink(email: string, applicationNumber: string, parentLink: string) {
+    await this.sendEmail(email, `Action required: Verify loan application ${applicationNumber}`, `
+      <h2>Education Loan Application — Parent/Guardian Verification</h2>
+      <p>A student has submitted an education loan application <strong>${applicationNumber}</strong> and has listed you as their parent or guardian.</p>
+      <p>Please click the button below to view the application details:</p>
+      <a href="${parentLink}" style="background:#4F46E5;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;display:inline-block;">View Application</a>
+      <p style="margin-top:16px;font-size:13px;color:#6B7280;">This link is valid for 3 days. If you were not expecting this email, you can safely ignore it.</p>
+      <p>Thank you,<br/>GenZ Loan Team</p>
+    `);
+  }
+
+  async sendCollegeVerificationLink(email: string, applicationNumber: string, collegeLink: string) {
+    await this.sendEmail(email, `Action required: Education loan verification for application ${applicationNumber}`, `
+      <h2>Education Loan — College/Institution Verification</h2>
+      <p>A student has submitted an education loan application <strong>${applicationNumber}</strong> and has listed your institution.</p>
+      <p>Please click the button below to complete the verification — you will need to upload the offer letter and enrollment documents:</p>
+      <a href="${collegeLink}" style="background:#0D9488;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;display:inline-block;">Complete College Verification</a>
+      <p style="margin-top:16px;font-size:13px;color:#6B7280;">This link is valid for 3 days. If you were not expecting this email, you can safely ignore it.</p>
+      <p>Thank you,<br/>GenZ Loan Team</p>
     `);
   }
 

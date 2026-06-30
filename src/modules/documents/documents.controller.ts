@@ -8,6 +8,8 @@ import {
   UseInterceptors,
   UploadedFile,
   ParseEnumPipe,
+  ParseFilePipe,
+  MaxFileSizeValidator,
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
@@ -44,7 +46,8 @@ export class DocumentsController {
     @CurrentUser() user: JwtPayload,
     @Param('applicationId') applicationId: string,
     @Param('documentType', new ParseEnumPipe(DocumentType)) documentType: DocumentType,
-    @UploadedFile() file: Express.Multer.File,
+    @UploadedFile(new ParseFilePipe({ validators: [new MaxFileSizeValidator({ maxSize: 10 * 1024 * 1024 })] }))
+    file: Express.Multer.File,
   ) {
     return this.documentsService.uploadDocument(applicationId, user.sub, documentType, file);
   }

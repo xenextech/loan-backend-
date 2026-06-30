@@ -105,4 +105,5 @@ export class ApplicationsController {
   delete(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
     return this.applicationsService.deleteDraft(id, user.sub);
   }
+
 }

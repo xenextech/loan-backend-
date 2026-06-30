@@ -33,6 +33,9 @@ export class StorageService {
     allowedMimeTypes: string[],
     maxSizeBytes: number,
   ): Promise<UploadResult> {
+    if (!file) {
+      throw new BadRequestException('No file provided');
+    }
     if (!allowedMimeTypes.includes(file.mimetype)) {
       throw new BadRequestException(
         `Invalid file type. Allowed: ${allowedMimeTypes.join(', ')}`,
