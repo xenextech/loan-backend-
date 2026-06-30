@@ -350,7 +350,7 @@ export class CreditScoreService {
     if (percentage <= MEDIUM_RISK_THRESHOLD) return CreditGrade.A3;
     if (percentage <= MEDIUM_HIGH_RISK_THRESHOLD) return CreditGrade.A4;
 
-    return CreditGrade.B;
+    return CreditGrade.NA;
   }
   private getRiskRating(percentage: number): {
     riskCategory: string;

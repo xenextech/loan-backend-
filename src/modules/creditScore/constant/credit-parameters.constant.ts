@@ -194,6 +194,7 @@ export enum CreditGrade {
   C = 'C',
   D = 'D',
   E = 'E',
+  NA = 'NA',
 }
 
 export const LOW_RISK_THRESHOLD = 50;
