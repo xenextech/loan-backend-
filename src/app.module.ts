@@ -12,6 +12,7 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
 import { AuditModule } from './modules/audit/audit.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { UtilsModule } from './modules/utils/utils.module';
+import { CreditScoreModule } from './modules/creditScore/credit-score.module';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { UtilsModule } from './modules/utils/utils.module';
     StorageModule,
     NotificationsModule,
     AuditModule,
+    CreditScoreModule,
     AdminModule,
     UtilsModule,
   ],

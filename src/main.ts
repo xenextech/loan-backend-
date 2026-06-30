@@ -8,7 +8,9 @@ import { GlobalExceptionFilter } from './common/filters/global-exception.filter'
 import { ResponseInterceptor } from './common/interceptors/response.interceptor';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, { logger: ['log', 'warn', 'error'] });
+  const app = await NestFactory.create(AppModule, {
+    logger: ['log', 'warn', 'error'],
+  });
 
   const config = app.get(ConfigService);
   const port = config.get<number>('port') ?? 3001;
@@ -46,12 +48,16 @@ async function bootstrap() {
     .setTitle('Cliq Edu Loan API')
     .setDescription('Education Loan Application Platform — MVP 0.1')
     .setVersion('0.1.0')
-    .addBearerAuth({ type: 'http', scheme: 'bearer', bearerFormat: 'JWT' }, 'JWT')
+    .addBearerAuth(
+      { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' },
+      'JWT',
+    )
     .addTag('Auth', 'Authentication & account management')
     .addTag('Applications', 'Student loan applications')
     .addTag('Documents', 'File uploads & document management')
     .addTag('Admin', 'Admin dashboard & exports')
     .addTag('Utils', 'EMI calculator & eligibility checker')
+    .addTag('Credit Score', 'Credit score calculation & reporting')
     .build();
 
   const document = SwaggerModule.createDocument(app, swaggerConfig);
@@ -60,7 +66,9 @@ async function bootstrap() {
   });
 
   await app.listen(port);
-  console.log(`🚀  Cliq Edu Loan API running on http://localhost:${port}/api/v1`);
+  console.log(
+    `🚀  Cliq Edu Loan API running on http://localhost:${port}/api/v1`,
+  );
   console.log(`📖  Swagger docs at  http://localhost:${port}/api/docs`);
 }
 
