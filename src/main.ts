@@ -10,7 +10,17 @@ import { ResponseInterceptor } from './common/interceptors/response.interceptor'
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
     logger: ['log', 'warn', 'error'],
+<<<<<<< HEAD
   });
+=======
+    bodyParser: false,
+  });
+
+  // Increase body size limit to accommodate base64-encoded logo uploads
+  const express = await import('express');
+  app.use(express.json({ limit: '10mb' }));
+  app.use(express.urlencoded({ limit: '10mb', extended: true }));
+>>>>>>> 60a7bff7cfb3b5e6ac63493445b0db5cfc2b037d
 
   const config = app.get(ConfigService);
   const port = config.get<number>('port') ?? 3001;
@@ -45,7 +55,7 @@ async function bootstrap() {
 
   // ── Swagger ───────────────────────────────────────────────────────────────
   const swaggerConfig = new DocumentBuilder()
-    .setTitle('Cliq Edu Loan API')
+    .setTitle('GenZ Loan API')
     .setDescription('Education Loan Application Platform — MVP 0.1')
     .setVersion('0.1.0')
     .addBearerAuth(
@@ -66,9 +76,7 @@ async function bootstrap() {
   });
 
   await app.listen(port);
-  console.log(
-    `🚀  Cliq Edu Loan API running on http://localhost:${port}/api/v1`,
-  );
+  console.log(`🚀  GenZ Loan API running on http://localhost:${port}/api/v1`);
   console.log(`📖  Swagger docs at  http://localhost:${port}/api/docs`);
 }
 

@@ -44,6 +44,21 @@ const DOCUMENT_CONFIG: Record<
     allowedTypes: [...ALLOWED_IMAGE_TYPES, ...ALLOWED_DOCUMENT_TYPES],
     maxSize: MAX_DOCUMENT_SIZE,
   },
+  [DocumentType.STUDENT_APPLICATION]: {
+    bucket: DOCUMENT_BUCKET,
+    allowedTypes: ALLOWED_DOCUMENT_TYPES,
+    maxSize: MAX_DOCUMENT_SIZE,
+  },
+  [DocumentType.OFFER_LETTER]: {
+    bucket: DOCUMENT_BUCKET,
+    allowedTypes: ALLOWED_DOCUMENT_TYPES,
+    maxSize: MAX_DOCUMENT_SIZE,
+  },
+  [DocumentType.ENROLLMENT_DOCUMENT]: {
+    bucket: DOCUMENT_BUCKET,
+    allowedTypes: ALLOWED_DOCUMENT_TYPES,
+    maxSize: MAX_DOCUMENT_SIZE,
+  },
 };
 
 @Injectable()

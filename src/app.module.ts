@@ -13,6 +13,12 @@ import { AuditModule } from './modules/audit/audit.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { UtilsModule } from './modules/utils/utils.module';
 import { CreditScoreModule } from './modules/creditScore/credit-score.module';
+import { ParentsModule } from './modules/parents/parents.module';
+import { CollegeModule } from './modules/college/college.module';
+import { ParentPublicModule } from './modules/parent-public/parent-public.module';
+import { OfferLetterModule } from './modules/offer-letter/offer-letter.module';
+import { AgreementModule } from './modules/agreement/agreement.module';
+import { EnrollmentCertificateModule } from './modules/enrollment-certificate/enrollment-certificate.module';
 
 @Module({
   imports: [
@@ -29,6 +35,12 @@ import { CreditScoreModule } from './modules/creditScore/credit-score.module';
     CreditScoreModule,
     AdminModule,
     UtilsModule,
+    ParentsModule,
+    CollegeModule,
+    ParentPublicModule,
+    OfferLetterModule,
+    AgreementModule,
+    EnrollmentCertificateModule,
   ],
 })
 export class AppModule {}

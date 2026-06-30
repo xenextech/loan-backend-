@@ -3,7 +3,9 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 // ─── Enums ────────────────────────────────────────────────────────────────────
@@ -11,6 +13,8 @@ datasource db {
 enum UserRole {
   STUDENT
   ADMIN
+  PARENT
+  COLLEGE
 }
 
 enum ApplicationStatus {
@@ -63,6 +67,9 @@ enum DocumentType {
   APPLICANT_PHOTO
   ACADEMIC_RECORD
   FEE_STRUCTURE
+  STUDENT_APPLICATION
+  OFFER_LETTER
+  ENROLLMENT_DOCUMENT
 }
 
 enum NotificationType {
@@ -74,6 +81,14 @@ enum AuditAction {
   APPLICATION_CREATED
   APPLICATION_UPDATED
   APPLICATION_SUBMITTED
+  APPLICATION_LINK_GENERATED
+  COLLEGE_FORM_SUBMITTED
+  PARENT_FORM_SUBMITTED
+}
+
+enum ApplicationLinkType {
+  PARENT
+  COLLEGE
 }
 
 // ─── Models ───────────────────────────────────────────────────────────────────
@@ -91,9 +106,10 @@ model User {
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
 
-  applications  LoanApplication[]
-  notifications Notification[]
-  auditLogs     AuditLog[]
+  applications   LoanApplication[]
+  notifications  Notification[]
+  auditLogs      AuditLog[]
+  parentProfile  ParentProfile?
 
   @@map("users")
 }
@@ -140,12 +156,15 @@ model LoanApplication {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
-  studyInformation StudyInformation?
-  loanInformation  LoanInformation?
-  documents        Document[]
-  notifications    Notification[]
-  auditLogs        AuditLog[]
+  user                User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  studyInformation    StudyInformation?
+  loanInformation     LoanInformation?
+  documents           Document[]
+  notifications       Notification[]
+  auditLogs           AuditLog[]
+  applicationLinks    ApplicationLink[]
+  collegeVerification CollegeVerification?
+  parentVerification  ParentVerification?
 
   @@index([userId])
   @@index([status])
@@ -232,6 +251,34 @@ model Notification {
   @@map("notifications")
 }
 
+model ParentProfile {
+  id     String @id @default(uuid())
+  userId String @unique
+
+  name              String?
+  phone             String?
+  contact           String?
+  citizenshipNumber String?
+  salaryBankName    String?
+  bankAccountNumber String?
+
+  // Salary sheet document fields
+  salarySheetFileName         String?
+  salarySheetOriginalFileName String?
+  salarySheetMimeType         String?
+  salarySheetSize             Int?
+  salarySheetBucketName       String?
+  salarySheetFilePath         String?
+  salarySheetPublicUrl        String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("parent_profiles")
+}
+
 model AuditLog {
   id            String  @id @default(uuid())
   userId        String
@@ -248,4 +295,249 @@ model AuditLog {
   @@index([userId])
   @@index([applicationId])
   @@map("audit_logs")
+}
+
+model ApplicationLink {
+  id             String              @id @default(uuid())
+  token          String              @unique
+  applicationId  String
+  linkType       ApplicationLinkType
+  recipientEmail String?
+  expiresAt      DateTime
+  accessedAt     DateTime?
+  createdAt      DateTime            @default(now())
+
+  application LoanApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+  @@index([recipientEmail])
+  @@index([applicationId])
+  @@map("application_links")
+}
+
+model CollegeVerification {
+  id            String @id @default(uuid())
+  applicationId String @unique
+
+  collegeName   String?
+  collegeEmail  String?
+  contactPerson String?
+  contactPhone  String?
+
+  isApplicationVerified Boolean @default(false)
+  verificationNotes     String?
+
+  // Offer letter document
+  offerLetterFileName         String?
+  offerLetterOriginalFileName String?
+  offerLetterMimeType         String?
+  offerLetterSize             Int?
+  offerLetterBucketName       String?
+  offerLetterFilePath         String?
+  offerLetterPublicUrl        String?
+
+  // Enrollment docs
+  enrollmentDocFileName         String?
+  enrollmentDocOriginalFileName String?
+  enrollmentDocMimeType         String?
+  enrollmentDocSize             Int?
+  enrollmentDocBucketName       String?
+  enrollmentDocFilePath         String?
+  enrollmentDocPublicUrl        String?
+
+  submittedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  application LoanApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@map("college_verifications")
+}
+
+model ParentVerification {
+  id            String @id @default(uuid())
+  applicationId String @unique
+
+  name              String?
+  phone             String?
+  contact           String?
+  citizenshipNumber String?
+  salaryBankName    String?
+  bankAccountNumber String?
+
+  // Salary sheet document
+  salarySheetFileName         String?
+  salarySheetOriginalFileName String?
+  salarySheetMimeType         String?
+  salarySheetSize             Int?
+  salarySheetBucketName       String?
+  salarySheetFilePath         String?
+  salarySheetPublicUrl        String?
+
+  submittedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  application LoanApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@map("parent_verifications")
+}
+
+// ─── College Document Templates ───────────────────────────────────────────────
+
+model OfferLetter {
+  id             String @id @default(uuid())
+  createdByEmail String
+
+  // College / Institution
+  collegeName        String
+  collegeAddress     String?
+  collegeRegNo       String?
+  collegeAffiliation String?
+  collegePhone       String?
+  collegeEmail       String?
+  collegeWebsite     String?
+  logoUrl            String?
+
+  // Document meta
+  refNo        String
+  issuedDateAD String?
+  issuedDateBS String?
+  validUntilAD String?
+  validUntilBS String?
+
+  // Student
+  studentFullName  String
+  studentDobAD     String?
+  studentDobBS     String?
+  citizenshipNo    String?
+  fatherName       String?
+  motherName       String?
+  permanentAddress String?
+  district         String?
+  province         String?
+
+  // Program
+  programName        String?
+  programFullName    String?
+  programAffiliation String?
+  durationYears      Int?
+  totalSemesters     Int?
+  creditHours        Int?
+  academicYearBS     String?
+  intakeMonthBS      String?
+
+  // Fees (NPR)
+  admissionFee  Decimal? @db.Decimal(14, 2)
+  tuitionPerSem Decimal? @db.Decimal(14, 2)
+  examFeePerSem Decimal? @db.Decimal(14, 2)
+  labFeePerSem  Decimal? @db.Decimal(14, 2)
+  totalApprox   Decimal? @db.Decimal(14, 2)
+
+  // Dynamic arrays stored as JSON
+  conditions  Json? // string[]
+  signatories Json? // { name, designation, stamp_area_label }[]
+
+  // QR / verification
+  qrToken     String?
+  qrVerifyUrl String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([createdByEmail])
+  @@map("offer_letters")
+}
+
+model Agreement {
+  id             String @id @default(uuid())
+  createdByEmail String
+
+  // College / Institution
+  collegeName        String
+  collegeAddress     String?
+  collegeRegNo       String?
+  collegeAffiliation String?
+  collegePhone       String?
+  collegeEmail       String?
+  collegeWebsite     String?
+  logoUrl            String?
+
+  // Document meta
+  refNo        String
+  issuedDateAD String?
+  issuedDateBS String?
+
+  // Student
+  studentFullName String
+  tuRollNo        String?
+  enrollmentNo    String?
+  programName     String?
+  currentYear     String?
+  currentSemester String?
+  academicYearBS  String?
+  studentStatus   String?
+
+  // College certifications
+  isEnrolled       Boolean  @default(true)
+  hasBacklogs      Boolean  @default(false)
+  disciplinaryHold Boolean  @default(false)
+  feeDueRs         Decimal? @db.Decimal(14, 2)
+
+  // QR / verification
+  qrToken     String?
+  qrVerifyUrl String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([createdByEmail])
+  @@map("agreements")
+}
+
+model EnrollmentCertificate {
+  id             String @id @default(uuid())
+  createdByEmail String
+
+  // College / Institution
+  collegeName        String
+  collegeCode        String?
+  collegeAddress     String?
+  collegeRegNo       String?
+  collegeAffiliation String?
+  collegePhone       String?
+  collegeEmail       String?
+  collegeWebsite     String?
+  logoUrl            String?
+
+  // Document meta
+  refNo        String
+  issuedDateAD String?
+  issuedDateBS String?
+
+  // Student
+  studentFullName String
+  tuRollNo        String?
+  enrollmentNo    String?
+  programName     String?
+  currentYear     String?
+  currentSemester String?
+  academicYearBS  String?
+  studentStatus   String?
+
+  // College certifications
+  isEnrolled       Boolean  @default(true)
+  hasBacklogs      Boolean  @default(false)
+  disciplinaryHold Boolean  @default(false)
+  feeDueRs         Decimal? @db.Decimal(14, 2)
+
+  // QR / verification
+  qrToken     String?
+  qrVerifyUrl String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([createdByEmail])
+  @@map("enrollment_certificates")
 }
