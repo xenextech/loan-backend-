@@ -1,9 +1,11 @@
+import * as crypto from 'crypto';
 import {
   Injectable,
   NotFoundException,
   ForbiddenException,
   BadRequestException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -12,8 +14,11 @@ import { Step2Dto } from './dto/step2.dto';
 import { Step3Dto } from './dto/step3.dto';
 import { Step4Dto } from './dto/step4.dto';
 import { QueryApplicationDto } from './dto/query-application.dto';
-import { ApplicationStatus, AuditAction } from '../../common/enums';
+import { ApplicationStatus, AuditAction, ApplicationLinkType } from '../../common/enums';
 import { paginate, buildPaginatedResponse } from '../../common/dto/pagination.dto';
+
+// 3-day token TTL — enough for college/parent to complete verification
+const LINK_TTL_MS = 3 * 24 * 60 * 60 * 1000;
 
 @Injectable()
 export class ApplicationsService {
@@ -21,10 +26,11 @@ export class ApplicationsService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly notifications: NotificationsService,
+    private readonly config: ConfigService,
   ) {}
 
   private generateApplicationNumber(): string {
-    const prefix = 'CLIQ';
+    const prefix = 'GenZ';
     const year = new Date().getFullYear();
     const random = Math.floor(10000 + Math.random() * 90000);
     return `${prefix}-${year}-${random}`;
@@ -182,20 +188,40 @@ export class ApplicationsService {
       throw new BadRequestException('You must confirm both declaration fields to submit');
     }
 
-    const updated = await this.prisma.loanApplication.update({
-      where: { id },
-      data: {
-        informationAccurate: dto.informationAccurate,
-        authorizeVerification: dto.authorizeVerification,
-        status: ApplicationStatus.SUBMITTED,
-        submittedAt: new Date(),
-      },
-      include: { studyInformation: true, loanInformation: true },
-    });
+    const expiresAt = new Date(Date.now() + LINK_TTL_MS);
+    const parentToken = crypto.randomBytes(32).toString('hex');
+    const collegeToken = crypto.randomBytes(32).toString('hex');
+
+    // Persist application status change + both access tokens atomically
+    const [updated] = await this.prisma.$transaction([
+      this.prisma.loanApplication.update({
+        where: { id },
+        data: {
+          informationAccurate: dto.informationAccurate,
+          authorizeVerification: dto.authorizeVerification,
+          status: ApplicationStatus.SUBMITTED,
+          submittedAt: new Date(),
+        },
+        include: { studyInformation: true, loanInformation: true },
+      }),
+      this.prisma.applicationLink.create({
+        data: { token: parentToken, applicationId: id, linkType: ApplicationLinkType.PARENT, expiresAt, recipientEmail: dto.parentContactEmail ?? null },
+      }),
+      this.prisma.applicationLink.create({
+        data: { token: collegeToken, applicationId: id, linkType: ApplicationLinkType.COLLEGE, expiresAt, recipientEmail: dto.collegeContactEmail ?? null },
+      }),
+    ]);
 
     await this.audit.log(userId, AuditAction.APPLICATION_SUBMITTED, {
       applicationNumber: application.applicationNumber,
     }, id);
+    await this.audit.log(userId, AuditAction.APPLICATION_LINK_GENERATED, {
+      applicationNumber: application.applicationNumber,
+    }, id);
+
+    const frontendUrl = this.config.get<string>('app.frontendUrl');
+    const parentLink = `${frontendUrl}/parent-verify/${parentToken}`;
+    const collegeLink = `${frontendUrl}/college-verify/${collegeToken}`;
 
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (user) {
@@ -203,10 +229,28 @@ export class ApplicationsService {
         userId,
         application.applicationNumber,
         user.email,
+        parentLink,
+        collegeLink,
       );
     }
 
-    return updated;
+    // Email magic links directly to contacts if the student provided their addresses
+    if (dto.parentContactEmail) {
+      await this.notifications.sendParentVerificationLink(
+        dto.parentContactEmail,
+        application.applicationNumber,
+        parentLink,
+      );
+    }
+    if (dto.collegeContactEmail) {
+      await this.notifications.sendCollegeVerificationLink(
+        dto.collegeContactEmail,
+        application.applicationNumber,
+        collegeLink,
+      );
+    }
+
+    return { ...updated, parentLink, collegeLink };
   }
 
   // ── Delete draft ───────────────────────────────────────────────────────────
@@ -215,4 +259,5 @@ export class ApplicationsService {
     await this.prisma.loanApplication.delete({ where: { id } });
     return { message: 'Draft application deleted' };
   }
+
 }
