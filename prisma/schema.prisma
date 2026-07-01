@@ -14,6 +14,9 @@ enum UserRole {
   ADMIN
   PARENT
   COLLEGE
+  INITIATOR
+  SUPPORTER
+  APPROVER
 }
 
 enum ApplicationStatus {
@@ -90,6 +93,44 @@ enum ApplicationLinkType {
   COLLEGE
 }
 
+enum CreditFacilitySize {
+  BELOW_1_LAKH
+  ONE_LAKH_TO_2_5_LAKH
+  ABOVE_2_5_LAKH
+}
+
+enum DSGIR {
+  BELOW_40_PERCENT
+  RANGE_40_TO_45_PERCENT
+  ABOVE_45_PERCENT
+}
+
+enum CollegeOperation {
+  MORE_THAN_10_YEARS
+  FIVE_TO_10_YEARS
+  LESS_THAN_5_YEARS
+}
+
+enum InstitutionPerformance {
+  ABOVE_3_YEARS
+  ONE_TO_3_YEARS
+  LESS_THAN_1_YEAR
+}
+
+enum ParentBorrowing {
+  BORROWING_FROM_US
+  BORROWING_FROM_ONE_OTHER_BFI
+  BORROWING_FROM_MULTIPLE_BFIS
+}
+
+enum IncomeSource {
+  FIXED_INCOME
+  SALARY
+  RENT
+  BUSINESS_INCOME
+  MIXED_INCOME
+}
+
 // ─── Models ───────────────────────────────────────────────────────────────────
 
 model User {
@@ -161,9 +202,10 @@ model LoanApplication {
   documents           Document[]
   notifications       Notification[]
   auditLogs           AuditLog[]
-  applicationLinks    ApplicationLink[]
-  collegeVerification CollegeVerification?
-  parentVerification  ParentVerification?
+  applicationLinks      ApplicationLink[]
+  collegeVerification   CollegeVerification?
+  parentVerification    ParentVerification?
+  initiatorVerification InitiatorVerification?
 
   @@index([userId])
   @@index([status])
@@ -380,6 +422,26 @@ model ParentVerification {
   application LoanApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
 
   @@map("parent_verifications")
+}
+
+model InitiatorVerification {
+  id            String @id @default(uuid())
+  applicationId String @unique
+
+  creditFacilitySize     CreditFacilitySize?
+  dsgir                  DSGIR?
+  collegeOperation       CollegeOperation?
+  institutionPerformance InstitutionPerformance?
+  parentsBorrowings      ParentBorrowing?
+  sourceOfIncome         IncomeSource?
+  remarks                String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  application LoanApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@map("initiator_verifications")
 }
 
 // ─── College Document Templates ───────────────────────────────────────────────
