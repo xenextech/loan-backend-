@@ -55,12 +55,16 @@ async function bootstrap() {
     .setTitle('GenZ Loan API')
     .setDescription('Education Loan Application Platform — MVP 0.1')
     .setVersion('0.1.0')
-    .addBearerAuth({ type: 'http', scheme: 'bearer', bearerFormat: 'JWT' }, 'JWT')
+    .addBearerAuth(
+      { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' },
+      'JWT',
+    )
     .addTag('Auth', 'Authentication & account management')
     .addTag('Applications', 'Student loan applications')
     .addTag('Documents', 'File uploads & document management')
     .addTag('Admin', 'Admin dashboard & exports')
     .addTag('Utils', 'EMI calculator & eligibility checker')
+    .addTag('Credit Score', 'Credit score calculation & reporting')
     .build();
 
   const document = SwaggerModule.createDocument(app, swaggerConfig);
