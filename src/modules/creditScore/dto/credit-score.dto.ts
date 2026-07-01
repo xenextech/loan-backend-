@@ -1,3 +1,49 @@
+import { IsEnum } from 'class-validator';
+import {
+  CreditFacilitySize,
+  Dsgir,
+  OperationOfInstitution,
+  ParentsBorrowingsWithBFIs,
+  SatisfactoryPerformance,
+  SourceOfIncome,
+} from '../enum/credit-score.enum';
+
+import { ApiProperty } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
+import { ValidateNested } from 'class-validator';
+
+export class ScoreDto {
+  @ApiProperty({ enum: CreditFacilitySize })
+  @IsEnum(CreditFacilitySize)
+  creditFacilitySize!: CreditFacilitySize;
+
+  @ApiProperty({ enum: Dsgir })
+  @IsEnum(Dsgir)
+  dsgir!: Dsgir;
+
+  @ApiProperty({ enum: OperationOfInstitution })
+  @IsEnum(OperationOfInstitution)
+  operationOfInstitution!: OperationOfInstitution;
+
+  @ApiProperty({ enum: SatisfactoryPerformance })
+  @IsEnum(SatisfactoryPerformance)
+  satisfactoryPerformance!: SatisfactoryPerformance;
+
+  @ApiProperty({ enum: ParentsBorrowingsWithBFIs })
+  @IsEnum(ParentsBorrowingsWithBFIs)
+  parentsBorrowingsWithBFIs!: ParentsBorrowingsWithBFIs;
+
+  @ApiProperty({ enum: SourceOfIncome })
+  @IsEnum(SourceOfIncome)
+  sourceOfIncome!: SourceOfIncome;
+}
+
+export class CreateCreditScoringDto {
+  @ApiProperty({ type: ScoreDto })
+  @ValidateNested()
+  @Type(() => ScoreDto)
+  score!: ScoreDto;
+}
 export interface ScoreFieldDto {
   value: any;
   score: number;
@@ -61,9 +107,9 @@ export interface CreditParameters {
   };
 
   satisfactoryPerformance: {
-    above3yrs: CreditParameter;
-    from1To3yrs: CreditParameter;
-    below1yr: CreditParameter;
+    above3Years: CreditParameter;
+    from1To3Years: CreditParameter;
+    below1Year: CreditParameter;
   };
 
   parentsBorrowingsWithBFIs: {

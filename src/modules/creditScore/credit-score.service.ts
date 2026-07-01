@@ -1,8 +1,13 @@
+/* eslint-disable @typescript-eslint/no-unsafe-argument */
+
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 import { Injectable, NotFoundException } from '@nestjs/common';
 import {
+  CreateCreditScoringDto,
   CreditParameters,
   CreditScoreResponseDto,
+  ScoreDto,
 } from './dto/credit-score.dto';
 import { PrismaService } from 'src/prisma/prisma.service';
 import {
@@ -21,7 +26,9 @@ export class CreditScoreService {
   constructor(private readonly prisma: PrismaService) {}
 
   private readonly creditParameters = CREDIT_PARAMETERS;
-
+  private getSelectedParameters(parameter: ScoreDto): string[] {
+    return Object?.entries(parameter).map(([key, value]) => `${key}.${value}`);
+  }
   calculate(request: {
     totalWeight: number;
     totalWeightScore: number;
@@ -53,15 +60,50 @@ export class CreditScoreService {
     if (!application) {
       throw new NotFoundException('Application not found');
     }
-    const selected: Array<string> = [
-      'creditFacilitySize.below1M',
-      'dsgir.from40To45',
-      'operationOfInstitution.above10Years',
-      'satisfactoryPerformance.from1To3yrs',
-      'parentsBorrowingsWithBFIs.borrowingFromUs',
-      'sourceOfIncome.mixedIncome',
-    ];
-    const request = this.buildScoreRequest(selected, this.creditParameters);
+    console.log('Selected parameters:', application.creditScore);
+
+    const selectedParameters = this.getSelectedParameters(
+      application.creditScore,
+    );
+
+    const request = this.buildScoreRequest(
+      selectedParameters,
+      this.creditParameters,
+    );
+
+    return this.calculate(request);
+  }
+
+  async saveCreditScoreParameterByApplicationId(
+    data: CreateCreditScoringDto,
+    applicationId: string,
+  ): Promise<CreditScoreResponseDto> {
+    const application = await this.prisma.loanApplication.findUnique({
+      where: { id: applicationId },
+    });
+
+    if (!application) {
+      throw new NotFoundException('Application not found');
+    }
+    console.log(
+      `Saving credit score parameters for application ${applicationId}:`,
+      data,
+    );
+    // await this.prisma.loanApplication.update({
+    //   where: {
+    //     id: applicationId,
+    //   },
+    //   data: {
+    //     creditScore: {
+    //       create: data.score,
+    //     },
+    //   },
+    // });
+    const selectedParameters = this.getSelectedParameters(data.score);
+    const request = this.buildScoreRequest(
+      selectedParameters,
+      this.creditParameters,
+    );
 
     return this.calculate(request);
   }
@@ -306,7 +348,6 @@ export class CreditScoreService {
         throw new Error(`Invalid selection format: "${item}"`);
       }
 
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       const parameter = creditParameters[category]?.[option];
 
       if (!parameter) {
@@ -325,7 +366,6 @@ export class CreditScoreService {
     for (const item of allKeys) {
       const [category, option] = item.split('.');
 
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       const parameter = creditParameters[category]?.[option];
 
       if (!parameter) {

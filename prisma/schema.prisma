@@ -92,26 +92,72 @@ enum ApplicationLinkType {
   COLLEGE
 }
 
+enum CreditFacilitySize {
+  BELOW_1M
+  FROM_1M_TO_2POINT5M
+  ABOVE_2POINT5M
+}
+
+enum Dsgir {
+  BELOW_40
+  FROM_40_TO_45
+  ABOVE_45
+}
+
+enum OperationOfInstitution {
+  ABOVE_10_YEARS
+  FROM_5_TO_10_YEARS
+  BELOW_5_YEARS
+}
+
+enum SatisfactoryPerformance {
+  ABOVE_3YRS
+  FROM_1_TO_3YRS
+  BELOW_1YR
+}
+
+enum ParentsBorrowingsWithBFIs {
+  BORROWING_FROM_US
+  BORROWING_FROM_OTHER_BFI
+  BORROWING_FROM_OTHER_BFIS
+}
+
+enum SourceOfIncome {
+  FIXED_INCOME
+  SALARY_RENT_BUSINESS
+  MIXED_INCOME
+}
+
+enum RiskGrade {
+  A1
+  A2
+  B1
+  B2
+  C1
+  C2
+  D
+  E
+  F
+}
+
 // ─── Models ───────────────────────────────────────────────────────────────────
 
 model User {
-  id                   String    @id @default(uuid())
-  email                String    @unique
-  passwordHash         String
-  role                 UserRole  @default(STUDENT)
-  isEmailVerified      Boolean   @default(false)
-  emailVerifyToken     String?
-  emailVerifyExpiry    DateTime?
-  passwordResetToken   String?
-  passwordResetExpiry  DateTime?
-  createdAt            DateTime  @default(now())
-  updatedAt            DateTime  @updatedAt
-
-  applications   LoanApplication[]
-  notifications  Notification[]
-  auditLogs      AuditLog[]
-  parentProfile  ParentProfile?
-
+  id                  String            @id @default(uuid())
+  email               String            @unique
+  passwordHash        String
+  role                UserRole          @default(STUDENT)
+  isEmailVerified     Boolean           @default(false)
+  emailVerifyToken    String?
+  emailVerifyExpiry   DateTime?
+  passwordResetToken  String?
+  passwordResetExpiry DateTime?
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+  applications        LoanApplication[]
+  notifications       Notification[]
+  auditLogs           AuditLog[]
+  parentProfile       ParentProfile?
   @@map("users")
 }
 
@@ -157,7 +203,7 @@ model LoanApplication {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  user                User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user                User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
   studyInformation    StudyInformation?
   loanInformation     LoanInformation?
   documents           Document[]
@@ -166,11 +212,33 @@ model LoanApplication {
   applicationLinks    ApplicationLink[]
   collegeVerification CollegeVerification?
   parentVerification  ParentVerification?
+  creditScore         CreditScore?
 
   @@index([userId])
   @@index([status])
   @@index([submittedAt])
   @@map("loan_applications")
+}
+
+model CreditScore {
+  id String @id @default(uuid())
+
+  loanApplicationId String @unique
+
+  creditFacilitySize        CreditFacilitySize
+  dsgir                     Dsgir
+  operationOfInstitution    OperationOfInstitution
+  satisfactoryPerformance   SatisfactoryPerformance
+  parentsBorrowingsWithBFIs ParentsBorrowingsWithBFIs
+  sourceOfIncome            SourceOfIncome
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  loanApplication LoanApplication @relation(fields: [loanApplicationId], references: [id], onDelete: Cascade)
+
+  @@index([riskGrade])
+  @@map("credit_scores")
 }
 
 model StudyInformation {
@@ -233,7 +301,7 @@ model Document {
 }
 
 model Notification {
-  id            String           @id @default(uuid())
+  id            String  @id @default(uuid())
   userId        String
   applicationId String?
 
