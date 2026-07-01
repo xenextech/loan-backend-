@@ -13,6 +13,9 @@ enum UserRole {
   ADMIN
   PARENT
   COLLEGE
+  INITIATOR
+  SUPPORTER
+  APPROVER
 }
 
 enum ApplicationStatus {
