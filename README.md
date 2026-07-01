@@ -31,6 +31,23 @@
 $ npm install
 ```
 
+## Prisma migration
+
+```bash
+# run DB migration
+$ npx prisma migrate database_name
+
+# update database schema
+$ npx prisma db push
+
+# create and apply migration file
+npx prisma migrate dev --name init_schema
+
+# apply existing migration
+$ npx prisma migrate deploy
+```
+
+
 ## Compile and run the project
 
 ```bash
@@ -68,7 +85,7 @@ $ npm install -g @nestjs/mau
 $ mau deploy
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing the infrastructure.
 
 ## Resources
 
