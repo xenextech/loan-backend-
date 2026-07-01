@@ -1,7 +1,7 @@
 import { Injectable, BadRequestException, InternalServerErrorException, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 import { extname } from 'path';
 import { STORAGE_BUCKETS, SIGNED_URL_EXPIRY_SECONDS } from './storage.constants';
 
@@ -49,7 +49,7 @@ export class StorageService {
     }
 
     const ext = extname(file.originalname);
-    const fileName = `${uuidv4()}${ext}`;
+    const fileName = `${randomUUID()}${ext}`;
     const filePath = `${folder}/${fileName}`;
 
     const { error } = await this.client.storage
