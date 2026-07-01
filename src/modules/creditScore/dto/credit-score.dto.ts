@@ -43,6 +43,7 @@ export class CreateCreditScoringDto {
   @ValidateNested()
   @Type(() => ScoreDto)
   score!: ScoreDto;
+  isVerified?: boolean;
 }
 export interface ScoreFieldDto {
   value: any;
