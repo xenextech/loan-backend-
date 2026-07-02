@@ -1,7 +1,7 @@
 /*
   Warnings:
 
-  - Changed the type of `creditFacilitySize` on the `credit_scores` table. No cast exists, the column would be dropped and recreated, which cannot be done if there is data, since the column is required.
+  - Changed the type of `creditLimit` on the `credit_scores` table. No cast exists, the column would be dropped and recreated, which cannot be done if there is data, since the column is required.
   - Changed the type of `dsgir` on the `credit_scores` table. No cast exists, the column would be dropped and recreated, which cannot be done if there is data, since the column is required.
   - Changed the type of `operationOfInstitution` on the `credit_scores` table. No cast exists, the column would be dropped and recreated, which cannot be done if there is data, since the column is required.
   - Changed the type of `satisfactoryPerformance` on the `credit_scores` table. No cast exists, the column would be dropped and recreated, which cannot be done if there is data, since the column is required.
@@ -10,8 +10,8 @@
 
 */
 -- AlterTable
-ALTER TABLE "credit_scores" DROP COLUMN "creditFacilitySize",
-ADD COLUMN     "creditFacilitySize" INTEGER NOT NULL,
+ALTER TABLE "credit_scores" DROP COLUMN "creditLimit",
+ADD COLUMN     "creditLimit" INTEGER NOT NULL,
 DROP COLUMN "dsgir",
 ADD COLUMN     "dsgir" INTEGER NOT NULL,
 DROP COLUMN "operationOfInstitution",
@@ -24,7 +24,7 @@ DROP COLUMN "sourceOfIncome",
 ADD COLUMN     "sourceOfIncome" TEXT NOT NULL;
 
 -- DropEnum
-DROP TYPE "CreditFacilitySize";
+DROP TYPE "creditLimit";
 
 -- DropEnum
 DROP TYPE "Dsgir";

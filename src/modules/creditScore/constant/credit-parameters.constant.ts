@@ -1,5 +1,5 @@
 export const CREDIT_PARAMETERS = {
-  creditFacilitySize: [
+  creditLimit: [
     {
       max: 999999,
       weight: 2,

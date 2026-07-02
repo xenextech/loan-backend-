@@ -8,7 +8,7 @@
 ALTER TABLE "credit_scores" DROP CONSTRAINT "credit_scores_loanApplicationId_fkey";
 
 -- AlterTable
-ALTER TABLE "loan_applications" ADD COLUMN     "creditFacilitySize" INTEGER,
+ALTER TABLE "loan_applications" ADD COLUMN     "creditLimit" INTEGER,
 ADD COLUMN     "dsgir" INTEGER,
 ADD COLUMN     "loanToValueRatio" DECIMAL(5,2),
 ADD COLUMN     "operationOfInstitution" INTEGER,

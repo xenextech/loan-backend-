@@ -1,4 +1,4 @@
-export enum CreditFacilitySize {
+export enum creditLimit {
   BELOW_1M = 'below1M',
   FROM_1M_TO_2POINT5M = 'from1MTo2Point5M',
   ABOVE_2POINT5M = 'above2Point5M',

@@ -245,12 +245,12 @@ model LoanApplication {
   applicationLinks    ApplicationLink[]
   collegeVerification CollegeVerification?
   parentVerification  ParentVerification?
-  securities          Security[]
-  personalGuarantees  PersonalGuarantee[]
-  insurances          Insurance[]
-  repaymentCapacities RepaymentCapacity[]
-  familyMembers       FamilyMember[]
-  creditFacilitySize        Int?
+  security            Security?
+  personalGuarantee   PersonalGuarantee?
+  insurance           Insurance?
+  repaymentCapacity   RepaymentCapacity?
+  familyMember        FamilyMember?
+  creditLimit               Decimal? @db.Decimal(18, 2)
   dsgir                     Int?
   operationOfInstitution    Int?
   satisfactoryPerformance   Int?
@@ -258,6 +258,12 @@ model LoanApplication {
   sourceOfIncome            String?
   loanToValueRatio          Decimal? @db.Decimal(5, 2)
   performanceYears          Int?
+  bankingRelationshipScore  Int?
+  sourceOfIncomeScore       Int?
+  creditRiskScoring         String?
+  riskGrade                 String?
+  totalScore                Int?
+  totalPercentage           Decimal? @db.Decimal(5, 2)
 
   @@index([userId])
   @@index([status])
@@ -329,14 +335,14 @@ model Document {
 model FamilyMember {
   id String @id @default(cuid())
 
-  applicationId String
+  applicationId String          @unique
   application   LoanApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
 
-  personName String
-  age Int
-  qualification String
-  relationshipWithBorrower String
-  occupationSocialInvolvement String
+  personName String?
+  age Int?
+  qualification String?
+  relationshipWithBorrower String?
+  occupationSocialInvolvement String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -345,15 +351,15 @@ model FamilyMember {
 model Security {
   id String @id @default(cuid())
 
-  applicationId String
+  applicationId String          @unique
   application   LoanApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
 
-  securityDetails String
+  securityDetails String?
 
-  fmv Decimal @db.Decimal(18, 2)
-  proposedLoan Decimal @db.Decimal(18, 2)
+  fmv Decimal? @db.Decimal(18, 2)
+  proposedLoan Decimal? @db.Decimal(18, 2)
 
-  financeAgainstFmvRatio String?
+  financeAgainstFmv Decimal? @db.Decimal(5, 2)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -374,19 +380,19 @@ enum PeriodUnit {
 model PersonalGuarantee {
   id String @id @default(cuid())
 
-  applicationId String
+  applicationId String          @unique
   application   LoanApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
 
-  nameOfGuarantor String
-  relationship    String
+  nameOfGuarantor String?
+  relationship    String?
 
-  age Int
+  age Int?
 
-  netWorth Decimal @db.Decimal(18, 2)
+  netWorth Decimal? @db.Decimal(18, 2)
 
-  guarantorConsent Boolean
+  guarantorConsent Boolean?
 
-  ciclStatus Boolean
+  ciclStatus Boolean?
   ciclRemarks String?
 
   blackListedDate DateTime?
@@ -399,15 +405,15 @@ model PersonalGuarantee {
 model Insurance {
   id String @id @default(cuid())
 
-  applicationId String
+  applicationId String          @unique
   application   LoanApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
 
-  insuredAssets String
+  insuredAssets String?
 
-  valueOfAssets  Decimal @db.Decimal(18, 2)
-  sumOfInsurance Decimal @db.Decimal(18, 2)
+  valueOfAssets  Decimal? @db.Decimal(18, 2)
+  sumOfInsurance Decimal? @db.Decimal(18, 2)
 
-  insuranceCoverage Decimal @db.Decimal(5, 2)
+  insuranceCoverage Decimal? @db.Decimal(5, 2)
   insuranceRemarks  String?
 
   createdAt DateTime @default(now())
@@ -417,15 +423,15 @@ model Insurance {
 model RepaymentCapacity {
   id String @id @default(cuid())
 
-  applicationId String
+  applicationId String          @unique
   application   LoanApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
 
-  insuredAssets Int
+  insuredAssets Int?
 
-  valueOfAssets  Decimal @db.Decimal(18, 2)
-  sumOfInsurance Decimal @db.Decimal(18, 2)
+  valueOfAssets  Decimal? @db.Decimal(18, 2)
+  sumOfInsurance Decimal? @db.Decimal(18, 2)
 
-  insuranceCoverage Decimal @db.Decimal(5, 2)
+  insuranceCoverage Decimal? @db.Decimal(5, 2)
   insuranceRemarks  String?
 
   createdAt DateTime @default(now())

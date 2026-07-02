@@ -1,5 +1,5 @@
 -- CreateEnum
-CREATE TYPE "CreditFacilitySize" AS ENUM ('BELOW_1_LAKH', 'ONE_LAKH_TO_2_5_LAKH', 'ABOVE_2_5_LAKH');
+CREATE TYPE "creditLimit" AS ENUM ('BELOW_1_LAKH', 'ONE_LAKH_TO_2_5_LAKH', 'ABOVE_2_5_LAKH');
 
 -- CreateEnum
 CREATE TYPE "DSGIR" AS ENUM ('BELOW_40_PERCENT', 'RANGE_40_TO_45_PERCENT', 'ABOVE_45_PERCENT');
@@ -20,7 +20,7 @@ CREATE TYPE "IncomeSource" AS ENUM ('FIXED_INCOME', 'SALARY', 'RENT', 'BUSINESS_
 CREATE TABLE "initiator_verifications" (
     "id" TEXT NOT NULL,
     "applicationId" TEXT NOT NULL,
-    "creditFacilitySize" "CreditFacilitySize",
+    "creditLimit" "creditLimit",
     "dsgir" "DSGIR",
     "collegeOperation" "CollegeOperation",
     "institutionPerformance" "InstitutionPerformance",

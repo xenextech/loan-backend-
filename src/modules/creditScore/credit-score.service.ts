@@ -93,7 +93,7 @@ export class CreditScoreService {
       );
     }
     const scoreParameters: ScoreDto = {
-      creditFacilitySize: loanApplication.creditFacilitySize,
+      creditLimit: loanApplication.creditLimit,
 
       dsgir: loanApplication.dsgir,
 
@@ -130,7 +130,7 @@ export class CreditScoreService {
         id: applicationId,
       },
       data: {
-        creditFacilitySize: data.score.creditFacilitySize,
+        creditLimit: data.score.creditLimit,
         dsgir: data.score.dsgir,
         operationOfInstitution: data.score.operationOfInstitution,
         satisfactoryPerformance: data.score.satisfactoryPerformance,

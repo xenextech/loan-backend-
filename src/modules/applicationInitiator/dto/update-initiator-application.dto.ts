@@ -280,10 +280,6 @@ export class UpdateInitiatorApplicationDto {
     description: 'Classification size of the credit facility',
     example: 'Mid-Sized Commercial',
   })
-  @IsOptional()
-  @IsString()
-  creditFacilitySize?: string;
-
   @ApiPropertyOptional({
     description: 'Loan-to-Value (LTV) ratio calculation',
     example: 65.5,

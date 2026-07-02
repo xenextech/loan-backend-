@@ -1,9 +1,10 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { Decimal } from '@prisma/client/runtime/client';
 import { Type } from 'class-transformer';
 import { ValidateNested } from 'class-validator';
 
 export class ScoreDto {
-  creditFacilitySize!: number | null;
+  creditLimit!: Decimal | null;
 
   dsgir!: number | null;
 
@@ -66,7 +67,7 @@ interface CreditParameter {
 }
 
 export interface CreditParameters {
-  creditFacilitySize: {
+  creditLimit: {
     below1M: CreditParameter;
     from1MTo2point5M: CreditParameter;
     above2point5M: CreditParameter;

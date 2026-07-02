@@ -35,7 +35,7 @@ CREATE TYPE "AuditAction" AS ENUM ('APPLICATION_CREATED', 'APPLICATION_UPDATED',
 CREATE TYPE "ApplicationLinkType" AS ENUM ('PARENT', 'COLLEGE');
 
 -- CreateEnum
-CREATE TYPE "CreditFacilitySize" AS ENUM ('below1M', 'from1MTo2Point5M', 'above2Point5M');
+CREATE TYPE "creditLimit" AS ENUM ('below1M', 'from1MTo2Point5M', 'above2Point5M');
 
 -- CreateEnum
 CREATE TYPE "Dsgir" AS ENUM ('below40', 'from40To45', 'above45');
@@ -108,7 +108,7 @@ CREATE TABLE "loan_applications" (
 CREATE TABLE "credit_scores" (
     "id" TEXT NOT NULL,
     "loanApplicationId" TEXT NOT NULL,
-    "creditFacilitySize" "CreditFacilitySize" NOT NULL,
+    "creditLimit" "creditLimit" NOT NULL,
     "dsgir" "Dsgir" NOT NULL,
     "operationOfInstitution" "OperationOfInstitution" NOT NULL,
     "satisfactoryPerformance" "SatisfactoryPerformance" NOT NULL,
