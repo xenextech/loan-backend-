@@ -45,6 +45,19 @@ export enum FeeStructureMethod {
   MANUAL = 'MANUAL',
 }
 
+export enum FamilyStructure {
+  NUCLEAR = 'NUCLEAR',
+  JOINT = 'JOINT',
+  EXTENDED = 'EXTENDED',
+  SINGLE_PARENT = 'SINGLE_PARENT',
+  OTHER = 'OTHER',
+}
+
+export enum PeriodUnit {
+  YEAR = 'YEAR',
+  MONTH = 'MONTH',
+}
+
 export { DocumentType } from '@prisma/client';
 
 export enum AuditAction {

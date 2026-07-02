@@ -5,9 +5,9 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import {
   CreateCreditScoringDto,
-  CreditParameters,
   CreditScoreResponseDto,
   ScoreDto,
+  ScoreRule,
 } from './dto/credit-score.dto';
 import { PrismaService } from 'src/prisma/prisma.service';
 import {
@@ -28,6 +28,28 @@ export class CreditScoreService {
   private readonly creditParameters = CREDIT_PARAMETERS;
   private getSelectedParameters(parameter: ScoreDto): string[] {
     return Object?.entries(parameter).map(([key, value]) => `${key}.${value}`);
+  }
+
+  private getScore<T extends ScoreRule>(rules: readonly T[], input: any) {
+    const rule = rules.find((r) => {
+      if (typeof input === 'number') {
+        if (r.min !== undefined && input < r.min) return false;
+        if (r.max !== undefined && input > r.max) return false;
+        return true;
+      }
+
+      return r.value === input;
+    });
+
+    if (!rule) {
+      throw new Error('No matching rule found.');
+    }
+
+    return {
+      weight: rule.weight,
+      point: rule.point,
+      weightScore: rule.weight * rule.point,
+    };
   }
   calculate(request: {
     totalWeight: number;
@@ -60,16 +82,30 @@ export class CreditScoreService {
     if (!application) {
       throw new NotFoundException('Application not found');
     }
-    console.log('Selected parameters:', application.creditScore);
+    console.log('Selected parameters:', application);
+    const loanApplication = await this.prisma.loanApplication.findFirst({
+      where: { id: application.id },
+    });
 
-    const selectedParameters = this.getSelectedParameters(
-      application.creditScore,
-    );
+    if (!loanApplication) {
+      throw new NotFoundException(
+        'Credit score not found for this application',
+      );
+    }
+    const scoreParameters: ScoreDto = {
+      creditFacilitySize: loanApplication.creditFacilitySize,
 
-    const request = this.buildScoreRequest(
-      selectedParameters,
-      this.creditParameters,
-    );
+      dsgir: loanApplication.dsgir,
+
+      operationOfInstitution: loanApplication.operationOfInstitution,
+
+      satisfactoryPerformance: loanApplication.satisfactoryPerformance,
+
+      parentsBorrowingsWithBFIs: loanApplication.parentsBorrowingsWithBFIs,
+
+      sourceOfIncome: loanApplication.sourceOfIncome,
+    };
+    const request = this.buildScoreRequest(scoreParameters);
 
     return this.calculate(request);
   }
@@ -89,21 +125,20 @@ export class CreditScoreService {
       `Saving credit score parameters for application ${applicationId}:`,
       data,
     );
-    // await this.prisma.loanApplication.update({
-    //   where: {
-    //     id: applicationId,
-    //   },
-    //   data: {
-    //     creditScore: {
-    //       create: data.score,
-    //     },
-    //   },
-    // });
-    const selectedParameters = this.getSelectedParameters(data.score);
-    const request = this.buildScoreRequest(
-      selectedParameters,
-      this.creditParameters,
-    );
+    await this.prisma.loanApplication.update({
+      where: {
+        id: applicationId,
+      },
+      data: {
+        creditFacilitySize: data.score.creditFacilitySize,
+        dsgir: data.score.dsgir,
+        operationOfInstitution: data.score.operationOfInstitution,
+        satisfactoryPerformance: data.score.satisfactoryPerformance,
+        parentsBorrowingsWithBFIs: data.score.parentsBorrowingsWithBFIs,
+        sourceOfIncome: data.score.sourceOfIncome,
+      },
+    });
+    const request = this.buildScoreRequest(data.score);
 
     return this.calculate(request);
   }
@@ -331,48 +366,24 @@ export class CreditScoreService {
 
   //   }
 
-  private buildScoreRequest(
-    selected: Array<string>,
-    creditParameters: CreditParameters,
-  ): {
+  private buildScoreRequest(request: ScoreDto): {
     totalWeight: number;
     totalWeightScore: number;
   } {
     let totalWeight = 0;
     let totalWeightScore = 0;
 
-    for (const item of selected) {
-      const [category, option] = item.split('.');
+    for (const [key, value] of Object.entries(request)) {
+      const rules = CREDIT_PARAMETERS[key];
 
-      if (!category || !option) {
-        throw new Error(`Invalid selection format: "${item}"`);
+      if (!rules) {
+        continue;
       }
 
-      const parameter = creditParameters[category]?.[option];
+      const score = this.getScore(rules, value);
 
-      if (!parameter) {
-        throw new Error(
-          `Invalid selection "${option}" for category "${category}"`,
-        );
-      }
-
-      totalWeightScore += parameter.weightScore;
-    }
-    const allKeys = Object.entries(creditParameters).flatMap(
-      ([category, options]) =>
-        Object.keys(options).map((option) => `${category}.${option}`),
-    );
-
-    for (const item of allKeys) {
-      const [category, option] = item.split('.');
-
-      const parameter = creditParameters[category]?.[option];
-
-      if (!parameter) {
-        throw new Error(`Invalid selection "${item}"`);
-      }
-
-      totalWeight += parameter.weight;
+      totalWeight += score.weight;
+      totalWeightScore += score.weightScore;
     }
 
     return {

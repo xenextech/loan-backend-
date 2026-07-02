@@ -1,6 +1,5 @@
 generator client {
   provider = "prisma-client-js"
-  binaryTargets = ["native", "rhel-openssl-3.0.x"]
 }
 
 datasource db {
@@ -15,6 +14,7 @@ enum UserRole {
   PARENT
   COLLEGE
   INITIATOR
+  CHECKER
   SUPPORTER
   APPROVER
 }
@@ -93,72 +93,28 @@ enum ApplicationLinkType {
   COLLEGE
 }
 
-enum CreditFacilitySize {
-  BELOW_1M
-  FROM_1M_TO_2POINT5M
-  ABOVE_2POINT5M
-}
 
-enum Dsgir {
-  BELOW_40
-  FROM_40_TO_45
-  ABOVE_45
-}
-
-enum OperationOfInstitution {
-  ABOVE_10_YEARS
-  FROM_5_TO_10_YEARS
-  BELOW_5_YEARS
-}
-
-enum SatisfactoryPerformance {
-  ABOVE_3YRS
-  FROM_1_TO_3YRS
-  BELOW_1YR
-}
-
-enum ParentsBorrowingsWithBFIs {
-  BORROWING_FROM_US
-  BORROWING_FROM_OTHER_BFI
-  BORROWING_FROM_OTHER_BFIS
-}
-
-enum SourceOfIncome {
-  FIXED_INCOME
-  SALARY_RENT_BUSINESS
-  MIXED_INCOME
-}
-
-enum RiskGrade {
-  A1
-  A2
-  B1
-  B2
-  C1
-  C2
-  D
-  E
-  F
-}
 
 // ─── Models ───────────────────────────────────────────────────────────────────
 
 model User {
-  id                  String            @id @default(uuid())
-  email               String            @unique
+  id                  String    @id @default(uuid())
+  email               String    @unique
   passwordHash        String
-  role                UserRole          @default(STUDENT)
-  isEmailVerified     Boolean           @default(false)
+  role                UserRole  @default(STUDENT)
+  isEmailVerified     Boolean   @default(false)
   emailVerifyToken    String?
   emailVerifyExpiry   DateTime?
   passwordResetToken  String?
   passwordResetExpiry DateTime?
-  createdAt           DateTime          @default(now())
-  updatedAt           DateTime          @updatedAt
-  applications        LoanApplication[]
-  notifications       Notification[]
-  auditLogs           AuditLog[]
-  parentProfile       ParentProfile?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  applications  LoanApplication[]
+  notifications Notification[]
+  auditLogs     AuditLog[]
+  parentProfile ParentProfile?
+
   @@map("users")
 }
 
@@ -201,19 +157,107 @@ model LoanApplication {
   authorizeVerification Boolean?
   submittedAt           DateTime?
 
+  // Basic Information (Credit Appraisal)
+  relationshipStartDate      DateTime?
+  customerGroup               String?
+  obligorNumber                String?
+  permanentAddress             String?
+  correspondenceAddress        String?
+  profession                   String?
+  repaymentSource               String?
+  citizenshipNumber             String?
+  citizenshipIssuedDate         DateTime?
+  citizenshipIssuedPlace        String?
+  nidNumber                     String?
+  panNumber                     String?
+  licenseNumber                 String?
+  existingBankingRelationship   String?
+  isBlacklisted                 Boolean?
+
+  // Step 5: Family Structure / Credit Facility
+  familyStructureType FamilyStructure?
+  facility            String?
+  purpose             String?
+  limit               Decimal?    @db.Decimal(18, 2)
+  period              Int?
+  periodUnit          PeriodUnit?
+  interestRate        Decimal?    @db.Decimal(5, 2)
+  fee                 Decimal?    @db.Decimal(18, 2)
+  remarks             String?
+
+  // Step 6: NRB Reporting
+  baselClassification String?
+  baselRiskWeight     Int?
+
+  nrb93SectorCode       String?
+  nrb93KaProductCode    String?
+  nrb94SecurityTypeCode String?
+
+  sis0IndustrialClassification        String?
+  sis1ProductType                     String?
+  sis2Sector                          String?
+  sis3Security                        String?
+  sis4InstitutionalGroupingOfBorrower String?
+  sis9PriorityLending                 String?
+
+  greenFinanceEconomicSector String?
+  greenFinanceSubSector      String?
+  greenFinanceTaxonomyTag    String?
+
+  // Step 8: Credit Appraisal
+  moneyLaunderingRisk String?
+  waiver                            String?
+  termsConditionsAndRecommendations String?
+  bankingRelationship               String?
+  keyCreditRiskMitigation           String?
+  justificationOfLoan               String?
+  accountStrategy                   String?
+  disbursementSection               String?
+  utilizationOfFund                 String?
+  conclusionAndRecommendation       String?
+
+  // Approval Section
+  initiatorName      String?
+  initiatorPost      String?
+  initiatorDate      DateTime?
+  initiatorSignature String?
+
+  supporterName      String?
+  supporterPost      String?
+  supporterDate      DateTime?
+  supporterSignature String?
+
+  approverName      String?
+  approverPost      String?
+  approverDate      DateTime?
+  approverSignature String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   user                User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
   studyInformation    StudyInformation?
   loanInformation     LoanInformation?
+
   documents           Document[]
   notifications       Notification[]
   auditLogs           AuditLog[]
   applicationLinks    ApplicationLink[]
   collegeVerification CollegeVerification?
   parentVerification  ParentVerification?
-  creditScore         CreditScore?
+  securities          Security[]
+  personalGuarantees  PersonalGuarantee[]
+  insurances          Insurance[]
+  repaymentCapacities RepaymentCapacity[]
+  familyMembers       FamilyMember[]
+  creditFacilitySize        Int?
+  dsgir                     Int?
+  operationOfInstitution    Int?
+  satisfactoryPerformance   Int?
+  parentsBorrowingsWithBFIs String?
+  sourceOfIncome            String?
+  loanToValueRatio          Decimal? @db.Decimal(5, 2)
+  performanceYears          Int?
 
   @@index([userId])
   @@index([status])
@@ -221,26 +265,7 @@ model LoanApplication {
   @@map("loan_applications")
 }
 
-model CreditScore {
-  id String @id @default(uuid())
 
-  loanApplicationId String @unique
-
-  creditFacilitySize        CreditFacilitySize
-  dsgir                     Dsgir
-  operationOfInstitution    OperationOfInstitution
-  satisfactoryPerformance   SatisfactoryPerformance
-  parentsBorrowingsWithBFIs ParentsBorrowingsWithBFIs
-  sourceOfIncome            SourceOfIncome
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  loanApplication LoanApplication @relation(fields: [loanApplicationId], references: [id], onDelete: Cascade)
-
-  @@index([riskGrade])
-  @@map("credit_scores")
-}
 
 model StudyInformation {
   id            String @id @default(uuid())
@@ -299,6 +324,112 @@ model Document {
 
   @@index([applicationId])
   @@map("documents")
+}
+
+model FamilyMember {
+  id String @id @default(cuid())
+
+  applicationId String
+  application   LoanApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  personName String
+  age Int
+  qualification String
+  relationshipWithBorrower String
+  occupationSocialInvolvement String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Security {
+  id String @id @default(cuid())
+
+  applicationId String
+  application   LoanApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  securityDetails String
+
+  fmv Decimal @db.Decimal(18, 2)
+  proposedLoan Decimal @db.Decimal(18, 2)
+
+  financeAgainstFmvRatio String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+enum FamilyStructure {
+  NUCLEAR
+  JOINT
+  EXTENDED
+  SINGLE_PARENT
+  OTHER
+}
+
+enum PeriodUnit {
+  YEAR
+  MONTH
+}
+model PersonalGuarantee {
+  id String @id @default(cuid())
+
+  applicationId String
+  application   LoanApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  nameOfGuarantor String
+  relationship    String
+
+  age Int
+
+  netWorth Decimal @db.Decimal(18, 2)
+
+  guarantorConsent Boolean
+
+  ciclStatus Boolean
+  ciclRemarks String?
+
+  blackListedDate DateTime?
+  releasedDate    DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Insurance {
+  id String @id @default(cuid())
+
+  applicationId String
+  application   LoanApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  insuredAssets String
+
+  valueOfAssets  Decimal @db.Decimal(18, 2)
+  sumOfInsurance Decimal @db.Decimal(18, 2)
+
+  insuranceCoverage Decimal @db.Decimal(5, 2)
+  insuranceRemarks  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model RepaymentCapacity {
+  id String @id @default(cuid())
+
+  applicationId String
+  application   LoanApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  insuredAssets Int
+
+  valueOfAssets  Decimal @db.Decimal(18, 2)
+  sumOfInsurance Decimal @db.Decimal(18, 2)
+
+  insuranceCoverage Decimal @db.Decimal(5, 2)
+  insuranceRemarks  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Notification {
@@ -451,26 +582,6 @@ model ParentVerification {
   application LoanApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
 
   @@map("parent_verifications")
-}
-
-model InitiatorVerification {
-  id            String @id @default(uuid())
-  applicationId String @unique
-
-  creditFacilitySize     CreditFacilitySize?
-  dsgir                  DSGIR?
-  collegeOperation       CollegeOperation?
-  institutionPerformance InstitutionPerformance?
-  parentsBorrowings      ParentBorrowing?
-  sourceOfIncome         IncomeSource?
-  remarks                String?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  application LoanApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
-
-  @@map("initiator_verifications")
 }
 
 // ─── College Document Templates ───────────────────────────────────────────────

@@ -31,7 +31,7 @@ export class CreditScoreController {
   @ApiTags('Applications Credit Score')
   @ApiBearerAuth('JWT')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.INITIATOR)
+  @Roles(UserRole.CHECKER)
   @ApiOperation({
     summary: 'Calculate credit score by application id',
   })
