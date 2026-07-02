@@ -40,11 +40,10 @@ export class ApplicationInitiatorService {
 
     const updated = await this.prisma.loanApplication.update({
       where: { id: applicationId },
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       data: {
         ...dto,
-        relationshipStartDate: new Date(dto.relationshipStartDate),
-        citizenshipIssuedDate: new Date(dto.citizenshipIssuedDate),
-      },
+      } as any,
     });
 
     await this.audit.log(
@@ -65,15 +64,10 @@ export class ApplicationInitiatorService {
 
     const updated = await this.prisma.loanApplication.update({
       where: { id: applicationId },
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       data: {
         ...dto,
-        relationshipStartDate: dto.relationshipStartDate
-          ? new Date(dto.relationshipStartDate)
-          : undefined,
-        citizenshipIssuedDate: dto.citizenshipIssuedDate
-          ? new Date(dto.citizenshipIssuedDate)
-          : undefined,
-      },
+      } as any,
     });
 
     await this.audit.log(
