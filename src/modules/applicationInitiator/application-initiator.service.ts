@@ -6,8 +6,13 @@ import {
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { AuditAction } from '../../common/enums';
+import {
+  paginate,
+  buildPaginatedResponse,
+} from '../../common/dto/pagination.dto';
 import { CreateInitiatorApplicationDto } from './dto/create-initiator-application.dto';
 import { UpdateInitiatorApplicationDto } from './dto/update-initiator-application.dto';
+import { QueryCollegeVerifiedDto } from './dto/query-college-verified.dto';
 
 @Injectable()
 export class ApplicationInitiatorService {
@@ -25,6 +30,137 @@ export class ApplicationInitiatorService {
   }
 
   // ── Combined initiator sections, merged directly onto LoanApplication ──────
+
+  async getInitiatorApplication(applicationId: string) {
+    const application = await this.prisma.loanApplication.findUnique({
+      where: { id: applicationId },
+      include: {
+        user: {
+          select: {
+            id: true,
+            email: true,
+            role: true,
+            isEmailVerified: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+        },
+        studyInformation: true,
+        loanInformation: true,
+        documents: true,
+        familyMembers: true,
+        securities: true,
+        personalGuarantees: true,
+        insurances: true,
+        repaymentCapacities: true,
+        collegeVerification: true,
+        parentVerification: true,
+      },
+    });
+    if (!application) throw new NotFoundException('Application not found');
+    return application;
+  }
+
+  async getInitiatorApplicationOverview(applicationId: string) {
+    const application = await this.prisma.loanApplication.findUnique({
+      where: { id: applicationId },
+      select: {
+        id: true,
+        applicationNumber: true,
+        status: true,
+
+        // Step 1: Personal Information
+        fullName: true,
+        email: true,
+        phoneNumber: true,
+
+        // Step 2: Identity
+        identityType: true,
+        identityNumber: true,
+        identityName: true,
+        dateOfBirth: true,
+        gender: true,
+        occupation: true,
+        issuedDistrict: true,
+        issuedDate: true,
+
+        // Step 2: Address
+        province: true,
+        district: true,
+        municipality: true,
+        ward: true,
+        permanentAddress: true,
+        correspondenceAddress: true,
+
+        // Step 3: Family
+        fatherName: true,
+        motherName: true,
+        grandfatherName: true,
+        maritalStatus: true,
+        spouseName: true,
+
+        collegeVerification: true,
+        parentVerification: true,
+      },
+    });
+    if (!application) throw new NotFoundException('Application not found');
+
+    const { collegeVerification, parentVerification, ...student } = application;
+    return {
+      student,
+      collegeVerification,
+      parentProfile: parentVerification,
+    };
+  }
+
+  async getCollegeVerifiedApplications(query: QueryCollegeVerifiedDto) {
+    const { take, skip } = paginate(query.page, query.limit);
+    const where = { isApplicationVerified: true };
+
+    const [verifications, total] = await Promise.all([
+      this.prisma.collegeVerification.findMany({
+        where,
+        take,
+        skip,
+        orderBy: { submittedAt: 'desc' },
+        include: {
+          application: {
+            select: {
+              id: true,
+              applicationNumber: true,
+              status: true,
+              fullName: true,
+              email: true,
+              phoneNumber: true,
+              user: {
+                select: {
+                  id: true,
+                  email: true,
+                  role: true,
+                },
+              },
+            },
+          },
+        },
+      }),
+      this.prisma.collegeVerification.count({ where }),
+    ]);
+
+    const data = verifications.map(
+      ({ application, ...collegeVerification }) => ({
+        applicationId: collegeVerification.applicationId,
+        student: application,
+        collegeVerification,
+      }),
+    );
+
+    return buildPaginatedResponse(
+      data,
+      total,
+      query.page ?? 1,
+      query.limit ?? 20,
+    );
+  }
 
   async createInitiatorApplication(
     applicationId: string,

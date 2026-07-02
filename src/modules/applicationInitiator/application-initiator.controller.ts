@@ -1,15 +1,18 @@
 import {
   Body,
   Controller,
+  Get,
   Param,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ApplicationInitiatorService } from './application-initiator.service';
 import { CreateInitiatorApplicationDto } from './dto/create-initiator-application.dto';
 import { UpdateInitiatorApplicationDto } from './dto/update-initiator-application.dto';
+import { QueryCollegeVerifiedDto } from './dto/query-college-verified.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -28,6 +31,28 @@ export class ApplicationInitiatorController {
   constructor(
     private readonly applicationInitiatorService: ApplicationInitiatorService,
   ) {}
+
+  @Get()
+  @ApiOperation({
+    summary:
+      'Get full application details for initiator review — loan information plus applicant (user/student) and parent verification relations',
+  })
+  findOne(@Param('applicationId') applicationId: string) {
+    return this.applicationInitiatorService.getInitiatorApplication(
+      applicationId,
+    );
+  }
+
+  @Get('overview')
+  @ApiOperation({
+    summary:
+      'Get application overview — basic student info, college verification, and parent profile',
+  })
+  getOverview(@Param('applicationId') applicationId: string) {
+    return this.applicationInitiatorService.getInitiatorApplicationOverview(
+      applicationId,
+    );
+  }
 
   @Post()
   @ApiOperation({
@@ -59,6 +84,30 @@ export class ApplicationInitiatorController {
       applicationId,
       user.sub,
       dto,
+    );
+  }
+}
+
+// List-type endpoint, not scoped to a single application — kept in a separate
+// controller since the class above is pinned to the `:applicationId` prefix.
+@ApiTags('Application Initiator')
+@ApiBearerAuth('JWT')
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(UserRole.INITIATOR)
+@Controller('applications/initiator')
+export class ApplicationInitiatorListController {
+  constructor(
+    private readonly applicationInitiatorService: ApplicationInitiatorService,
+  ) {}
+
+  @Get('college-verified')
+  @ApiOperation({
+    summary:
+      'List students whose application has been verified by their college (paginated), mapped by applicationId',
+  })
+  getCollegeVerified(@Query() query: QueryCollegeVerifiedDto) {
+    return this.applicationInitiatorService.getCollegeVerifiedApplications(
+      query,
     );
   }
 }

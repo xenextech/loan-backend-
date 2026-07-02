@@ -1,11 +1,17 @@
 import { Module } from '@nestjs/common';
-import { ApplicationInitiatorController } from './application-initiator.controller';
+import {
+  ApplicationInitiatorController,
+  ApplicationInitiatorListController,
+} from './application-initiator.controller';
 import { ApplicationInitiatorService } from './application-initiator.service';
 import { AuditModule } from '../audit/audit.module';
 
 @Module({
   imports: [AuditModule],
-  controllers: [ApplicationInitiatorController],
+  controllers: [
+    ApplicationInitiatorController,
+    ApplicationInitiatorListController,
+  ],
   providers: [ApplicationInitiatorService],
   exports: [ApplicationInitiatorService],
 })
