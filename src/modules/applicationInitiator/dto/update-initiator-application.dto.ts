@@ -5,397 +5,76 @@ import {
   IsOptional,
   IsString,
 } from 'class-validator';
+import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export class UpdateInitiatorApplicationDto {
   // =========================
   // 1. Basic Information
   // =========================
 
+  @ApiPropertyOptional({ description: 'Name of the customer', example: 'John Doe' })
   @IsOptional()
   @IsString()
   customerName?: string;
 
+  @ApiPropertyOptional({ description: 'Start date of banking relationship', example: '2023-01-15' })
   @IsOptional()
   @IsDateString()
   relationshipStartDate?: string;
 
+  @ApiPropertyOptional({ description: 'Group name if the customer belongs to a corporate group', example: 'ABC Group' })
   @IsOptional()
   @IsString()
   customerGroup?: string;
 
+  @ApiPropertyOptional({ description: 'Unique obligor number assigned to the customer', example: 102938 })
   @IsOptional()
   @IsNumber()
   obligorNo?: number;
 
+  @ApiPropertyOptional({ description: 'Permanent residential or registered address', example: 'Kathmandu, Nepal' })
   @IsOptional()
   @IsString()
   permanentAddress?: string;
 
+  @ApiPropertyOptional({ description: 'Mailing or correspondence address', example: 'Lalitpur, Nepal' })
   @IsOptional()
   @IsString()
   correspondenceAddress?: string;
 
+  @ApiPropertyOptional({ description: 'Primary contact phone number', example: '+977-9801234567' })
   @IsOptional()
   @IsString()
   contactNo?: string;
 
+  @ApiPropertyOptional({ description: 'Profession or line of business', example: 'Software Engineer' })
   @IsOptional()
   @IsString()
   profession?: string;
 
+  @ApiPropertyOptional({ description: 'Primary source of loan repayment', example: 'Salary / Business Revenue' })
   @IsOptional()
   @IsString()
   repaymentSource?: string;
 
+  @ApiPropertyOptional({ description: 'Citizenship certificate number', example: '12-34-56-7890' })
   @IsOptional()
   @IsString()
   citizenshipNo?: string;
 
+  @ApiPropertyOptional({ description: 'Date of citizenship issuance', example: '2015-05-20' })
   @IsOptional()
   @IsDateString()
   citizenshipIssuedDate?: string;
 
+  @ApiPropertyOptional({ description: 'District where citizenship was issued', example: 'Kathmandu' })
   @IsOptional()
   @IsString()
   citizenshipIssuedPlace?: string;
 
+  @ApiPropertyOptional({ description: 'National Identity Card (NID) number', example: '9876543210' })
   @IsOptional()
   @IsString()
   nidNo?: string;
 
-  @IsOptional()
-  @IsString()
-  panNo?: string;
-
-  @IsOptional()
-  @IsString()
-  licenseNo?: string;
-
-  @IsOptional()
-  @IsString()
-  bankingRelationship?: string;
-
-  @IsOptional()
-  @IsBoolean()
-  isBlacklisted?: boolean;
-
-  // =========================
-  // 2. NRB Reporting
-  // =========================
-
-  @IsOptional()
-  @IsString()
-  baselClassification?: string;
-
-  @IsOptional()
-  @IsNumber()
-  baselRiskWeight?: number;
-
-  @IsOptional()
-  @IsString()
-  nrb93SectorCode?: string;
-
-  @IsOptional()
-  @IsString()
-  nrb93KaProductCode?: string;
-
-  @IsOptional()
-  @IsString()
-  nrb94SecurityTypeCode?: string;
-
-  @IsOptional()
-  @IsString()
-  sis0IndustrialClassification?: string;
-
-  @IsOptional()
-  @IsString()
-  sis1ProductType?: string;
-
-  @IsOptional()
-  @IsString()
-  sis2Sector?: string;
-
-  @IsOptional()
-  @IsString()
-  sis3Security?: string;
-
-  @IsOptional()
-  @IsString()
-  sis4InstitutionalGroupingOfBorrower?: string;
-
-  @IsOptional()
-  @IsString()
-  sis9PriorityLending?: string;
-
-  @IsOptional()
-  @IsString()
-  greenFinanceEconomicSector?: string;
-
-  @IsOptional()
-  @IsString()
-  greenFinanceSubSector?: string;
-
-  @IsOptional()
-  @IsString()
-  greenFinanceTaxonomyTag?: string;
-
-  // =========================
-  // 3. Credit Scoring
-  // =========================
-
-  @IsOptional()
-  @IsNumber()
-  creditLimit?: number;
-
-  @IsOptional()
-  @IsString()
-  creditFacilitySize?: string;
-
-  @IsOptional()
-  @IsNumber()
-  loanToValueRatio?: number;
-
-  @IsOptional()
-  @IsNumber()
-  dsgir?: number;
-
-  @IsOptional()
-  @IsNumber()
-  performanceYears?: number;
-
-  @IsOptional()
-  @IsNumber()
-  bankingRelationshipScore?: number;
-
-  @IsOptional()
-  @IsNumber()
-  parentsBorrowingsWithBFIs?: number;
-
-  @IsOptional()
-  @IsNumber()
-  sourceOfIncomeScore?: number;
-
-  @IsOptional()
-  @IsNumber()
-  operationOfInstitution?: number;
-
-  @IsOptional()
-  @IsString()
-  creditRiskScoring?: string;
-
-  @IsOptional()
-  @IsString()
-  riskGrade?: string;
-
-  @IsOptional()
-  @IsNumber()
-  totalScore?: number;
-
-  @IsOptional()
-  @IsNumber()
-  totalPercentage?: number;
-
-  // =========================
-  // 4. Applicant Background
-  // =========================
-
-  @IsOptional()
-  @IsString()
-  familyPersonName?: string;
-
-  @IsOptional()
-  @IsNumber()
-  familyAge?: number;
-
-  @IsOptional()
-  @IsString()
-  familyQualification?: string;
-
-  @IsOptional()
-  @IsString()
-  relationshipWithBorrower?: string;
-
-  @IsOptional()
-  @IsString()
-  occupationSocialInvolvement?: string;
-
-  @IsOptional()
-  @IsString()
-  facility?: string;
-
-  @IsOptional()
-  @IsString()
-  purpose?: string;
-
-  @IsOptional()
-  @IsNumber()
-  facilityLimit?: number;
-
-  @IsOptional()
-  @IsNumber()
-  period?: number;
-
-  @IsOptional()
-  @IsNumber()
-  interestRate?: number;
-
-  @IsOptional()
-  @IsNumber()
-  fee?: number;
-
-  @IsOptional()
-  @IsString()
-  remarks?: string;
-
-  // =========================
-  // 5. Security
-  // =========================
-
-  @IsOptional()
-  @IsString()
-  securityDetails?: string;
-
-  @IsOptional()
-  @IsNumber()
-  fmv?: number;
-
-  @IsOptional()
-  @IsNumber()
-  proposedLoan?: number;
-
-  @IsOptional()
-  @IsNumber()
-  financeAgainstFmv?: number;
-
-  // =========================
-  // 6. Personal Guarantee
-  // =========================
-
-  @IsOptional()
-  @IsString()
-  guarantorName?: string;
-
-  @IsOptional()
-  @IsString()
-  guarantorRelationship?: string;
-
-  @IsOptional()
-  @IsNumber()
-  guarantorAge?: number;
-
-  @IsOptional()
-  @IsNumber()
-  guarantorNetWorth?: number;
-
-  @IsOptional()
-  @IsBoolean()
-  guarantorConsent?: boolean;
-
-  @IsOptional()
-  @IsBoolean()
-  ciclStatus?: boolean;
-
-  @IsOptional()
-  @IsString()
-  ciclRemarks?: string;
-
-  @IsOptional()
-  @IsDateString()
-  blackListedDate?: string;
-
-  @IsOptional()
-  @IsDateString()
-  releasedDate?: string;
-
-  // =========================
-  // 7. Insurance
-  // =========================
-
-  @IsOptional()
-  @IsString()
-  insuredAssets?: string;
-
-  @IsOptional()
-  @IsNumber()
-  valueOfAssets?: number;
-
-  @IsOptional()
-  @IsNumber()
-  sumOfInsurance?: number;
-
-  @IsOptional()
-  @IsString()
-  insuranceRemarks?: string;
-
-  @IsOptional()
-  @IsNumber()
-  insuranceCoverage?: number;
-
-  // =========================
-  // 8. Repayment Capacity
-  // =========================
-
-  @IsOptional()
-  @IsNumber()
-  repaymentInsuredAssets?: number;
-
-  @IsOptional()
-  @IsNumber()
-  repaymentValueOfAssets?: number;
-
-  @IsOptional()
-  @IsNumber()
-  repaymentSumOfInsurance?: number;
-
-  @IsOptional()
-  @IsString()
-  repaymentInsuranceRemarks?: string;
-
-  @IsOptional()
-  @IsNumber()
-  repaymentInsuranceCoverage?: number;
-
-  // =========================
-  // 9–17
-  // =========================
-
-  @IsOptional()
-  @IsString()
-  amlRisk?: string;
-
-  @IsOptional()
-  @IsString()
-  waiver?: string;
-
-  @IsOptional()
-  @IsString()
-  termsAndConditions?: string;
-
-  @IsOptional()
-  @IsString()
-  bankingRelationshipRemarks?: string;
-
-  @IsOptional()
-  @IsString()
-  keyCreditRiskMitigation?: string;
-
-  @IsOptional()
-  @IsString()
-  justificationOfLoan?: string;
-
-  @IsOptional()
-  @IsString()
-  accountStrategy?: string;
-
-  @IsOptional()
-  @IsString()
-  disbursementSection?: string;
-
-  @IsOptional()
-  @IsString()
-  utilizationOfFund?: string;
-
-  @IsOptional()
-  @IsString()
-  conclusionAndRecommendation?: string;
-}
+  @ApiPropertyOptional({ description: 'Permanent Account Number (PAN)', example: '601234567' })
