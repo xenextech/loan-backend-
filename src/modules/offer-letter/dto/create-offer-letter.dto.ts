@@ -116,7 +116,7 @@ export class StudentInfoDto {
   @IsString()
   @IsOptional()
   @MaxLength(30)
-  citizenshipNo?: string;
+  citizenshipNumber?: string;
 
   @ApiPropertyOptional({ example: 'Hari Bahadur Thapa' })
   @IsString()

@@ -14,8 +14,15 @@ import { Step2Dto } from './dto/step2.dto';
 import { Step3Dto } from './dto/step3.dto';
 import { Step4Dto } from './dto/step4.dto';
 import { QueryApplicationDto } from './dto/query-application.dto';
-import { ApplicationStatus, AuditAction, ApplicationLinkType } from '../../common/enums';
-import { paginate, buildPaginatedResponse } from '../../common/dto/pagination.dto';
+import {
+  ApplicationStatus,
+  AuditAction,
+  ApplicationLinkType,
+} from '../../common/enums';
+import {
+  paginate,
+  buildPaginatedResponse,
+} from '../../common/dto/pagination.dto';
 
 // 3-day token TTL — enough for college/parent to complete verification
 const LINK_TTL_MS = 3 * 24 * 60 * 60 * 1000;
@@ -46,10 +53,15 @@ export class ApplicationsService {
       },
     });
 
-    await this.audit.log(userId, AuditAction.APPLICATION_CREATED, {
-      applicationId: application.id,
-      applicationNumber: application.applicationNumber,
-    }, application.id);
+    await this.audit.log(
+      userId,
+      AuditAction.APPLICATION_CREATED,
+      {
+        applicationId: application.id,
+        applicationNumber: application.applicationNumber,
+      },
+      application.id,
+    );
 
     return application;
   }
@@ -78,7 +90,12 @@ export class ApplicationsService {
       this.prisma.loanApplication.count({ where }),
     ]);
 
-    return buildPaginatedResponse(data, total, query.page ?? 1, query.limit ?? 20);
+    return buildPaginatedResponse(
+      data,
+      total,
+      query.page ?? 1,
+      query.limit ?? 20,
+    );
   }
 
   // ── Get one application (ownership check) ─────────────────────────────────
@@ -102,9 +119,13 @@ export class ApplicationsService {
 
   // ── Assert draft & ownership ──────────────────────────────────────────────
   private async assertEditableByUser(id: string, userId: string) {
-    const application = await this.prisma.loanApplication.findUnique({ where: { id } });
+    const application = await this.prisma.loanApplication.findUnique({
+      where: { id },
+    });
     if (!application) throw new NotFoundException('Application not found');
-    if (application.userId !== userId) throw new ForbiddenException('Access denied');
+    if (application.userId !== userId)
+      throw new ForbiddenException('Access denied');
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-enum-comparison
     if (application.status !== ApplicationStatus.DRAFT) {
       throw new BadRequestException('Only draft applications can be edited');
     }
@@ -115,7 +136,14 @@ export class ApplicationsService {
   async saveStep1(id: string, userId: string, dto: Step1Dto) {
     await this.assertEditableByUser(id, userId);
 
-    const { studyType, courseName, boardUniversity, courseDuration, loanAmount, ...personalData } = dto;
+    const {
+      studyType,
+      courseName,
+      boardUniversity,
+      courseDuration,
+      loanAmount,
+      ...personalData
+    } = dto;
 
     await this.prisma.$transaction([
       this.prisma.loanApplication.update({
@@ -124,7 +152,13 @@ export class ApplicationsService {
       }),
       this.prisma.studyInformation.upsert({
         where: { applicationId: id },
-        create: { applicationId: id, studyType, courseName, boardUniversity, courseDuration },
+        create: {
+          applicationId: id,
+          studyType,
+          courseName,
+          boardUniversity,
+          courseDuration,
+        },
         update: { studyType, courseName, boardUniversity, courseDuration },
       }),
       this.prisma.loanInformation.upsert({
@@ -134,7 +168,12 @@ export class ApplicationsService {
       }),
     ]);
 
-    await this.audit.log(userId, AuditAction.APPLICATION_UPDATED, { step: 1 }, id);
+    await this.audit.log(
+      userId,
+      AuditAction.APPLICATION_UPDATED,
+      { step: 1 },
+      id,
+    );
     return this.findOne(id, userId, 'STUDENT');
   }
 
@@ -151,7 +190,12 @@ export class ApplicationsService {
       },
     });
 
-    await this.audit.log(userId, AuditAction.APPLICATION_UPDATED, { step: 2 }, id);
+    await this.audit.log(
+      userId,
+      AuditAction.APPLICATION_UPDATED,
+      { step: 2 },
+      id,
+    );
     return this.findOne(id, userId, 'STUDENT');
   }
 
@@ -160,23 +204,52 @@ export class ApplicationsService {
     await this.assertEditableByUser(id, userId);
 
     const {
-      fatherName, motherName, grandfatherName, maritalStatus, spouseName,
-      expectedSalary, feeStructureMethod, feeStructureUrl, feeStructureText,
+      fatherName,
+      motherName,
+      grandfatherName,
+      maritalStatus,
+      spouseName,
+      expectedSalary,
+      feeStructureMethod,
+      feeStructureUrl,
+      feeStructureText,
     } = dto;
 
     await this.prisma.$transaction([
       this.prisma.loanApplication.update({
         where: { id },
-        data: { fatherName, motherName, grandfatherName, maritalStatus, spouseName },
+        data: {
+          fatherName,
+          motherName,
+          grandfatherName,
+          maritalStatus,
+          spouseName,
+        },
       }),
       this.prisma.loanInformation.upsert({
         where: { applicationId: id },
-        create: { applicationId: id, expectedSalary, feeStructureMethod, feeStructureUrl, feeStructureText },
-        update: { expectedSalary, feeStructureMethod, feeStructureUrl, feeStructureText },
+        create: {
+          applicationId: id,
+          expectedSalary,
+          feeStructureMethod,
+          feeStructureUrl,
+          feeStructureText,
+        },
+        update: {
+          expectedSalary,
+          feeStructureMethod,
+          feeStructureUrl,
+          feeStructureText,
+        },
       }),
     ]);
 
-    await this.audit.log(userId, AuditAction.APPLICATION_UPDATED, { step: 3 }, id);
+    await this.audit.log(
+      userId,
+      AuditAction.APPLICATION_UPDATED,
+      { step: 3 },
+      id,
+    );
     return this.findOne(id, userId, 'STUDENT');
   }
 
@@ -185,7 +258,9 @@ export class ApplicationsService {
     const application = await this.assertEditableByUser(id, userId);
 
     if (!dto.informationAccurate || !dto.authorizeVerification) {
-      throw new BadRequestException('You must confirm both declaration fields to submit');
+      throw new BadRequestException(
+        'You must confirm both declaration fields to submit',
+      );
     }
 
     const expiresAt = new Date(Date.now() + LINK_TTL_MS);
@@ -205,19 +280,41 @@ export class ApplicationsService {
         include: { studyInformation: true, loanInformation: true },
       }),
       this.prisma.applicationLink.create({
-        data: { token: parentToken, applicationId: id, linkType: ApplicationLinkType.PARENT, expiresAt, recipientEmail: dto.parentContactEmail ?? null },
+        data: {
+          token: parentToken,
+          applicationId: id,
+          linkType: ApplicationLinkType.PARENT,
+          expiresAt,
+          recipientEmail: dto.parentContactEmail ?? null,
+        },
       }),
       this.prisma.applicationLink.create({
-        data: { token: collegeToken, applicationId: id, linkType: ApplicationLinkType.COLLEGE, expiresAt, recipientEmail: dto.collegeContactEmail ?? null },
+        data: {
+          token: collegeToken,
+          applicationId: id,
+          linkType: ApplicationLinkType.COLLEGE,
+          expiresAt,
+          recipientEmail: dto.collegeContactEmail ?? null,
+        },
       }),
     ]);
 
-    await this.audit.log(userId, AuditAction.APPLICATION_SUBMITTED, {
-      applicationNumber: application.applicationNumber,
-    }, id);
-    await this.audit.log(userId, AuditAction.APPLICATION_LINK_GENERATED, {
-      applicationNumber: application.applicationNumber,
-    }, id);
+    await this.audit.log(
+      userId,
+      AuditAction.APPLICATION_SUBMITTED,
+      {
+        applicationNumber: application.applicationNumber,
+      },
+      id,
+    );
+    await this.audit.log(
+      userId,
+      AuditAction.APPLICATION_LINK_GENERATED,
+      {
+        applicationNumber: application.applicationNumber,
+      },
+      id,
+    );
 
     const frontendUrl = this.config.get<string>('app.frontendUrl');
     const parentLink = `${frontendUrl}/parent-verify/${parentToken}`;
@@ -259,5 +356,4 @@ export class ApplicationsService {
     await this.prisma.loanApplication.delete({ where: { id } });
     return { message: 'Draft application deleted' };
   }
-
 }

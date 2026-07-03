@@ -18,7 +18,7 @@ CREATE TABLE "offer_letters" (
     "studentFullName" TEXT NOT NULL,
     "studentDobAD" TEXT,
     "studentDobBS" TEXT,
-    "citizenshipNo" TEXT,
+    "citizenshipNumber" TEXT,
     "fatherName" TEXT,
     "motherName" TEXT,
     "permanentAddress" TEXT,

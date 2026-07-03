@@ -167,6 +167,7 @@ export class ApplicationInitiatorService {
     userId: string,
     dto: CreateInitiatorApplicationDto,
   ) {
+    console.log(dto);
     const application = await this.assertApplicationExists(applicationId);
     if (application.relationshipStartDate) {
       throw new ConflictException(
@@ -174,21 +175,12 @@ export class ApplicationInitiatorService {
       );
     }
 
-    const updated = await this.prisma.loanApplication.update({
-      where: { id: applicationId },
+    const created = await this.prisma.loanApplication.create({
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-      data: {
-        ...dto,
-      } as any,
+      data: dto as any,
     });
 
-    await this.audit.log(
-      userId,
-      AuditAction.APPLICATION_UPDATED,
-      { section: 'initiator', action: 'create' },
-      applicationId,
-    );
-    return updated;
+    return created;
   }
 
   async updateInitiatorApplication(

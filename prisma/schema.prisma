@@ -120,9 +120,9 @@ model User {
 
 model LoanApplication {
   id                String            @id @default(uuid())
-  applicationNumber String            @unique
+  applicationNumber String?            @unique
   status            ApplicationStatus @default(DRAFT)
-  userId            String
+  userId            String?
 
   // Step 1: Personal Information
   fullName    String?
@@ -158,9 +158,10 @@ model LoanApplication {
   submittedAt           DateTime?
 
   // Basic Information (Credit Appraisal)
+  customerName                 String?
   relationshipStartDate      DateTime?
   customerGroup               String?
-  obligorNumber                String?
+  obligorNumber                Int?
   permanentAddress             String?
   correspondenceAddress        String?
   profession                   String?
@@ -235,7 +236,7 @@ model LoanApplication {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  user                User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user                User?                 @relation(fields: [userId], references: [id], onDelete: Cascade)
   studyInformation    StudyInformation?
   loanInformation     LoanInformation?
 
@@ -617,7 +618,7 @@ model OfferLetter {
   studentFullName  String
   studentDobAD     String?
   studentDobBS     String?
-  citizenshipNo    String?
+  citizenshipNumber    String?
   fatherName       String?
   motherName       String?
   permanentAddress String?

@@ -42,7 +42,7 @@ export class UpdateInitiatorApplicationDto {
   })
   @IsOptional()
   @IsNumber()
-  obligorNo?: number;
+  obligorNumber?: number;
 
   @ApiPropertyOptional({
     description: 'Permanent residential or registered address',
@@ -66,7 +66,7 @@ export class UpdateInitiatorApplicationDto {
   })
   @IsOptional()
   @IsString()
-  contactNo?: string;
+  phoneNumber?: string;
 
   @ApiPropertyOptional({
     description: 'Profession or line of business',
@@ -90,7 +90,7 @@ export class UpdateInitiatorApplicationDto {
   })
   @IsOptional()
   @IsString()
-  citizenshipNo?: string;
+  citizenshipNumber?: string;
 
   @ApiPropertyOptional({
     description: 'Date of citizenship issuance',

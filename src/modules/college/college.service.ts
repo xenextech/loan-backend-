@@ -35,6 +35,7 @@ export class CollegeService {
       },
     });
 
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-enum-comparison
     if (!link || link.linkType !== ApplicationLinkType.COLLEGE) {
       throw new NotFoundException('Invalid link');
     }
@@ -70,9 +71,10 @@ export class CollegeService {
       courseName: app.studyInformation?.courseName,
       boardUniversity: app.studyInformation?.boardUniversity,
       courseDuration: app.studyInformation?.courseDuration,
-      loanAmount: app.loanInformation?.loanAmount != null
-        ? Number(app.loanInformation.loanAmount)
-        : undefined,
+      loanAmount:
+        app.loanInformation?.loanAmount != null
+          ? Number(app.loanInformation.loanAmount)
+          : undefined,
       submittedAt: app.submittedAt,
       verification,
     };
@@ -96,7 +98,7 @@ export class CollegeService {
     });
 
     await this.audit.log(
-      link.application.userId,
+      link?.application?.userId || '',
       AuditAction.COLLEGE_FORM_SUBMITTED,
       { collegeName: dto.collegeName, applicationId: link.applicationId },
       link.applicationId,
@@ -114,7 +116,10 @@ export class CollegeService {
     });
 
     if (existing?.offerLetterFilePath && existing?.offerLetterBucketName) {
-      await this.storage.deleteFile(existing.offerLetterBucketName, existing.offerLetterFilePath);
+      await this.storage.deleteFile(
+        existing.offerLetterBucketName,
+        existing.offerLetterFilePath,
+      );
     }
 
     const result = await this.storage.uploadFile(
@@ -204,7 +209,10 @@ export class CollegeService {
     });
 
     if (existing?.enrollmentDocFilePath && existing?.enrollmentDocBucketName) {
-      await this.storage.deleteFile(existing.enrollmentDocBucketName, existing.enrollmentDocFilePath);
+      await this.storage.deleteFile(
+        existing.enrollmentDocBucketName,
+        existing.enrollmentDocFilePath,
+      );
     }
 
     const result = await this.storage.uploadFile(

@@ -29,7 +29,7 @@ export class CreateInitiatorApplicationDto {
   @ApiPropertyOptional({ description: 'Obligor No.' })
   @IsOptional()
   @IsNumber()
-  obligorNo?: number;
+  obligorNumber?: number;
 
   @ApiPropertyOptional({ description: 'Permanent Address' })
   @IsOptional()
@@ -44,7 +44,7 @@ export class CreateInitiatorApplicationDto {
   @ApiPropertyOptional({ description: 'Contact No.' })
   @IsOptional()
   @IsString()
-  contactNo?: string;
+  phoneNumber?: string;
 
   @ApiPropertyOptional({ description: 'Profession' })
   @IsOptional()
@@ -59,7 +59,7 @@ export class CreateInitiatorApplicationDto {
   @ApiPropertyOptional({ description: 'Citizenship No.' })
   @IsOptional()
   @IsString()
-  citizenshipNo?: string;
+  citizenshipNumber?: string;
 
   @ApiPropertyOptional({
     description: 'Citizenship Issued Date',

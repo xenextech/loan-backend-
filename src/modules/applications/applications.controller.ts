@@ -55,7 +55,9 @@ export class ApplicationsController {
 
   @Patch(':id/step1')
   @Roles(UserRole.STUDENT)
-  @ApiOperation({ summary: 'Save Step 1 — Personal, study, and loan information' })
+  @ApiOperation({
+    summary: 'Save Step 1 — Personal, study, and loan information',
+  })
   saveStep1(
     @CurrentUser() user: JwtPayload,
     @Param('id') id: string,
@@ -89,7 +91,9 @@ export class ApplicationsController {
   @Post(':id/submit')
   @HttpCode(HttpStatus.OK)
   @Roles(UserRole.STUDENT)
-  @ApiOperation({ summary: 'Submit application (Step 4 declaration + final status change)' })
+  @ApiOperation({
+    summary: 'Submit application (Step 4 declaration + final status change)',
+  })
   submit(
     @CurrentUser() user: JwtPayload,
     @Param('id') id: string,
@@ -105,5 +109,4 @@ export class ApplicationsController {
   delete(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
     return this.applicationsService.deleteDraft(id, user.sub);
   }
-
 }

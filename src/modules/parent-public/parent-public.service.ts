@@ -95,7 +95,7 @@ export class ParentPublicService {
     });
 
     await this.audit.log(
-      link.application.userId,
+      link?.application?.userId || '',
       AuditAction.PARENT_FORM_SUBMITTED,
       { name: dto.name, applicationId: link.applicationId },
       link.applicationId,
