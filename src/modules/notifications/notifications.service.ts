@@ -98,7 +98,7 @@ export class NotificationsService {
     `);
   }
 
-  async sendParentVerificationLink(email: string, applicationNumber: string, parentLink: string) {
+  async sendParentVerificationLink(email: string, applicationNumber?: string, parentLink?: string) {
     await this.sendEmail(email, `Action required: Verify loan application ${applicationNumber}`, `
       <h2>Education Loan Application — Parent/Guardian Verification</h2>
       <p>A student has submitted an education loan application <strong>${applicationNumber}</strong> and has listed you as their parent or guardian.</p>

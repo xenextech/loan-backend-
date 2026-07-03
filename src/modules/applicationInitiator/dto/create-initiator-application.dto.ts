@@ -77,17 +77,17 @@ export class CreateInitiatorApplicationDto {
   @ApiPropertyOptional({ description: 'NID No.' })
   @IsOptional()
   @IsString()
-  nidNo?: string;
+  nidNumber?: string;
 
   @ApiPropertyOptional({ description: 'PAN No.' })
   @IsOptional()
   @IsString()
-  panNo?: string;
+  panNumber?: string;
 
   @ApiPropertyOptional({ description: 'License No.' })
   @IsOptional()
   @IsString()
-  licenseNo?: string;
+  licenseNumber?: string;
 
   @ApiPropertyOptional({ description: 'Banking Relationship' })
   @IsOptional()
