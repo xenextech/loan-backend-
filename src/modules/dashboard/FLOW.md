@@ -8,8 +8,8 @@ sequence.
 
 ```mermaid
 flowchart TD
-    A["Student submits application\n(existing /applications flow, not dashboard)"] --> B["Shows up for staff"]
-    B -->|"GET /dashboard/applications\nGET /dashboard/overview/checker-queue"| C["Reviewer opens the application"]
+    A["Initiator/ submits application\n(existing /applications flow, not dashboard)"] --> B["Shows up for staff"]
+    B -->|"GET /dashboard/applications\nGET /dashboard/overview/checker-queue"| C["Initiator opens the application"]
     C -->|"GET /dashboard/approval/:id/summary\nGET .../credit-score\nGET .../nrb-checklist\nGET .../activity"| D["Approval decision\nNo API for this today, see gap below"]
     D -.->|"nothing currently sets approverDate"| E["Application 'approved'"]
     E -->|"GET /dashboard/disbursement/pending"| F["Will be empty today\n(query requires approverDate set)"]
@@ -25,7 +25,7 @@ flowchart TD
 1. Application submitted. Happens through the existing student-facing
    `/applications` flow, nothing in the dashboard module involved. Once its status is
    `SUBMITTED` it becomes visible to staff.
-2. Reviewer opens it. `GET /dashboard/applications` (the list) or
+2. Initiator opens it. `GET /dashboard/applications` (the list) or
    `GET /dashboard/overview/checker-queue` (the "needs action" feed) to find it, then
    the four read-only `GET /dashboard/approval/:id/...` calls to review it.
 3. Approval decision, the missing link. There's currently no endpoint anywhere in
