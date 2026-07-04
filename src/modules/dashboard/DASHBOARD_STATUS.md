@@ -26,7 +26,7 @@ set of UI mockups showing 10 screens, and the backend API for all 10 now exists.
    loan-to-value.
 3. Approval workflow. The detail screen a reviewer looks at for one application:
    borrower summary, live credit score breakdown, a compliance checklist, activity
-   history. Right now this is look-but-don't-touch, see the gaps section below.
+   history. 
 4. Disbursement. Once a loan is approved, tracks the checklist of conditions that
    need to be satisfied (documents signed, deed registered, etc.) before money goes
    out, and records each payout.
