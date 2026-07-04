@@ -73,9 +73,12 @@ export class DocumentsService {
       where: { id: applicationId },
     });
     if (!application) throw new NotFoundException('Application not found');
-    if (application.userId !== userId) throw new ForbiddenException('Access denied');
+    if (application.userId !== userId)
+      throw new ForbiddenException('Access denied');
     if (application.status !== ApplicationStatus.DRAFT) {
-      throw new BadRequestException('Cannot upload documents to a submitted application');
+      throw new BadRequestException(
+        'Cannot upload documents to a submitted application',
+      );
     }
     return application;
   }
@@ -134,9 +137,12 @@ export class DocumentsService {
       include: { application: true },
     });
     if (!document) throw new NotFoundException('Document not found');
-    if (document.application.userId !== userId) throw new ForbiddenException('Access denied');
+    if (document.application.userId !== userId)
+      throw new ForbiddenException('Access denied');
     if (document.application.status !== ApplicationStatus.DRAFT) {
-      throw new BadRequestException('Cannot delete documents from a submitted application');
+      throw new BadRequestException(
+        'Cannot delete documents from a submitted application',
+      );
     }
 
     await this.storage.deleteFile(document.bucketName, document.filePath);

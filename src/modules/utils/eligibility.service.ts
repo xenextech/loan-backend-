@@ -5,7 +5,7 @@ import { StudyType } from '../../common/enums';
 type EligibilityResult = 'ELIGIBLE' | 'POSSIBLY_ELIGIBLE' | 'NOT_ELIGIBLE';
 
 // Minimum expected salary multiples per study type (simple rule engine)
-const SALARY_TO_EMI_RATIO = 3;    // EMI should not exceed 1/3 of monthly salary
+const SALARY_TO_EMI_RATIO = 3; // EMI should not exceed 1/3 of monthly salary
 const INTEREST_RATE = 10.5;
 const DEFAULT_TENURE_MONTHS = 60; // 5 years
 
@@ -52,7 +52,8 @@ export class EligibilityService {
     if (expectedSalary === 0) {
       return {
         result: 'POSSIBLY_ELIGIBLE',
-        explanation: 'No expected salary provided. Eligibility depends on guarantor income and other factors. Please speak to a loan officer.',
+        explanation:
+          'No expected salary provided. Eligibility depends on guarantor income and other factors. Please speak to a loan officer.',
         details,
       };
     }

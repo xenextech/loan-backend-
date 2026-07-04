@@ -60,24 +60,31 @@ export enum PeriodUnit {
 
 export { DocumentType } from '@prisma/client';
 
-export enum AuditAction {
-  APPLICATION_CREATED = 'APPLICATION_CREATED',
-  APPLICATION_UPDATED = 'APPLICATION_UPDATED',
-  APPLICATION_SUBMITTED = 'APPLICATION_SUBMITTED',
-  APPLICATION_LINK_GENERATED = 'APPLICATION_LINK_GENERATED',
-  COLLEGE_FORM_SUBMITTED = 'COLLEGE_FORM_SUBMITTED',
-  PARENT_FORM_SUBMITTED = 'PARENT_FORM_SUBMITTED',
-}
+// Re-export Prisma-generated AuditAction so new values (dashboard module) stay in sync
+export { AuditAction } from '@prisma/client';
 
 export enum ApplicationLinkType {
   PARENT = 'PARENT',
   COLLEGE = 'COLLEGE',
 }
 
-export enum NotificationType {
-  DATABASE = 'DATABASE',
-  EMAIL = 'EMAIL',
-}
+// Re-export Prisma-generated NotificationType so it matches at runtime
+export { NotificationType } from '@prisma/client';
+
+export {
+  AuditCategory,
+  NotificationChannel,
+  NotificationDeliveryStatus,
+  DisbursementConditionStatus,
+  DisbursementStatus,
+  TrancheStatus,
+  EmiStatus,
+  GeneratedAgreementType,
+  GeneratedAgreementStatus,
+  CommissionPartnerType,
+  CommissionRateType,
+  CommissionEntryStatus,
+} from '@prisma/client';
 export const CREDIT_FACILITY_SIZE_BELOW1M_WEIGHT = 2;
 export const CREDIT_FACILITY_SIZE_BELOW1M_POINT = 1;
 
@@ -131,3 +138,7 @@ export const SOURCE_OF_INCOME_SALARY_RENT_BUSINESS_POINT = 2;
 
 export const SOURCE_OF_INCOME_MIXED_INCOME_WEIGHT = 1;
 export const SOURCE_OF_INCOME_MIXED_INCOME_POINT = 3;
+
+// NRB digital lending cap per borrower (NPR), used by the commission
+// NRB-cap-compliance check. Hardcoded pending real regulatory config.
+export const NRB_DIGITAL_LENDING_CAP = 1_000_000;

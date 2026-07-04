@@ -32,7 +32,10 @@ export class CollegeFormDto {
   @MaxLength(20)
   contactPhone?: string;
 
-  @ApiProperty({ description: 'Whether the college confirms the student\'s application/enrollment' })
+  @ApiProperty({
+    description:
+      "Whether the college confirms the student's application/enrollment",
+  })
   @IsBoolean()
   isApplicationVerified: boolean;
 

@@ -30,16 +30,23 @@ import { UserRole } from '../../common/enums';
 @Roles(UserRole.COLLEGE)
 @Controller('enrollment-certificates')
 export class EnrollmentCertificateController {
-  constructor(private readonly enrollmentCertificateService: EnrollmentCertificateService) {}
+  constructor(
+    private readonly enrollmentCertificateService: EnrollmentCertificateService,
+  ) {}
 
   @Post()
   @ApiOperation({ summary: 'Create and save a new enrollment certificate' })
-  create(@Body() dto: CreateEnrollmentCertificateDto, @CurrentUser() user: JwtPayload) {
+  create(
+    @Body() dto: CreateEnrollmentCertificateDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
     return this.enrollmentCertificateService.create(dto, user.email);
   }
 
   @Get()
-  @ApiOperation({ summary: 'List all enrollment certificates created by this college account' })
+  @ApiOperation({
+    summary: 'List all enrollment certificates created by this college account',
+  })
   findAll(@CurrentUser() user: JwtPayload) {
     return this.enrollmentCertificateService.findAll(user.email);
   }

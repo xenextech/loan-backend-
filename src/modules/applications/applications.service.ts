@@ -256,6 +256,11 @@ export class ApplicationsService {
   // ── Step 4: Submit declaration ────────────────────────────────────────────
   async submit(id: string, userId: string, dto: Step4Dto) {
     const application = await this.assertEditableByUser(id, userId);
+    if (!application.applicationNumber) {
+      throw new BadRequestException(
+        'Application is missing an application number',
+      );
+    }
 
     if (!dto.informationAccurate || !dto.authorizeVerification) {
       throw new BadRequestException(

@@ -66,7 +66,7 @@ ADD COLUMN     "supporterDate" TIMESTAMP(3),
 ADD COLUMN     "supporterName" TEXT,
 ADD COLUMN     "supporterPost" TEXT,
 ADD COLUMN     "supporterSignature" TEXT,
-ADD COLUMN     "termsConditionsAndRecommendations" TEXT,
+ADD COLUMN     "termsAndConditions" TEXT,
 ADD COLUMN     "utilizationOfFund" TEXT,
 ADD COLUMN     "waiver" TEXT;
 

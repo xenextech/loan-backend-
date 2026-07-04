@@ -12,7 +12,13 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiConsumes, ApiBody } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiBearerAuth,
+  ApiConsumes,
+  ApiBody,
+} from '@nestjs/swagger';
 import { memoryStorage } from 'multer';
 import { ParentsService } from './parents.service';
 import { ParentProfileDto } from './dto/parent-profile.dto';
@@ -39,7 +45,10 @@ export class ParentsController {
 
   @Put('me')
   @ApiOperation({ summary: 'Create or update parent profile' })
-  upsertProfile(@CurrentUser() user: JwtPayload, @Body() dto: ParentProfileDto) {
+  upsertProfile(
+    @CurrentUser() user: JwtPayload,
+    @Body() dto: ParentProfileDto,
+  ) {
     return this.parentsService.upsertProfile(user.sub, dto);
   }
 

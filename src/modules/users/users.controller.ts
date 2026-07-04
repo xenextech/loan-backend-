@@ -21,7 +21,10 @@ export class UsersController {
 
   @Patch('me/change-password')
   @ApiOperation({ summary: 'Change current user password' })
-  changePassword(@CurrentUser() user: JwtPayload, @Body() dto: ChangePasswordDto) {
+  changePassword(
+    @CurrentUser() user: JwtPayload,
+    @Body() dto: ChangePasswordDto,
+  ) {
     return this.usersService.changePassword(user.sub, dto);
   }
 

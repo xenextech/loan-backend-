@@ -9,7 +9,9 @@ export class QueryApplicationDto extends PaginationDto {
   @IsEnum(ApplicationStatus)
   status?: ApplicationStatus;
 
-  @ApiPropertyOptional({ description: 'Sort field: createdAt | submittedAt | loanAmount' })
+  @ApiPropertyOptional({
+    description: 'Sort field: createdAt | submittedAt | loanAmount',
+  })
   @IsOptional()
   @IsString()
   sortBy?: string;

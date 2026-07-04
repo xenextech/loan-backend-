@@ -33,13 +33,17 @@ export class AgreementController {
   constructor(private readonly agreementService: AgreementService) {}
 
   @Post()
-  @ApiOperation({ summary: 'Create and save a new bonafide certificate (agreement)' })
+  @ApiOperation({
+    summary: 'Create and save a new bonafide certificate (agreement)',
+  })
   create(@Body() dto: CreateAgreementDto, @CurrentUser() user: JwtPayload) {
     return this.agreementService.create(dto, user.email);
   }
 
   @Get()
-  @ApiOperation({ summary: 'List all agreements created by this college account' })
+  @ApiOperation({
+    summary: 'List all agreements created by this college account',
+  })
   findAll(@CurrentUser() user: JwtPayload) {
     return this.agreementService.findAll(user.email);
   }

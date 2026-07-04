@@ -39,7 +39,9 @@ export class OfferLetterController {
   }
 
   @Get()
-  @ApiOperation({ summary: 'List all offer letters created by this college account' })
+  @ApiOperation({
+    summary: 'List all offer letters created by this college account',
+  })
   findAll(@CurrentUser() user: JwtPayload) {
     return this.offerLetterService.findAll(user.email);
   }

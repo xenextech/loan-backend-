@@ -1,5 +1,12 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsString, IsEnum, IsNumber, Min, IsUrl } from 'class-validator';
+import {
+  IsOptional,
+  IsString,
+  IsEnum,
+  IsNumber,
+  Min,
+  IsUrl,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 import { MaritalStatus, FeeStructureMethod } from '../../../common/enums';
 
@@ -31,7 +38,9 @@ export class Step3Dto {
   spouseName?: string;
 
   // Education — Expected Salary
-  @ApiPropertyOptional({ description: 'Expected monthly salary after course (NPR)' })
+  @ApiPropertyOptional({
+    description: 'Expected monthly salary after course (NPR)',
+  })
   @IsOptional()
   @Type(() => Number)
   @IsNumber()
@@ -44,12 +53,16 @@ export class Step3Dto {
   @IsEnum(FeeStructureMethod)
   feeStructureMethod?: FeeStructureMethod;
 
-  @ApiPropertyOptional({ description: 'URL of fee structure (if method is LINK)' })
+  @ApiPropertyOptional({
+    description: 'URL of fee structure (if method is LINK)',
+  })
   @IsOptional()
   @IsUrl()
   feeStructureUrl?: string;
 
-  @ApiPropertyOptional({ description: 'Manual fee details (if method is MANUAL)' })
+  @ApiPropertyOptional({
+    description: 'Manual fee details (if method is MANUAL)',
+  })
   @IsOptional()
   @IsString()
   feeStructureText?: string;

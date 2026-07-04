@@ -1,9 +1,17 @@
-import { Injectable, BadRequestException, InternalServerErrorException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  InternalServerErrorException,
+  Logger,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { randomUUID } from 'crypto';
 import { extname } from 'path';
-import { STORAGE_BUCKETS, SIGNED_URL_EXPIRY_SECONDS } from './storage.constants';
+import {
+  STORAGE_BUCKETS,
+  SIGNED_URL_EXPIRY_SECONDS,
+} from './storage.constants';
 
 export interface UploadResult {
   fileName: string;

@@ -293,7 +293,10 @@ export class CreateOfferLetterDto {
   @IsOptional()
   fees?: FeesInfoDto;
 
-  @ApiPropertyOptional({ type: [String], example: ['Student must maintain 50% attendance'] })
+  @ApiPropertyOptional({
+    type: [String],
+    example: ['Student must maintain 50% attendance'],
+  })
   @IsArray()
   @IsString({ each: true })
   @IsOptional()

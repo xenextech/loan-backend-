@@ -29,7 +29,9 @@ export class AuthService {
 
   // ── Register ───────────────────────────────────────────────────────────────
   async register(dto: RegisterDto) {
-    const existing = await this.prisma.user.findUnique({ where: { email: dto.email } });
+    const existing = await this.prisma.user.findUnique({
+      where: { email: dto.email },
+    });
     if (existing) throw new ConflictException('Email already registered');
 
     const passwordHash = await bcrypt.hash(dto.password, 12);
@@ -45,24 +47,35 @@ export class AuthService {
       },
     });
 
-    await this.notifications.sendEmailVerification(user.email, emailVerifyToken);
+    await this.notifications.sendEmailVerification(
+      user.email,
+      emailVerifyToken,
+    );
 
     return { message: 'Registration successful. Please verify your email.' };
   }
 
   // ── Login ──────────────────────────────────────────────────────────────────
   async login(dto: LoginDto) {
-    const user = await this.prisma.user.findUnique({ where: { email: dto.email } });
+    const user = await this.prisma.user.findUnique({
+      where: { email: dto.email },
+    });
     if (!user) throw new UnauthorizedException('Invalid credentials');
 
     const passwordMatch = await bcrypt.compare(dto.password, user.passwordHash);
     if (!passwordMatch) throw new UnauthorizedException('Invalid credentials');
 
     if (!user.isEmailVerified) {
-      throw new UnauthorizedException('Please verify your email before logging in');
+      throw new UnauthorizedException(
+        'Please verify your email before logging in',
+      );
     }
 
-    const payload: JwtPayload = { sub: user.id, email: user.email, role: user.role as unknown as UserRole };
+    const payload: JwtPayload = {
+      sub: user.id,
+      email: user.email,
+      role: user.role,
+    };
     const accessToken = this.jwt.sign(payload);
 
     return {
@@ -80,7 +93,8 @@ export class AuthService {
       },
     });
 
-    if (!user) throw new BadRequestException('Invalid or expired verification token');
+    if (!user)
+      throw new BadRequestException('Invalid or expired verification token');
 
     await this.prisma.user.update({
       where: { id: user.id },
@@ -96,10 +110,15 @@ export class AuthService {
 
   // ── Forgot Password ────────────────────────────────────────────────────────
   async forgotPassword(dto: ForgotPasswordDto) {
-    const user = await this.prisma.user.findUnique({ where: { email: dto.email } });
+    const user = await this.prisma.user.findUnique({
+      where: { email: dto.email },
+    });
 
     // Always return success to prevent email enumeration
-    if (!user) return { message: 'If that email is registered, a reset link has been sent.' };
+    if (!user)
+      return {
+        message: 'If that email is registered, a reset link has been sent.',
+      };
 
     const token = randomBytes(32).toString('hex');
     const expiry = new Date(Date.now() + 60 * 60 * 1000); // 1h
@@ -111,7 +130,9 @@ export class AuthService {
 
     await this.notifications.sendPasswordReset(user.email, token);
 
-    return { message: 'If that email is registered, a reset link has been sent.' };
+    return {
+      message: 'If that email is registered, a reset link has been sent.',
+    };
   }
 
   // ── Reset Password ─────────────────────────────────────────────────────────

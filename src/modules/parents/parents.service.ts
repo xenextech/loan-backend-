@@ -29,10 +29,15 @@ export class ParentsService {
   }
 
   async uploadSalarySheet(userId: string, file: Express.Multer.File) {
-    const profile = await this.prisma.parentProfile.findUnique({ where: { userId } });
+    const profile = await this.prisma.parentProfile.findUnique({
+      where: { userId },
+    });
 
     if (profile?.salarySheetFilePath && profile?.salarySheetBucketName) {
-      await this.storage.deleteFile(profile.salarySheetBucketName, profile.salarySheetFilePath);
+      await this.storage.deleteFile(
+        profile.salarySheetBucketName,
+        profile.salarySheetFilePath,
+      );
     }
 
     const uploadResult = await this.storage.uploadFile(
@@ -68,13 +73,18 @@ export class ParentsService {
   }
 
   async deleteSalarySheet(userId: string) {
-    const profile = await this.prisma.parentProfile.findUnique({ where: { userId } });
+    const profile = await this.prisma.parentProfile.findUnique({
+      where: { userId },
+    });
 
     if (!profile?.salarySheetFilePath || !profile?.salarySheetBucketName) {
       throw new NotFoundException('No salary sheet found');
     }
 
-    await this.storage.deleteFile(profile.salarySheetBucketName, profile.salarySheetFilePath);
+    await this.storage.deleteFile(
+      profile.salarySheetBucketName,
+      profile.salarySheetFilePath,
+    );
 
     return this.prisma.parentProfile.update({
       where: { userId },

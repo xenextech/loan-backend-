@@ -2,7 +2,10 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AdminQueryDto } from './dto/admin-query.dto';
 import { ApplicationStatus } from '../../common/enums';
-import { paginate, buildPaginatedResponse } from '../../common/dto/pagination.dto';
+import {
+  paginate,
+  buildPaginatedResponse,
+} from '../../common/dto/pagination.dto';
 import { Prisma } from '@prisma/client';
 
 @Injectable()
@@ -27,7 +30,10 @@ export class AdminService {
       where.studyInformation = { studyType: query.studyType };
     }
 
-    if (query.loanAmountMin !== undefined || query.loanAmountMax !== undefined) {
+    if (
+      query.loanAmountMin !== undefined ||
+      query.loanAmountMax !== undefined
+    ) {
       where.loanInformation = {
         ...(query.loanAmountMin !== undefined
           ? { loanAmount: { gte: query.loanAmountMin } }
@@ -53,8 +59,15 @@ export class AdminService {
     const { take, skip } = paginate(query.page, query.limit);
     const where = this.buildWhere(query);
 
-    const allowedSortFields = ['submittedAt', 'createdAt', 'fullName', 'applicationNumber'];
-    const sortBy = allowedSortFields.includes(query.sortBy ?? '') ? query.sortBy! : 'submittedAt';
+    const allowedSortFields = [
+      'submittedAt',
+      'createdAt',
+      'fullName',
+      'applicationNumber',
+    ];
+    const sortBy = allowedSortFields.includes(query.sortBy ?? '')
+      ? query.sortBy!
+      : 'submittedAt';
 
     const [data, total] = await Promise.all([
       this.prisma.loanApplication.findMany({
@@ -64,14 +77,23 @@ export class AdminService {
         orderBy: { [sortBy]: query.sortOrder ?? 'desc' },
         include: {
           studyInformation: true,
-          loanInformation: { select: { loanAmount: true, expectedSalary: true } },
-          documents: { select: { id: true, documentType: true, publicUrl: true } },
+          loanInformation: {
+            select: { loanAmount: true, expectedSalary: true },
+          },
+          documents: {
+            select: { id: true, documentType: true, publicUrl: true },
+          },
         },
       }),
       this.prisma.loanApplication.count({ where }),
     ]);
 
-    return buildPaginatedResponse(data, total, query.page ?? 1, query.limit ?? 20);
+    return buildPaginatedResponse(
+      data,
+      total,
+      query.page ?? 1,
+      query.limit ?? 20,
+    );
   }
 
   // ── Get full application detail ────────────────────────────────────────────
@@ -142,7 +164,9 @@ export class AdminService {
   // ── Dashboard stats ────────────────────────────────────────────────────────
   async getDashboardStats() {
     const [totalSubmitted, totalDraft, recentSubmissions] = await Promise.all([
-      this.prisma.loanApplication.count({ where: { status: ApplicationStatus.SUBMITTED } }),
+      this.prisma.loanApplication.count({
+        where: { status: ApplicationStatus.SUBMITTED },
+      }),
       this.prisma.loanApplication.count({ where: { status: 'DRAFT' } }),
       this.prisma.loanApplication.findMany({
         where: { status: ApplicationStatus.SUBMITTED },

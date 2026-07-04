@@ -14,7 +14,13 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiConsumes, ApiBody } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiBearerAuth,
+  ApiConsumes,
+  ApiBody,
+} from '@nestjs/swagger';
 import { memoryStorage } from 'multer';
 import { DocumentsService } from './documents.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -45,11 +51,21 @@ export class DocumentsController {
   uploadDocument(
     @CurrentUser() user: JwtPayload,
     @Param('applicationId') applicationId: string,
-    @Param('documentType', new ParseEnumPipe(DocumentType)) documentType: DocumentType,
-    @UploadedFile(new ParseFilePipe({ validators: [new MaxFileSizeValidator({ maxSize: 10 * 1024 * 1024 })] }))
+    @Param('documentType', new ParseEnumPipe(DocumentType))
+    documentType: DocumentType,
+    @UploadedFile(
+      new ParseFilePipe({
+        validators: [new MaxFileSizeValidator({ maxSize: 10 * 1024 * 1024 })],
+      }),
+    )
     file: Express.Multer.File,
   ) {
-    return this.documentsService.uploadDocument(applicationId, user.sub, documentType, file);
+    return this.documentsService.uploadDocument(
+      applicationId,
+      user.sub,
+      documentType,
+      file,
+    );
   }
 
   @Get()
@@ -58,7 +74,11 @@ export class DocumentsController {
     @CurrentUser() user: JwtPayload,
     @Param('applicationId') applicationId: string,
   ) {
-    return this.documentsService.getDocuments(applicationId, user.sub, user.role);
+    return this.documentsService.getDocuments(
+      applicationId,
+      user.sub,
+      user.role,
+    );
   }
 
   @Delete(':documentId')

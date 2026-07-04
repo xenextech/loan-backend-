@@ -6,5 +6,6 @@ import { EligibilityService } from './eligibility.service';
 @Module({
   controllers: [UtilsController],
   providers: [EmiCalculatorService, EligibilityService],
+  exports: [EmiCalculatorService],
 })
 export class UtilsModule {}

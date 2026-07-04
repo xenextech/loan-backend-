@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import {
   Injectable,
   NotFoundException,
@@ -81,7 +80,7 @@ export class OfferLetterService {
         labFeePerSem: fees?.labFeePerSem,
         totalApprox: fees?.totalApprox,
         // JSON arrays
-        conditions: (conditions ?? []) as unknown as Prisma.InputJsonValue,
+        conditions: conditions ?? [],
         signatories: (signatories ?? []) as unknown as Prisma.InputJsonValue,
         // QR
         qrToken: qr?.qrToken,
@@ -204,7 +203,7 @@ export class OfferLetterService {
         }),
         // JSON arrays
         ...(conditions !== undefined && {
-          conditions: conditions as unknown as Prisma.InputJsonValue,
+          conditions: conditions,
         }),
         ...(signatories !== undefined && {
           signatories: signatories as unknown as Prisma.InputJsonValue,

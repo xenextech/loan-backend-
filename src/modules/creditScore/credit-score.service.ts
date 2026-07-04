@@ -9,7 +9,7 @@ import {
   ScoreDto,
   ScoreRule,
 } from './dto/credit-score.dto';
-import { PrismaService } from 'src/prisma/prisma.service';
+import { PrismaService } from '../../prisma/prisma.service';
 import {
   RiskCategory,
   CreditGrade,
@@ -30,7 +30,13 @@ export class CreditScoreService {
     return Object?.entries(parameter).map(([key, value]) => `${key}.${value}`);
   }
 
+  // Returns null (rather than throwing) when input is null/undefined or an
+  // unrecognized value — several ScoreDto fields (e.g. parentsBorrowingsWithBFIs)
+  // are optional on LoanApplication and are frequently unset, so "no matching
+  // rule" is an expected case, not an error.
   private getScore<T extends ScoreRule>(rules: readonly T[], input: any) {
+    if (input === null || input === undefined) return null;
+
     const rule = rules.find((r) => {
       if (typeof input === 'number') {
         if (r.min !== undefined && input < r.min) return false;
@@ -41,9 +47,7 @@ export class CreditScoreService {
       return r.value === input;
     });
 
-    if (!rule) {
-      throw new Error('No matching rule found.');
-    }
+    if (!rule) return null;
 
     return {
       weight: rule.weight,
@@ -381,6 +385,7 @@ export class CreditScoreService {
       }
 
       const score = this.getScore(rules, value);
+      if (!score) continue;
 
       totalWeight += score.weight;
       totalWeightScore += score.weightScore;

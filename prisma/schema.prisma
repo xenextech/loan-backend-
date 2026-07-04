@@ -86,6 +86,29 @@ enum AuditAction {
   APPLICATION_LINK_GENERATED
   COLLEGE_FORM_SUBMITTED
   PARENT_FORM_SUBMITTED
+  DISBURSEMENT_CONDITION_UPDATED
+  DISBURSEMENT_CONFIRMED
+  DISBURSEMENT_TRANCHE_CREATED
+  EMI_SCHEDULE_GENERATED
+  EMI_PAYMENT_RECORDED
+  EMI_MARKED_OVERDUE
+  COMMISSION_ENTRY_CREATED
+  COMMISSION_ENTRY_PAID
+  COMMISSION_PARTNER_UPDATED
+  AGREEMENT_GENERATED
+  AGREEMENT_SIGNED
+  INSURANCE_POLICY_ADDED
+  NOTIFICATION_TEMPLATE_UPDATED
+  OFFER_LETTER_VERIFIED
+  MANUAL_AUDIT_ENTRY
+}
+
+enum AuditCategory {
+  APPROVAL
+  DISBURSEMENT
+  REPAYMENT
+  COMMISSION
+  SYSTEM
 }
 
 enum ApplicationLinkType {
@@ -93,7 +116,74 @@ enum ApplicationLinkType {
   COLLEGE
 }
 
+enum NotificationChannel {
+  APP
+  EMAIL
+  SMS
+  WHATSAPP
+}
 
+enum NotificationDeliveryStatus {
+  SENT
+  DELIVERED
+  READ
+  FAILED
+}
+
+enum DisbursementConditionStatus {
+  PENDING
+  DONE
+  MISSING
+}
+
+enum DisbursementStatus {
+  PENDING
+  PARTIAL
+  COMPLETED
+}
+
+enum TrancheStatus {
+  PENDING
+  CREDITED
+  FAILED
+}
+
+enum EmiStatus {
+  UPCOMING
+  PAID
+  OVERDUE
+  PARTIAL
+}
+
+enum GeneratedAgreementType {
+  LOAN_AGREEMENT
+  GUARANTEE_DEED
+  HYPOTHECATION
+  PROMISSORY_NOTE
+}
+
+enum GeneratedAgreementStatus {
+  DRAFT
+  PENDING_SIGNATURE
+  SIGNED
+  ACTIVE
+}
+
+enum CommissionPartnerType {
+  BANK
+  COLLEGE
+}
+
+enum CommissionRateType {
+  FLAT
+  PERCENTAGE
+}
+
+enum CommissionEntryStatus {
+  PENDING
+  INVOICE_DUE
+  PAID
+}
 
 // ─── Models ───────────────────────────────────────────────────────────────────
 
@@ -120,9 +210,10 @@ model User {
 
 model LoanApplication {
   id                String            @id @default(uuid())
-  applicationNumber String?            @unique
+  applicationNumber String?           @unique
   status            ApplicationStatus @default(DRAFT)
   userId            String?
+  branch            String?
 
   // Step 1: Personal Information
   fullName    String?
@@ -158,33 +249,32 @@ model LoanApplication {
   submittedAt           DateTime?
 
   // Basic Information (Credit Appraisal)
-  customerName                 String?
-  relationshipStartDate      DateTime?
+  customerName                String?
+  relationshipStartDate       DateTime?
   customerGroup               String?
-  obligorNumber                Int?
-  permanentAddress             String?
-  correspondenceAddress        String?
-  profession                   String?
-  repaymentSource               String?
-  citizenshipNumber             String?
-  citizenshipIssuedDate         DateTime?
-  citizenshipIssuedPlace        String?
-  nidNumber                     String?
-  panNumber                     String?
-  licenseNumber                 String?
-  existingBankingRelationship   String?
-  isBlacklisted                 Boolean?
+  obligorNumber               Int?
+  permanentAddress            String?
+  correspondenceAddress       String?
+  profession                  String?
+  repaymentSource             String?
+  citizenshipNumber           String?
+  citizenshipIssuedDate       DateTime?
+  citizenshipIssuedPlace      String?
+  nidNumber                   String?
+  panNumber                   String?
+  licenseNumber               String?
+  existingBankingRelationship String?
+  isBlacklisted               Boolean?
 
   // Step 5: Family Structure / Credit Facility
-  familyStructureType FamilyStructure?
-  facility            String?
-  purpose             String?
-  limit               Decimal?    @db.Decimal(18, 2)
-  period              Int?
-  periodUnit          PeriodUnit?
-  interestRate        Decimal?    @db.Decimal(5, 2)
-  fee                 Decimal?    @db.Decimal(18, 2)
-  remarks             String?
+  facility     String?
+  purpose      String?
+  limit        Decimal?    @db.Decimal(18, 2)
+  period       Int?
+  periodUnit   PeriodUnit?
+  interestRate Decimal?    @db.Decimal(5, 2)
+  fee          Decimal?    @db.Decimal(18, 2)
+  remarks      String?
 
   // Step 6: NRB Reporting
   baselClassification String?
@@ -206,16 +296,18 @@ model LoanApplication {
   greenFinanceTaxonomyTag    String?
 
   // Step 8: Credit Appraisal
-  moneyLaunderingRisk String?
-  waiver                            String?
-  termsConditionsAndRecommendations String?
-  bankingRelationship               String?
-  keyCreditRiskMitigation           String?
-  justificationOfLoan               String?
-  accountStrategy                   String?
-  disbursementSection               String?
-  utilizationOfFund                 String?
-  conclusionAndRecommendation       String?
+  moneyLaunderingRisk         String?
+  amlRisk                     String?
+  waiver                      String?
+  termsAndConditions          String?
+  bankingRelationship         String?
+  bankingRelationshipRemarks  String?
+  keyCreditRiskMitigation     String?
+  justificationOfLoan         String?
+  accountStrategy             String?
+  disbursementSection         String?
+  utilizationOfFund           String?
+  conclusionAndRecommendation String?
 
   // Approval Section
   initiatorName      String?
@@ -236,9 +328,9 @@ model LoanApplication {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  user                User?                 @relation(fields: [userId], references: [id], onDelete: Cascade)
-  studyInformation    StudyInformation?
-  loanInformation     LoanInformation?
+  user             User?             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  studyInformation StudyInformation?
+  loanInformation  LoanInformation?
 
   documents           Document[]
   notifications       Notification[]
@@ -246,33 +338,43 @@ model LoanApplication {
   applicationLinks    ApplicationLink[]
   collegeVerification CollegeVerification?
   parentVerification  ParentVerification?
-  security            Security?
-  personalGuarantee   PersonalGuarantee?
-  insurance           Insurance?
-  repaymentCapacity   RepaymentCapacity?
-  familyMember        FamilyMember?
-  creditLimit               Decimal? @db.Decimal(18, 2)
+  // security
+  securityDetails     String?
+
+  fmv          Decimal? @db.Decimal(18, 2)
+  proposedLoan Decimal? @db.Decimal(18, 2)
+
+  financeAgainstFmv         Decimal?                @db.Decimal(5, 2)
+  personalGuarantee         PersonalGuarantee?
+  insurance                 Insurance?
+  repaymentCapacity         RepaymentCapacity?
+  familyMember              FamilyMember[]
+  disbursementConditions    DisbursementCondition[]
+  disbursement              Disbursement?
+  emiSchedule               EmiScheduleEntry[]
+  generatedAgreements       GeneratedAgreement[]
+  insurancePolicies         InsurancePolicy[]
+  commissionEntries         CommissionEntry[]
+  creditLimit               Decimal?                @db.Decimal(18, 2)
   dsgir                     Int?
   operationOfInstitution    Int?
   satisfactoryPerformance   Int?
   parentsBorrowingsWithBFIs String?
   sourceOfIncome            String?
-  loanToValueRatio          Decimal? @db.Decimal(5, 2)
+  loanToValueRatio          Decimal?                @db.Decimal(5, 2)
   performanceYears          Int?
   bankingRelationshipScore  Int?
   sourceOfIncomeScore       Int?
   creditRiskScoring         String?
   riskGrade                 String?
   totalScore                Int?
-  totalPercentage           Decimal? @db.Decimal(5, 2)
+  totalPercentage           Decimal?                @db.Decimal(5, 2)
 
   @@index([userId])
   @@index([status])
   @@index([submittedAt])
   @@map("loan_applications")
 }
-
-
 
 model StudyInformation {
   id            String @id @default(uuid())
@@ -336,34 +438,19 @@ model Document {
 model FamilyMember {
   id String @id @default(cuid())
 
-  applicationId String          @unique
+  applicationId String
   application   LoanApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
 
-  personName String?
-  age Int?
-  qualification String?
-  relationshipWithBorrower String?
+  personName                  String?
+  age                         Int?
+  qualification               String?
+  relationshipWithBorrower    String?
   occupationSocialInvolvement String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-}
 
-model Security {
-  id String @id @default(cuid())
-
-  applicationId String          @unique
-  application   LoanApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
-
-  securityDetails String?
-
-  fmv Decimal? @db.Decimal(18, 2)
-  proposedLoan Decimal? @db.Decimal(18, 2)
-
-  financeAgainstFmv Decimal? @db.Decimal(5, 2)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  @@index([applicationId])
 }
 
 enum FamilyStructure {
@@ -378,6 +465,7 @@ enum PeriodUnit {
   YEAR
   MONTH
 }
+
 model PersonalGuarantee {
   id String @id @default(cuid())
 
@@ -393,7 +481,7 @@ model PersonalGuarantee {
 
   guarantorConsent Boolean?
 
-  ciclStatus Boolean?
+  ciclStatus  Boolean?
   ciclRemarks String?
 
   blackListedDate DateTime?
@@ -444,10 +532,12 @@ model Notification {
   userId        String
   applicationId String?
 
-  type    NotificationType
-  title   String
-  message String
-  isRead  Boolean          @default(false)
+  type           NotificationType
+  channel        NotificationChannel?
+  deliveryStatus NotificationDeliveryStatus?
+  title          String
+  message        String
+  isRead         Boolean                     @default(false)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -492,8 +582,9 @@ model AuditLog {
   userId        String
   applicationId String?
 
-  action  AuditAction
-  payload Json?
+  action   AuditAction
+  category AuditCategory @default(SYSTEM)
+  payload  Json?
 
   createdAt DateTime @default(now())
 
@@ -502,6 +593,7 @@ model AuditLog {
 
   @@index([userId])
   @@index([applicationId])
+  @@index([category])
   @@map("audit_logs")
 }
 
@@ -534,6 +626,10 @@ model CollegeVerification {
 
   isApplicationVerified Boolean @default(false)
   verificationNotes     String?
+
+  offerLetterVerified         Boolean   @default(false)
+  offerLetterVerifiedAt       DateTime?
+  offerLetterVerifiedByUserId String?
 
   // Offer letter document
   offerLetterFileName         String?
@@ -615,15 +711,15 @@ model OfferLetter {
   validUntilBS String?
 
   // Student
-  studentFullName  String
-  studentDobAD     String?
-  studentDobBS     String?
-  citizenshipNumber    String?
-  fatherName       String?
-  motherName       String?
-  permanentAddress String?
-  district         String?
-  province         String?
+  studentFullName   String
+  studentDobAD      String?
+  studentDobBS      String?
+  citizenshipNumber String?
+  fatherName        String?
+  motherName        String?
+  permanentAddress  String?
+  district          String?
+  province          String?
 
   // Program
   programName        String?
@@ -748,4 +844,200 @@ model EnrollmentCertificate {
 
   @@index([createdByEmail])
   @@map("enrollment_certificates")
+}
+
+// ─── Dashboard: Disbursement ───────────────────────────────────────────────────
+
+model DisbursementCondition {
+  id            String @id @default(cuid())
+  applicationId String
+
+  label       String
+  status      DisbursementConditionStatus @default(PENDING)
+  remarks     String?
+  completedAt DateTime?
+
+  completedByUserId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  application LoanApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@index([applicationId])
+  @@map("disbursement_conditions")
+}
+
+model Disbursement {
+  id            String @id @default(cuid())
+  applicationId String @unique
+
+  status               DisbursementStatus @default(PENDING)
+  totalDisbursedAmount Decimal?           @db.Decimal(18, 2)
+  initiatedByUserId    String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  application LoanApplication       @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  tranches    DisbursementTranche[]
+
+  @@map("disbursements")
+}
+
+model DisbursementTranche {
+  id             String @id @default(cuid())
+  disbursementId String
+
+  trancheNumber    Int
+  amount           Decimal       @db.Decimal(18, 2)
+  accountCredited  String?
+  status           TrancheStatus @default(PENDING)
+  disbursedAt      DateTime?
+  commissionAmount Decimal?      @db.Decimal(18, 2)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  disbursement Disbursement @relation(fields: [disbursementId], references: [id], onDelete: Cascade)
+
+  @@index([disbursementId])
+  @@map("disbursement_tranches")
+}
+
+// ─── Dashboard: EMI schedule ────────────────────────────────────────────────────
+
+model EmiScheduleEntry {
+  id            String @id @default(cuid())
+  applicationId String
+
+  installmentNumber    Int
+  dueDate              DateTime
+  emiAmount            Decimal   @db.Decimal(18, 2)
+  principalComponent   Decimal   @db.Decimal(18, 2)
+  interestComponent    Decimal   @db.Decimal(18, 2)
+  outstandingPrincipal Decimal   @db.Decimal(18, 2)
+  status               EmiStatus @default(UPCOMING)
+  paidAmount           Decimal?  @default(0) @db.Decimal(18, 2)
+  paidDate             DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  application LoanApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@index([applicationId])
+  @@index([dueDate])
+  @@index([status])
+  @@map("emi_schedule_entries")
+}
+
+// ─── Dashboard: Notification templates ─────────────────────────────────────────
+
+model NotificationTemplate {
+  id String @id @default(cuid())
+
+  name     String
+  channel  NotificationChannel
+  subject  String?
+  body     String
+  isActive Boolean             @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("notification_templates")
+}
+
+// ─── Dashboard: Document center ────────────────────────────────────────────────
+
+model GeneratedAgreement {
+  id            String @id @default(cuid())
+  applicationId String
+
+  agreementType    GeneratedAgreementType
+  status           GeneratedAgreementStatus @default(DRAFT)
+  templateSnapshot Json?
+  documentUrl      String?
+
+  generatedByUserId String
+  sentToSignAt      DateTime?
+  signedAt          DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  application LoanApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@index([applicationId])
+  @@map("generated_agreements")
+}
+
+// ─── Dashboard: Insurance tracker ──────────────────────────────────────────────
+
+model InsurancePolicy {
+  id            String @id @default(cuid())
+  applicationId String
+
+  policyNumber  String
+  insurer       String
+  policyType    String?
+  sumInsured    Decimal   @db.Decimal(18, 2)
+  premiumAmount Decimal?  @db.Decimal(18, 2)
+  startDate     DateTime?
+  expiryDate    DateTime
+
+  addedByUserId String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  application LoanApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@index([applicationId])
+  @@index([expiryDate])
+  @@map("insurance_policies")
+}
+
+// ─── Dashboard: Commission management ──────────────────────────────────────────
+
+model CommissionPartner {
+  id String @id @default(cuid())
+
+  partnerType  CommissionPartnerType
+  name         String
+  rateType     CommissionRateType
+  rateValue    Decimal               @db.Decimal(10, 4)
+  mouReference String?
+  isActive     Boolean               @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  entries CommissionEntry[]
+
+  @@map("commission_partners")
+}
+
+model CommissionEntry {
+  id            String  @id @default(cuid())
+  applicationId String?
+  partnerId     String
+
+  amount     Decimal               @db.Decimal(18, 2)
+  month      DateTime
+  status     CommissionEntryStatus @default(PENDING)
+  invoiceRef String?
+  paidAt     DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  application LoanApplication?  @relation(fields: [applicationId], references: [id], onDelete: SetNull)
+  partner     CommissionPartner @relation(fields: [partnerId], references: [id], onDelete: Restrict)
+
+  @@index([applicationId])
+  @@index([partnerId])
+  @@index([month])
+  @@map("commission_entries")
 }

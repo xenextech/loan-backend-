@@ -1,11 +1,178 @@
 import {
+  IsArray,
   IsBoolean,
-  IsDateString,
+  IsISO8601,
   IsNumber,
   IsOptional,
   IsString,
+  ValidateNested,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 import { ApiPropertyOptional } from '@nestjs/swagger';
+
+export class FamilyMemberDto {
+  @ApiPropertyOptional({
+    description: 'Name of the family member or co-applicant',
+    example: 'Jane Doe',
+  })
+  @IsOptional()
+  @IsString()
+  personName?: string;
+
+  @ApiPropertyOptional({ description: 'Age of the family member', example: 42 })
+  @IsOptional()
+  @IsNumber()
+  age?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Educational or professional qualifications of the family member',
+    example: "Master's Degree",
+  })
+  @IsOptional()
+  @IsString()
+  qualification?: string;
+
+  @ApiPropertyOptional({
+    description: 'Relationship matrix tie to the borrower entity',
+    example: 'Spouse',
+  })
+  @IsOptional()
+  @IsString()
+  relationshipWithBorrower?: string;
+
+  @ApiPropertyOptional({
+    description: 'Details on occupation and community social involvements',
+    example: 'Business Owner & Rotary Member',
+  })
+  @IsOptional()
+  @IsString()
+  occupationSocialInvolvement?: string;
+}
+
+export class PersonalGuaranteeDto {
+  @ApiPropertyOptional({
+    description: 'Full legal name of the individual personal guarantor',
+    example: 'Robert Doe',
+  })
+  @IsOptional()
+  @IsString()
+  nameOfGuarantor?: string;
+
+  @ApiPropertyOptional({
+    description: 'Relationship bond details of the guarantor to the borrower',
+    example: 'Brother',
+  })
+  @IsOptional()
+  @IsString()
+  relationship?: string;
+
+  @ApiPropertyOptional({
+    description: 'Age of the personal guarantor',
+    example: 50,
+  })
+  @IsOptional()
+  @IsNumber()
+  age?: number;
+
+  @ApiPropertyOptional({
+    description: 'Estimated individual net worth evaluation of the guarantor',
+    example: 15000000,
+  })
+  @IsOptional()
+  @IsNumber()
+  netWorth?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Confirmation flag verifying guarantor formal consent was acquired',
+    example: true,
+  })
+  @IsOptional()
+  @IsBoolean()
+  guarantorConsent?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      'Credit Information Bureau (CICL) report status assessment clearance flag',
+    example: true,
+  })
+  @IsOptional()
+  @IsBoolean()
+  ciclStatus?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      'Qualitative remarks regarding the CICL credit report output tracking history',
+    example: 'No defaults flagged in reporting history.',
+  })
+  @IsOptional()
+  @IsString()
+  ciclRemarks?: string;
+
+  @ApiPropertyOptional({
+    description: 'Historical blacklisted date timestamp entries if applicable',
+    example: '2020-11-02T00:00:00.000Z',
+  })
+  @IsOptional()
+  @IsISO8601()
+  blackListedDate?: string;
+
+  @ApiPropertyOptional({
+    description: 'Release date records from official credit blacklists',
+    example: '2022-04-10T00:00:00.000Z',
+  })
+  @IsOptional()
+  @IsISO8601()
+  releasedDate?: string;
+}
+
+export class RepaymentCapacityDto {
+  @ApiPropertyOptional({
+    description:
+      'Repayment-allocated asset metrics tied to functional coverage calculations',
+    example: 5000000,
+  })
+  @IsOptional()
+  @IsNumber()
+  insuredAssets?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Valuation criteria scores tied directly to active repayment streams',
+    example: 6000000,
+  })
+  @IsOptional()
+  @IsNumber()
+  valueOfAssets?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Calculated summation totals dedicated for repayment stream insurance buffers',
+    example: 6500000,
+  })
+  @IsOptional()
+  @IsNumber()
+  sumOfInsurance?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Ancillary contextual reporting notes monitoring specific coverage metrics',
+    example: 'Primary asset base aligns to secondary cash streams.',
+  })
+  @IsOptional()
+  @IsString()
+  insuranceRemarks?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Total designated metrics accounting for structural insurance buffer safety limits',
+    example: 90,
+  })
+  @IsOptional()
+  @IsNumber()
+  insuranceCoverage?: number;
+}
 
 export class UpdateInitiatorApplicationDto {
   // =========================
@@ -22,10 +189,10 @@ export class UpdateInitiatorApplicationDto {
 
   @ApiPropertyOptional({
     description: 'Start date of banking relationship',
-    example: '2023-01-15',
+    example: '2023-01-15T00:00:00.000Z',
   })
   @IsOptional()
-  @IsDateString()
+  @IsISO8601()
   relationshipStartDate?: string;
 
   @ApiPropertyOptional({
@@ -94,10 +261,10 @@ export class UpdateInitiatorApplicationDto {
 
   @ApiPropertyOptional({
     description: 'Date of citizenship issuance',
-    example: '2015-05-20',
+    example: '2015-05-20T00:00:00.000Z',
   })
   @IsOptional()
-  @IsDateString()
+  @IsISO8601()
   citizenshipIssuedDate?: string;
 
   @ApiPropertyOptional({
@@ -114,7 +281,7 @@ export class UpdateInitiatorApplicationDto {
   })
   @IsOptional()
   @IsString()
-  nidNo?: string;
+  nidNumber?: string;
 
   @ApiPropertyOptional({
     description: 'Permanent Account Number (PAN)',
@@ -122,7 +289,7 @@ export class UpdateInitiatorApplicationDto {
   })
   @IsOptional()
   @IsString()
-  panNo?: string;
+  panNumber?: string;
 
   @ApiPropertyOptional({
     description: 'Driving or business license number',
@@ -130,7 +297,7 @@ export class UpdateInitiatorApplicationDto {
   })
   @IsOptional()
   @IsString()
-  licenseNo?: string;
+  licenseNumber?: string;
 
   @ApiPropertyOptional({
     description: 'Summary of history with the bank',
@@ -317,8 +484,7 @@ export class UpdateInitiatorApplicationDto {
     example: 1200000,
   })
   @IsOptional()
-  @IsNumber()
-  parentsBorrowingsWithBFIs?: number;
+  parentsBorrowingsWithBFIs?: string;
 
   @ApiPropertyOptional({
     description: 'Assessed score for stability of income source',
@@ -373,42 +539,15 @@ export class UpdateInitiatorApplicationDto {
   // =========================
 
   @ApiPropertyOptional({
-    description: 'Name of a key family member or co-applicant',
-    example: 'Jane Doe',
-  })
-  @IsOptional()
-  @IsString()
-  familyPersonName?: string;
-
-  @ApiPropertyOptional({ description: 'Age of the family member', example: 42 })
-  @IsOptional()
-  @IsNumber()
-  familyAge?: number;
-
-  @ApiPropertyOptional({
     description:
-      'Educational or professional qualifications of the family member',
-    example: "Master's Degree",
+      'Family members / co-applicants linked to this application. Sending this array replaces the existing set of family members entirely.',
+    type: () => [FamilyMemberDto],
   })
   @IsOptional()
-  @IsString()
-  familyQualification?: string;
-
-  @ApiPropertyOptional({
-    description: 'Relationship matrix tie to the borrower entity',
-    example: 'Spouse',
-  })
-  @IsOptional()
-  @IsString()
-  relationshipWithBorrower?: string;
-
-  @ApiPropertyOptional({
-    description: 'Details on occupation and community social involvements',
-    example: 'Business Owner & Rotary Member',
-  })
-  @IsOptional()
-  @IsString()
-  occupationSocialInvolvement?: string;
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => FamilyMemberDto)
+  familyMembers?: FamilyMemberDto[];
 
   @ApiPropertyOptional({
     description: 'Type of banking credit facility requested',
@@ -432,7 +571,7 @@ export class UpdateInitiatorApplicationDto {
   })
   @IsOptional()
   @IsNumber()
-  facilityLimit?: number;
+  limit?: number;
 
   @ApiPropertyOptional({
     description: 'Repayment tenor period duration in months',
@@ -508,79 +647,14 @@ export class UpdateInitiatorApplicationDto {
   // =========================
 
   @ApiPropertyOptional({
-    description: 'Full legal name of the individual personal guarantor',
-    example: 'Robert Doe',
-  })
-  @IsOptional()
-  @IsString()
-  guarantorName?: string;
-
-  @ApiPropertyOptional({
-    description: 'Relationship bond details of the guarantor to the borrower',
-    example: 'Brother',
-  })
-  @IsOptional()
-  @IsString()
-  guarantorRelationship?: string;
-
-  @ApiPropertyOptional({
-    description: 'Age of the personal guarantor',
-    example: 50,
-  })
-  @IsOptional()
-  @IsNumber()
-  guarantorAge?: number;
-
-  @ApiPropertyOptional({
-    description: 'Estimated individual net worth evaluation of the guarantor',
-    example: 15000000,
-  })
-  @IsOptional()
-  @IsNumber()
-  guarantorNetWorth?: number;
-
-  @ApiPropertyOptional({
     description:
-      'Confirmation flag verifying guarantor formal consent was acquired',
-    example: true,
+      'Personal guarantee details for this application. Sending this object replaces the existing personal guarantee entirely.',
+    type: () => PersonalGuaranteeDto,
   })
   @IsOptional()
-  @IsBoolean()
-  guarantorConsent?: boolean;
-
-  @ApiPropertyOptional({
-    description:
-      'Credit Information Bureau (CICL) report status assessment clearance flag',
-    example: true,
-  })
-  @IsOptional()
-  @IsBoolean()
-  ciclStatus?: boolean;
-
-  @ApiPropertyOptional({
-    description:
-      'Qualitative remarks regarding the CICL credit report output tracking history',
-    example: 'No defaults flagged in reporting history.',
-  })
-  @IsOptional()
-  @IsString()
-  ciclRemarks?: string;
-
-  @ApiPropertyOptional({
-    description: 'Historical blacklisted date timestamp entries if applicable',
-    example: '2020-11-02',
-  })
-  @IsOptional()
-  @IsDateString()
-  blackListedDate?: string;
-
-  @ApiPropertyOptional({
-    description: 'Release date records from official credit blacklists',
-    example: '2022-04-10',
-  })
-  @IsOptional()
-  @IsDateString()
-  releasedDate?: string;
+  @ValidateNested()
+  @Type(() => PersonalGuaranteeDto)
+  personalGuarantee?: PersonalGuaranteeDto;
 
   // =========================
   // 7. Insurance
@@ -633,48 +707,13 @@ export class UpdateInitiatorApplicationDto {
 
   @ApiPropertyOptional({
     description:
-      'Repayment-allocated asset metrics tied to functional coverage calculations',
-    example: 5000000,
+      'Repayment capacity details for this application. Sending this object replaces the existing repayment capacity entirely.',
+    type: () => RepaymentCapacityDto,
   })
   @IsOptional()
-  @IsNumber()
-  repaymentInsuredAssets?: number;
-
-  @ApiPropertyOptional({
-    description:
-      'Valuation criteria scores tied directly to active repayment streams',
-    example: 6000000,
-  })
-  @IsOptional()
-  @IsNumber()
-  repaymentValueOfAssets?: number;
-
-  @ApiPropertyOptional({
-    description:
-      'Calculated summation totals dedicated for repayment stream insurance buffers',
-    example: 6500000,
-  })
-  @IsOptional()
-  @IsNumber()
-  repaymentSumOfInsurance?: number;
-
-  @ApiPropertyOptional({
-    description:
-      'Ancillary contextual reporting notes monitoring specific coverage metrics',
-    example: 'Primary asset base aligns to secondary cash streams.',
-  })
-  @IsOptional()
-  @IsString()
-  repaymentInsuranceRemarks?: string;
-
-  @ApiPropertyOptional({
-    description:
-      'Total designated metrics accounting for structural insurance buffer safety limits',
-    example: 90,
-  })
-  @IsOptional()
-  @IsNumber()
-  repaymentInsuranceCoverage?: number;
+  @ValidateNested()
+  @Type(() => RepaymentCapacityDto)
+  repaymentCapacity?: RepaymentCapacityDto;
 
   // =========================
   // 9–17

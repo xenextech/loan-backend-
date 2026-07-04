@@ -49,7 +49,6 @@ export class ApplicationInitiatorService {
         loanInformation: true,
         documents: true,
         familyMember: true,
-        security: true,
         personalGuarantee: true,
         insurance: true,
         repaymentCapacity: true,
@@ -190,11 +189,64 @@ export class ApplicationInitiatorService {
   ) {
     await this.assertApplicationExists(applicationId);
 
+    const {
+      familyMembers,
+      personalGuarantee,
+      insuredAssets,
+      valueOfAssets,
+      sumOfInsurance,
+      insuranceCoverage,
+      insuranceRemarks,
+      repaymentCapacity,
+      ...rest
+    } = dto;
+
+    const insurance = {
+      insuredAssets,
+      valueOfAssets,
+      sumOfInsurance,
+      insuranceCoverage,
+      insuranceRemarks,
+    };
+    const hasInsuranceUpdate = Object.values(insurance).some(
+      (value) => value !== undefined,
+    );
+
     const updated = await this.prisma.loanApplication.update({
       where: { id: applicationId },
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       data: {
-        ...dto,
+        ...rest,
+        ...(familyMembers && {
+          familyMember: {
+            deleteMany: {},
+            create: familyMembers,
+          },
+        }),
+        ...(personalGuarantee && {
+          personalGuarantee: {
+            upsert: {
+              create: personalGuarantee,
+              update: personalGuarantee,
+            },
+          },
+        }),
+        ...(hasInsuranceUpdate && {
+          insurance: {
+            upsert: {
+              create: insurance,
+              update: insurance,
+            },
+          },
+        }),
+        ...(repaymentCapacity && {
+          repaymentCapacity: {
+            upsert: {
+              create: repaymentCapacity,
+              update: repaymentCapacity,
+            },
+          },
+        }),
       } as any,
     });
 

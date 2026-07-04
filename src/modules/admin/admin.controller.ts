@@ -1,5 +1,10 @@
 import { Controller, Get, Param, Query, UseGuards, Res } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiProduces } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiBearerAuth,
+  ApiProduces,
+} from '@nestjs/swagger';
 import type { Response } from 'express';
 import { AdminService } from './admin.service';
 import { AdminQueryDto } from './dto/admin-query.dto';
@@ -23,7 +28,9 @@ export class AdminController {
   }
 
   @Get('applications')
-  @ApiOperation({ summary: 'List all submitted applications with search & filters' })
+  @ApiOperation({
+    summary: 'List all submitted applications with search & filters',
+  })
   listApplications(@Query() query: AdminQueryDto) {
     return this.adminService.listApplications(query);
   }

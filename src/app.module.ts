@@ -20,6 +20,7 @@ import { ParentPublicModule } from './modules/parent-public/parent-public.module
 import { OfferLetterModule } from './modules/offer-letter/offer-letter.module';
 import { AgreementModule } from './modules/agreement/agreement.module';
 import { EnrollmentCertificateModule } from './modules/enrollment-certificate/enrollment-certificate.module';
+import { DashboardModule } from './modules/dashboard/dashboard.module';
 
 @Module({
   imports: [
@@ -43,6 +44,7 @@ import { EnrollmentCertificateModule } from './modules/enrollment-certificate/en
     OfferLetterModule,
     AgreementModule,
     EnrollmentCertificateModule,
+    DashboardModule,
   ],
 })
 export class AppModule {}

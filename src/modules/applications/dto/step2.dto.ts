@@ -15,7 +15,9 @@ export class Step2Dto {
   @IsString()
   identityNumber?: string;
 
-  @ApiPropertyOptional({ description: 'Full name as printed on the identity document' })
+  @ApiPropertyOptional({
+    description: 'Full name as printed on the identity document',
+  })
   @IsOptional()
   @IsString()
   identityName?: string;

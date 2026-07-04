@@ -8,7 +8,10 @@ export class EligibilityDto {
   @IsEnum(StudyType)
   studyType: StudyType;
 
-  @ApiProperty({ description: 'Expected monthly salary after course (NPR)', example: 50000 })
+  @ApiProperty({
+    description: 'Expected monthly salary after course (NPR)',
+    example: 50000,
+  })
   @Type(() => Number)
   @IsNumber()
   @Min(0)

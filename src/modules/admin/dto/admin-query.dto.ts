@@ -5,7 +5,9 @@ import { PaginationDto } from '../../../common/dto/pagination.dto';
 import { StudyType } from '../../../common/enums';
 
 export class AdminQueryDto extends PaginationDto {
-  @ApiPropertyOptional({ description: 'Search by full name, email, or phone number' })
+  @ApiPropertyOptional({
+    description: 'Search by full name, email, or phone number',
+  })
   @IsOptional()
   @IsString()
   search?: string;
@@ -29,7 +31,9 @@ export class AdminQueryDto extends PaginationDto {
   @Min(0)
   loanAmountMax?: number;
 
-  @ApiPropertyOptional({ description: 'Filter from submission date (ISO 8601)' })
+  @ApiPropertyOptional({
+    description: 'Filter from submission date (ISO 8601)',
+  })
   @IsOptional()
   @IsString()
   submittedFrom?: string;

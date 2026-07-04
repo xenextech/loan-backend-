@@ -69,9 +69,10 @@ export class ParentPublicService {
       courseName: app.studyInformation?.courseName,
       boardUniversity: app.studyInformation?.boardUniversity,
       courseDuration: app.studyInformation?.courseDuration,
-      loanAmount: app.loanInformation?.loanAmount != null
-        ? Number(app.loanInformation.loanAmount)
-        : undefined,
+      loanAmount:
+        app.loanInformation?.loanAmount != null
+          ? Number(app.loanInformation.loanAmount)
+          : undefined,
       submittedAt: app.submittedAt,
       verification,
     };
@@ -113,7 +114,10 @@ export class ParentPublicService {
     });
 
     if (existing?.salarySheetFilePath && existing?.salarySheetBucketName) {
-      await this.storage.deleteFile(existing.salarySheetBucketName, existing.salarySheetFilePath);
+      await this.storage.deleteFile(
+        existing.salarySheetBucketName,
+        existing.salarySheetFilePath,
+      );
     }
 
     const result = await this.storage.uploadFile(
