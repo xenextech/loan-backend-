@@ -22,9 +22,15 @@ flowchart TD
 
 ### Walking through it
 
-1. Application submitted. Happens through the existing student-facing
-   `/applications` flow, nothing in the dashboard module involved. Once its status is
-   `SUBMITTED` it becomes visible to staff.
+1. Application initiated. In this mockup it's the Initiator (relationship
+   officer/branch staff, e.g. "R. Bohara · RO" in the sample data) entering the
+   application after a field visit, not a student self-service submission. The
+   existing `/applications` module in this backend is actually a student-facing
+   self-submission flow, a separate thing from this dashboard, so if the real
+   product wants bank-staff-initiated applications the way the mockup shows, that's
+   either a new creation path or the existing student flow gets reused with the
+   Initiator acting on the borrower's behalf. Worth confirming which one before
+   building it. Once status is `SUBMITTED` it becomes visible to staff either way.
 2. Initiator opens it. `GET /dashboard/applications` (the list) or
    `GET /dashboard/overview/checker-queue` (the "needs action" feed) to find it, then
    the four read-only `GET /dashboard/approval/:id/...` calls to review it.

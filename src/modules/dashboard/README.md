@@ -68,6 +68,13 @@ pipeline (the funnel on Overview, the "stage" column on Applications) are approx
 from other fields and explicitly marked `"approximate": true` in the response. Don't
 build UI logic assuming a real state machine sits behind this, it doesn't yet.
 
+Another one: the mockup this was built from shows applications being entered by the
+Initiator (branch/relationship officer, after a field visit), not by the borrower
+self-service. This backend already has a separate `/applications` module for
+student self-submission, which is a different flow from what the mockup depicts.
+Both exist; which one actually creates the applications you'll be listing here is a
+product decision to confirm, not something the API resolves for you.
+
 ---
 
 ## 1. Dashboard Overview
@@ -116,7 +123,10 @@ Query params: `page`, `limit`, `search` (matches name/ref no/citizenship no/phon
 
 Row shape: `id, refNo, date, borrower, branch, type, amount, grade, stage, dsgir, ltv,
 daysOpen`. `stage` is just the raw `DRAFT`/`SUBMITTED` status here, not a pipeline
-stage, see the note above.
+stage, see the note above. `dsgir` and `ltv` are values the Initiator typed into the
+credit appraisal form, not something this API computes, there's no income/existing-debt
+data anywhere in this system to derive DSGIR from. If a real calculated DSGIR is
+needed, that's new scope (new input fields plus a formula), not a bug in what exists.
 
 `GET /dashboard/applications/:id` gives the full record with nested study/loan info,
 personal guarantee, insurance, and family members. Use it for the detail view.
@@ -192,6 +202,13 @@ paginated list, not an error.
 
 `mark-paid` sets the entry to `PAID` if `paidAmount` covers the full EMI, or
 `PARTIAL` otherwise, the backend figures that out for you.
+
+The amortization math (standard reducing-balance EMI formula) has been checked
+against the mockup's own worked example, Rs 7.1L at 9.10% over 96 months, and the
+generated schedule matches the mockup's EMI/principal/interest/balance columns to
+within a rupee or two per row (the mockup rounds the EMI to a whole rupee before
+building its table, this API keeps two decimal places throughout, that's the only
+source of the small difference).
 
 ---
 

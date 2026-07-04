@@ -61,6 +61,30 @@ not some rare edge case. It now handles that gracefully instead of throwing. Thi
 a pre-existing issue unrelated to the dashboard work itself, it just surfaced because
 the new Approval Workflow screen calls into that same calculator.
 
+## Checked against the original mockup
+
+Once the actual mockup HTML was available (not just screenshots), two things got
+verified directly rather than assumed:
+
+- EMI calculation. Ran the real amortization formula from this codebase against the
+  mockup's own worked example (a Rs 7.1L loan at 9.10% over 96 months) and it
+  reproduces the mockup's EMI, principal, interest, and balance columns to within a
+  rupee or two per row, that gap is just rounding (the mockup rounds the EMI to a
+  whole rupee before building its table, ours keeps two decimal places). Same
+  formula, same logic, confirmed rather than assumed.
+- DSGIR. This turned out not to be a calculated value anywhere, not in the mockup,
+  not in this backend. It's a number the Initiator types directly into the credit
+  appraisal form. The backend only uses it to look up which risk band it falls into
+  (below 40% / 40-45% / above 45%) for scoring, it doesn't derive it from income or
+  existing debt because none of that data exists in the system today. If a real
+  DSGIR calculation is wanted, that's new scope: new income/debt input fields plus a
+  formula, not a fix to something broken.
+- Who creates an application. The mockup shows the Initiator (branch/relationship
+  officer) entering applications after a field visit. This backend's existing
+  `/applications` module is a separate, student-self-submission flow. Both exist,
+  which one actually feeds the dashboard's applications list is a product decision
+  still open, not something resolved by the code as it stands.
+
 ## Not done yet
 
 These were scoped out on purpose when this work was planned, not things that got
