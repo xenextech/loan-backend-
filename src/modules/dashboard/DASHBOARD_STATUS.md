@@ -83,6 +83,7 @@ missed:
 None of this blocks using the other screens. These are specific, scoped gaps, written
 down so nobody assumes they're already handled.
 
+## For a developer picking this up
 
 - Read `src/modules/dashboard/README.md` first. It has the exact request/response
   shapes, auth requirements, and the order to call things in (the EMI schedule only
