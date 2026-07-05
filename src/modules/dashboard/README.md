@@ -111,6 +111,7 @@ The landing screen. Top-line numbers plus two feeds (checker queue, alerts).
   "overdueEmi": { "count": 4, "amount": 74500 },
   "commissionThisMonth": { "total": 1800, "fromBanks": 1500, "fromColleges": 300 },
   "approvalPipeline": { "initiated": 12, "supported": 9, "checking": 4, "approved": 3 },
+  "approvalStats": { "approved": 6, "rejected": 2, "totalDecided": 8, "approvalRate": 75, "avgProcessingTimeDays": 2.3 },
   "alerts": [
     { "type": "CICL_FLAG", "applicationId": "...", "message": "..." },
     { "type": "INSURANCE_EXPIRING", "applicationId": "...", "message": "..." },
@@ -121,6 +122,9 @@ The landing screen. Top-line numbers plus two feeds (checker queue, alerts).
 
 Render the four stat tiles straight off this. `alerts` here is just a preview
 (unpaginated); for a full scrollable list use `/overview/alerts` instead.
+`approvalStats.approvalRate` is a percentage (0-100, one decimal), `null` if nothing
+has been approved or rejected yet. `avgProcessingTimeDays` is the average
+`approverDate - createdAt` across approved applications only, also `null` if none.
 
 ---
 
@@ -131,11 +135,20 @@ The searchable table of all submitted applications.
 | Method | Path | Notes |
 |---|---|---|
 | POST | `/applications/initiator` | INITIATOR-only, note this is *not* under `/dashboard`. Starts a brand new application, no pre-existing ID needed — see below |
-| GET | `/dashboard/applications` | |
+| GET | `/dashboard/applications` | Supports `?filter=` — see below |
 | GET | `/dashboard/applications/:id` | |
+| GET | `/dashboard/applications/:id/detail` | Merged applicant view — see below |
 
 Query params: `page`, `limit`, `search` (matches name/ref no/citizenship no/phone),
-`branch`, `dateFrom`, `dateTo`.
+`branch`, `dateFrom`, `dateTo`, `filter`.
+
+`filter` narrows the list by stage instead of the default `status: SUBMITTED`
+restriction (so it also surfaces bank-created applications, which never get
+`status: SUBMITTED` today — see the status/stage gap noted above): `my-queue`
+(depends on your role — `SUPPORTER` sees `INITIATED`, `CREDIT_MANAGER`/`CHECKER` sees
+`SUPPORTED`, `APPROVER` sees `CHECKING`), `pending` (`INITIATED`/`SUPPORTED`/
+`CHECKING`), `approval` (`CHECKING`, i.e. awaiting the approver), `disbursement`
+(`APPROVED`), `rejected`, `sent-back`.
 
 Row shape: `id, refNo, date, borrower, branch, type, amount, grade, status, stage,
 dsgir, ltv, daysOpen`. `status` is the raw `DRAFT`/`SUBMITTED` student-facing status;
@@ -149,6 +162,12 @@ bug in what exists.
 
 `GET /dashboard/applications/:id` gives the full record with nested study/loan info,
 personal guarantee, insurance, and family members. Use it for the detail view.
+
+`GET /dashboard/applications/:id/detail` merges what otherwise takes 3+ separate calls
+into one payload: `{ application, loanAccount, creditScore, activity }` — the full
+record (including `loanAccount`), a live credit score breakdown, and the paginated
+audit/activity trail, all in a single response. Prefer this over stitching together
+`:id`, `/approval/:id/credit-score`, and `/approval/:id/activity` yourself.
 
 `POST /applications/initiator` takes the same body as `CreateInitiatorApplicationDto`
 and returns the created row with its server-generated `id` and `applicationNumber`.
@@ -182,18 +201,20 @@ need a follow-up PATCH if the UI collects them), writes an audit log entry, and
 |---|---|---|---|
 | POST | `/dashboard/approval/:applicationId/support` | `SUPPORTER` | stage → `SUPPORTED` (valid from `null`/`INITIATED`/`SENT_BACK`) |
 | POST | `/dashboard/approval/:applicationId/check` | `CREDIT_MANAGER` (or `CHECKER`) | stage → `CHECKING` (valid from `SUPPORTED`/`SENT_BACK`) |
-| POST | `/dashboard/approval/:applicationId/approve` | `APPROVER` | stage → `APPROVED` (valid from `CHECKING` only). This is what sets `approverDate`, see the note in §4 |
-| POST | `/dashboard/approval/:applicationId/reject` | `CREDIT_MANAGER`/`CHECKER`/`APPROVER` | stage → `REJECTED` from any stage. Body: `{ reason }` |
+| POST | `/dashboard/approval/:applicationId/approve` | `APPROVER` | stage → `APPROVED` (valid from `CHECKING` only). Sets `approverDate` and auto-creates the `LoanAccount` credit ledger (see §4) |
+| POST | `/dashboard/approval/:applicationId/reject` | `CREDIT_MANAGER`/`CHECKER`/`APPROVER` | stage → `REJECTED` from any stage. Body: `{ reason }`. Now also notifies the applicant (email + SMS if a phone number is on file) |
 | POST | `/dashboard/approval/:applicationId/send-back` | `SUPPORTER`/`CREDIT_MANAGER`/`CHECKER`/`APPROVER` | stage → `SENT_BACK` from any stage. Body: `{ reason, toStage? }` (`toStage` defaults to `INITIATED`) — re-entering the pipeline (e.g. calling `support` again) is allowed from `SENT_BACK` |
+| POST | `/dashboard/approval/:applicationId/pep-screening` | `CREDIT_MANAGER`/`CHECKER` | Records the applicant's PEP (Politically Exposed Person) check. Body: `{ status: boolean, remarks? }` — `status: true` means the applicant *is* a PEP |
 
-These 5 endpoints are new and manually verified end-to-end (create → support → check →
-approve, and separately reject / send-back-then-resupport), but don't have dedicated
-`*.spec.ts` unit tests yet — `dashboard-approval.service.spec.ts` only covers the
-original read-only methods. Worth adding before this ships to production.
+These endpoints are new and manually verified end-to-end (create → support → check →
+approve, and separately reject / send-back-then-resupport / pep-screening), but don't
+have dedicated `*.spec.ts` unit tests yet — `dashboard-approval.service.spec.ts` only
+covers the original read-only methods. Worth adding before this ships to production.
 
 `nrb-checklist` returns an array of `{ label, tracked, value }`. `tracked: false`
 means "no real data behind this yet", render it as a greyed-out/not-tracked row
-rather than a failing checkbox. Don't read `value: null` as false.
+rather than a failing checkbox. Don't read `value: null` as false. `PEP screening` is
+now tracked once `pep-screening` has been called for that application.
 
 `activity` is just the audit log filtered to this application, use it for the
 activity trail.
@@ -219,9 +240,23 @@ It's additive, call it once per tranche disbursed rather than sending the whole
 history each time. It creates the tranche record, and the parent disbursement record
 too if this is the first tranche for that application.
 
-Rough flow to build: load `pending` → click a row → load its `conditions` → let the
-user tick them off through `PATCH` → once satisfied, show "confirm disbursement" →
-`POST .../confirm`.
+**Bank account gate**: `confirm` now 400s with `"Parent bank account not set up —
+cannot disburse"` unless the application's `ParentVerification.bankAccountNumber` is
+filled in (the per-application parent submission, not the account-level
+`ParentProfile`). `pending` rows include a `bankAccountReady: boolean` flag so the UI
+can show which applications are actually disbursable vs. still blocked on that step.
+
+**Credit ledger**: approving an application (§3) auto-creates a `LoanAccount` —
+`{ id, applicationId, loanAccountNumber, status: "ACTIVE"|"CLEARED" }`. It's the
+master record tying approval → disbursement → EMI schedule together; it doesn't
+duplicate principal/rate/tenure (read those off the application) or disbursed-to-date
+(read off `Disbursement.totalDisbursedAmount`). `status` flips to `CLEARED`
+automatically once every EMI schedule entry for that application is `PAID` (§5). See
+it embedded in `GET /dashboard/applications/:id/detail` (§2).
+
+Rough flow to build: load `pending` → click a row → check `bankAccountReady` → load
+its `conditions` → let the user tick them off through `PATCH` → once satisfied, show
+"confirm disbursement" → `POST .../confirm`.
 
 ---
 
@@ -244,7 +279,30 @@ automatically. Call `GET .../schedule` before that and you just get an empty
 paginated list, not an error.
 
 `mark-paid` sets the entry to `PAID` if `paidAmount` covers the full EMI, or
-`PARTIAL` otherwise, the backend figures that out for you.
+`PARTIAL` otherwise, the backend figures that out for you. Once every entry for an
+application is `PAID`, its `LoanAccount.status` (§4) automatically flips from
+`ACTIVE` to `CLEARED` — no separate "close the loan" call needed.
+
+**Daily cron job** (new): a scheduled job runs once a day and (1) bulk-transitions any
+due `EmiScheduleEntry` past its due date from `UPCOMING`/`PARTIAL` to `OVERDUE`, (2)
+sends SMS + WhatsApp reminders to borrowers per the trigger schedule below
+(pre-due reminders and overdue escalations), and (3) notifies every `CREDIT_MANAGER`/
+`CHECKER` user (as an in-app `Notification`) whenever entries newly become overdue.
+This isn't a dashboard endpoint you call — it's fully automatic — but it's the thing
+that finally makes `notification-triggers` below a real schedule instead of just
+reference copy.
+
+`notification-triggers` rows now also carry an `offsetDays` (negative = days before
+due, positive = days overdue) that the cron job uses to match entries — e.g. `{
+trigger: '7 days', offsetDays: -7 }` fires when an entry is due in exactly 7 days.
+The one exception is `Doc expiry`, which has no `offsetDays` (it isn't tied to an EMI
+due date) and is display-only.
+
+**SMS/WhatsApp delivery**: wired to Twilio (`sendSms`/`sendWhatsapp` on
+`NotificationsService`). Requires `TWILIO_ACCOUNT_SID`/`TWILIO_AUTH_TOKEN`/
+`TWILIO_PHONE_NUMBER`/`TWILIO_WHATSAPP_NUMBER` in `.env` — without real credentials,
+sends are skipped with a logged warning rather than failing the request (so the app
+runs fine without Twilio configured, it just doesn't deliver).
 
 The amortization math (standard reducing-balance EMI formula) has been checked
 against the mockup's own worked example, Rs 7.1L at 9.10% over 96 months, and the
@@ -385,23 +443,25 @@ Don't quietly build around these, flag them if the design needs them:
   `SUBMITTED`. An initiator-created application can reach `stage: APPROVED` while
   still `status: DRAFT`, which means it still won't show up in Disbursement's
   `getPending` (that query filters on both `status: SUBMITTED` and
-  `approverDate: not null`). Needs a decision on whether `status` should just be
-  retired in favor of `stage`, or promoted automatically on `support`/some other point.
-- The 5 new stage-transition endpoints (§3) don't have automated unit tests yet, only
-  manual end-to-end verification. Add `*.spec.ts` coverage before relying on this in
-  production.
+  `approverDate: not null`) even though the bank-account gate and `LoanAccount`
+  creation both work correctly for it. Needs a decision on whether `status` should
+  just be retired in favor of `stage`, or promoted automatically on `support`/some
+  other point. This is now the single biggest remaining gap.
+- None of the newer endpoints (§3's stage transitions and `pep-screening`, §2's
+  `filter`/`:id/detail`, §4's bank-account gate, §5's cron job) have automated unit
+  tests yet — all verified manually end-to-end against a live dev database. Add
+  `*.spec.ts` coverage before relying on this in production.
+- Twilio SMS/WhatsApp code is wired up but untested against real delivery — no
+  `TWILIO_*` credentials have been supplied yet. Sends currently no-op with a logged
+  warning.
 - No PDF generation or e-signature for generated agreements.
 - NRB lending cap is a hardcoded constant, not per-loan-type config.
 - "HO visibility" toggle has no backend enforcement.
 - `branch` is free text with no fixed list of valid branches. If the design wants a
   dropdown, that list needs to come from somewhere else, or be hardcoded on the
   frontend for now.
-- Approval rate / average processing-time statistics, application list queue filters
-  (my queue / pending / approval / disbursement / rejected / sent-back), and a merged
-  single-applicant detail view (application + credit score + audit trail in one call)
-  are still outstanding from the bank ops punch list — planned as later phases, not
-  started yet.
-- No cron/scheduler infrastructure exists (`@nestjs/schedule` isn't installed) —
-  overdue EMI entries only transition on-demand via a read query, nothing flips them
-  to `OVERDUE` on a timer, and no reminder notifications go out to Credit Managers
-  automatically yet.
+- No "grace period" field exists on a loan application — interest rate, tenure, and
+  amount are all configurable, but a grace-period concept (mentioned in the bank's own
+  process flowchart) would be new scope.
+- Blacklist (`isBlacklisted`) is still just a manually-set boolean with no dedicated
+  check step or audit trail, unlike PEP screening (§3) which now has both.

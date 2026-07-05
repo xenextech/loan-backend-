@@ -26,23 +26,43 @@ set of UI mockups showing 10 screens, and the backend API for all 10 now exists.
    loan-to-value. Bank staff (the Initiator role) can now also start a brand new
    application directly, without needing a pre-existing application ID — matching how
    the mockup shows a relationship officer entering an application after a field
-   visit, alongside the existing student self-submission flow.
+   visit, alongside the existing student self-submission flow. The list now supports
+   queue filter tabs (my queue / pending / approval / disbursement / rejected /
+   sent-back), and there's a new merged applicant-detail endpoint that returns the
+   full record, live credit score, and activity trail in one call instead of three.
 3. Approval workflow. The detail screen a reviewer looks at for one application:
    borrower summary, live credit score breakdown, a compliance checklist, activity
-   history — plus, as of this update, the actual workflow actions: support, check,
-   approve, reject, and send-back. An application now carries a real `stage` field
-   (`INITIATED → SUPPORTED → CHECKING → APPROVED`, or `REJECTED`/`SENT_BACK`) instead
-   of the earlier fields-are-null approximation, and there's a `CREDIT_MANAGER` role
-   (replacing `CHECKER`, which still works for backwards compatibility) for the
-   "checking" step.
+   history — plus the actual workflow actions: support, check, approve, reject,
+   send-back, and PEP (Politically Exposed Person) screening. An application now
+   carries a real `stage` field (`INITIATED → SUPPORTED → CHECKING → APPROVED`, or
+   `REJECTED`/`SENT_BACK`) instead of the earlier fields-are-null approximation, and
+   there's a `CREDIT_MANAGER` role (replacing `CHECKER`, which still works for
+   backwards compatibility) for the "checking" step. Rejecting an application now
+   actually notifies the applicant (email + SMS), and approving one auto-creates a
+   `LoanAccount` — see Disbursement below.
 4. Disbursement. Once a loan is approved, tracks the checklist of conditions that
    need to be satisfied (documents signed, deed registered, etc.) before money goes
-   out, and records each payout.
+   out, and records each payout. Two things new: a `LoanAccount` "credit ledger" gets
+   created automatically on approval (loan account number, `ACTIVE`/`CLEARED` status,
+   tied to the application/disbursement/EMI schedule without duplicating any of their
+   data), and disbursement is now gated on the parent having a bank account on file —
+   confirming a payout 400s until that's set, matching the bank's own process
+   flowchart ("is bank loan account set up?").
 5. EMI schedule / repayment. Generates the month-by-month repayment schedule for
    a disbursed loan and tracks who's paid, who's late, and by how much (1-30 / 31-90 /
-   90+ days overdue buckets).
+   90+ days overdue buckets). Once every installment is paid, the loan's `LoanAccount`
+   automatically flips to `CLEARED` — no separate "close the loan" action. A new daily
+   cron job also now transitions overdue entries and fires reminders automatically
+   (see item 6).
 6. Notifications. A log of every SMS/WhatsApp/Email/App notification sent to
-   borrowers, plus reusable message templates staff can edit.
+   borrowers, plus reusable message templates staff can edit. SMS and WhatsApp
+   sending is now actually wired up (via Twilio) rather than being schema-only —
+   though it needs real `TWILIO_*` credentials in `.env` before anything is
+   actually delivered; without them, sends no-op with a logged warning instead of
+   failing the request. A daily scheduled job (new — this codebase had no
+   cron/scheduler infrastructure before) marks overdue EMI entries, sends the
+   borrower reminders on the schedule the Notifications screen already displayed,
+   and alerts every Credit Manager when new entries go overdue.
 7. Document center. Verifying a student's college offer letter is genuine,
    browsing all uploaded documents in one place, and generating the loan
    agreement/guarantee paperwork for signing.
@@ -62,13 +82,19 @@ lists), and the error cases (not-found, invalid state transitions) for each feat
 The backend builds and boots cleanly too. This wasn't thrown together as a demo — it's
 held to the same bar as the rest of the platform.
 
-The new approval-workflow pieces added since (the `stage` state machine, the 5
-support/check/approve/reject/send-back endpoints, the `CREDIT_MANAGER` role, the
-initiator create-without-ID endpoint) were verified by hand end-to-end against a live
-dev database — created an application, walked it through every transition including
-reject and send-back-then-resupport, confirmed the audit trail and overview counts —
-but don't have unit tests in the `*.spec.ts` suite yet. That's the next thing to add,
-not a sign the behavior is unverified.
+The new pieces added since (the `stage` state machine and its 6 transition/screening
+endpoints, the `CREDIT_MANAGER` role, the initiator create-without-ID endpoint, the
+`LoanAccount` credit ledger and loan-clearance auto-detection, the bank-account
+disbursement gate, the applicant-detail/filter/approval-stats endpoints, and the
+Twilio + cron notification job) were all verified by hand end-to-end against a live
+dev database — created applications, walked them through every transition including
+reject/send-back-then-resupport/PEP-screening, confirmed `LoanAccount` creation and
+clearance, confirmed the disbursement gate blocks and then allows a payout once a
+bank account is added, and manually triggered the cron job to confirm overdue
+transitions, reminders, and Credit Manager alerts all fire correctly (a real sign bug
+in the reminder date math was caught and fixed during this testing). None of it has
+unit tests in the `*.spec.ts` suite yet — that's the next thing to add, not a sign the
+behavior is unverified.
 
 Worth mentioning: one real bug got found and fixed along the way. The existing
 credit-score calculator (used elsewhere in the app already, not new) would crash for
@@ -108,20 +134,23 @@ verified directly rather than assumed:
 These were scoped out on purpose when this work was planned, not things that got
 missed:
 
-- `status` vs `stage` duality. Approving an application (via the new `approve`
-  endpoint) sets its `stage` to `APPROVED` but doesn't touch the separate `status`
+- `status` vs `stage` duality — the single biggest remaining gap. Approving an
+  application sets its `stage` to `APPROVED` but doesn't touch the separate `status`
   field (`DRAFT`/`SUBMITTED`). Disbursement's pending-queue query still requires
-  `status: SUBMITTED`, so a bank-staff-created application can be fully approved and
-  still not show up there. Needs a decision on whether `status` gets retired in favor
-  of `stage`, or auto-promoted at some point in the new workflow.
-- No automated tests yet for the 5 new stage-transition endpoints (support/check/
-  approve/reject/send-back) — verified manually end-to-end, not in the `*.spec.ts`
-  suite.
-- Approval rate / average processing-time stats, application list queue filters (my
-  queue / pending / approval / disbursement / rejected / sent-back), a merged
-  single-applicant detail view, and the overdue-EMI cron + Credit Manager reminders
-  are still outstanding from the bank ops punch list this workflow was built to
-  satisfy — planned as later phases.
+  `status: SUBMITTED`, so a bank-staff-created application can be fully approved,
+  have a `LoanAccount` created, and pass the bank-account gate, and still not show up
+  in the disbursement queue. Needs a decision on whether `status` gets retired in
+  favor of `stage`, or auto-promoted at some point in the new workflow.
+- No automated tests yet for any of the new endpoints (stage transitions,
+  PEP screening, applicant detail/filters, approval stats, the cron job) — verified
+  manually end-to-end, not in the `*.spec.ts` suite.
+- Twilio SMS/WhatsApp is coded and wired up but has never sent a real message — no
+  `TWILIO_*` credentials have been supplied. Needs a real account before delivery can
+  be confirmed.
+- Blacklist (`isBlacklisted`) is still just a manually-set boolean with no dedicated
+  check step, unlike PEP screening which now has one.
+- No "grace period" field/concept exists yet, though the bank's own process
+  flowchart mentions one alongside interest rate/EMI/amount configuration.
 - No PDF generation or e-signatures. Loan agreements can be drafted and marked
   signed in the system, but there's no actual PDF document produced, and no
   e-signature integration. Right now it's a paper trail of statuses, not documents.
@@ -151,11 +180,14 @@ down so nobody assumes they're already handled.
 
 - All 10 screens from the mockups have a working backend behind them now, plus a real
   approval-stage workflow (Credit Manager role, support/check/approve/reject/
-  send-back) that was the biggest structural gap from the original pass.
+  send-back/PEP-screening), an auto-created credit ledger, a bank-account
+  disbursement gate, automatic loan clearance, queue filters, a merged applicant
+  detail view, approval-rate/processing-time stats, and a daily automated overdue/
+  reminder job with Twilio SMS+WhatsApp wired up (pending real credentials).
 - The gaps above are known and documented, not surprises waiting to be found later —
   the `status`/`stage` duality is the one most worth resolving next, since it quietly
   caps what Disbursement can show.
 - Nothing existing was broken or changed in behavior. One incidental bug in the
-  credit-scoring logic got found and fixed on the way through the original pass; a
-  seed-script bug (passwords/verification never refreshed on existing users) got found
-  and fixed while testing this update.
+  credit-scoring logic got found and fixed during the original pass; a seed-script
+  bug (passwords/verification never refreshed on existing users) and a sign error in
+  the reminder date-offset math got found and fixed while testing this update.

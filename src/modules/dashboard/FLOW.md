@@ -12,16 +12,23 @@ flowchart TD
     B -->|"GET /dashboard/applications\nGET /dashboard/overview/checker-queue"| C["Reviewed at each stage"]
     C -->|"POST /dashboard/approval/:id/support"| C1["stage: SUPPORTED"]
     C1 -->|"POST /dashboard/approval/:id/check"| C2["stage: CHECKING"]
-    C2 -->|"POST /dashboard/approval/:id/approve"| E["stage: APPROVED\n(sets approverDate)"]
-    C -.->|"POST .../reject (any stage)"| RJ["stage: REJECTED"]
+    C2 -->|"POST /dashboard/approval/:id/approve"| E["stage: APPROVED\n(sets approverDate,\ncreates LoanAccount)"]
+    C -.->|"POST .../reject (any stage)"| RJ["stage: REJECTED\n(applicant notified)"]
     C -.->|"POST .../send-back (any stage)"| SB["stage: SENT_BACK\n(re-enter via support)"]
+    C -.->|"POST .../pep-screening (any time)"| PEP["PEP status recorded"]
     E -->|"GET /dashboard/disbursement/pending"| F["Shows up once status\nis also SUBMITTED — see gap below"]
-    F -->|"GET .../conditions\nPATCH .../conditions/:id — repeat per item"| G["Conditions satisfied"]
-    G -->|"POST /dashboard/disbursement/:id/confirm\n— once per tranche"| H["Tranche disbursed"]
-    H -->|"POST /dashboard/repayment/:id/generate-schedule"| I["EMI schedule created"]
-    I -->|"GET .../schedule\nGET .../overdue\nGET .../overview"| J["Ongoing collection tracking"]
+    F -->|"bankAccountReady?"| BA{"Parent bank account\non file?"}
+    BA -->|"No"| BA1["POST .../confirm blocked (400)"]
+    BA -->|"Yes"| G["GET .../conditions\nPATCH .../conditions/:id — repeat per item"]
+    G -->|"Conditions satisfied"| H["POST /dashboard/disbursement/:id/confirm\n— once per tranche"]
+    H -->|"Tranche disbursed"| I["POST /dashboard/repayment/:id/generate-schedule"]
+    I -->|"EMI schedule created"| J["GET .../schedule\nGET .../overdue\nGET .../overview"]
     J -->|"PATCH .../schedule/:entryId/mark-paid\n— per payment received"| J
+    J -->|"all entries PAID"| K["LoanAccount.status: CLEARED\n(automatic)"]
 ```
+
+A daily cron job (not shown above, runs independently) transitions overdue EMI
+entries and fires borrower reminders / Credit Manager alerts — see step 7a below.
 
 ### Walking through it
 
@@ -42,22 +49,31 @@ flowchart TD
    re-enter the pipeline). Each transition validates the current stage server-side
    and 400s on an invalid move (e.g. `approve` from anything but `CHECKING`).
    - `approve` is what finally sets `approverDate` — this used to be a dead field
-     with nothing writing to it; it's live now.
-   - Remaining gap: `approve` only touches `stage`/`approverDate`, it does not touch
-     the separate `status` field (`DRAFT`/`SUBMITTED`). `GET /dashboard/disbursement/pending`
-     still filters on `status: SUBMITTED` in addition to `approverDate`, so a bank
-     staff-created application (via `POST /applications/initiator`) that reaches
-     `stage: APPROVED` still won't appear there unless something also promotes its
-     `status`. Nothing currently does that for the initiator path. See
-     `DASHBOARD_STATUS.md`/README "Known gaps" for the open decision.
-4. Conditions checklist. Once an application is approved (and, per the gap above,
-   its `status` is `SUBMITTED`) it shows up in the disbursement queue. Staff loads
+     with nothing writing to it; it's live now. In the same transaction it also
+     auto-creates a `LoanAccount` (the "credit ledger" — `loanAccountNumber`,
+     `status: ACTIVE`), which becomes the master record for everything downstream.
+   - `pep-screening` can be called any time during review (not gated to a
+     particular stage) to record whether the applicant is a Politically Exposed
+     Person — surfaces in `GET .../nrb-checklist`.
+   - Remaining gap: `approve` only touches `stage`/`approverDate`/`LoanAccount`, it
+     does not touch the separate `status` field (`DRAFT`/`SUBMITTED`).
+     `GET /dashboard/disbursement/pending` still filters on `status: SUBMITTED` in
+     addition to `approverDate`, so a bank staff-created application (via
+     `POST /applications/initiator`) that reaches `stage: APPROVED` still won't
+     appear there unless something also promotes its `status`. Nothing currently
+     does that for the initiator path. See `DASHBOARD_STATUS.md`/README "Known
+     gaps" for the open decision.
+4. Conditions checklist + bank account gate. Once an application is approved (and,
+   per the gap above, its `status` is `SUBMITTED`) it shows up in the disbursement
+   queue with a `bankAccountReady` flag. Staff loads
    `GET /dashboard/disbursement/:id/conditions` and ticks items off through
    `PATCH .../conditions/:conditionId` as each gets satisfied. Conditions can also be
    added ad hoc via `POST .../conditions`, the list isn't fixed.
-5. Confirm disbursement. Once satisfied, `POST /dashboard/disbursement/:id/confirm`
-   per tranche. This is additive, call it again for tranche 2, 3, and so on, and it
-   creates the parent `Disbursement` record automatically on the first call.
+5. Confirm disbursement. `POST /dashboard/disbursement/:id/confirm` 400s unless the
+   application's parent verification has a `bankAccountNumber` on file — this is the
+   flowchart's "is bank loan account set up?" gate. Once that's satisfied, confirming
+   is additive per tranche as before, call it again for tranche 2, 3, and so on, and
+   it creates the parent `Disbursement` record automatically on the first call.
 6. Generate the EMI schedule. Trigger
    `POST /dashboard/repayment/:id/generate-schedule` right after the first
    disbursement gets confirmed. This is a deliberate manual trigger, not automatic,
@@ -65,7 +81,15 @@ flowchart TD
    in a schedule prematurely.
 7. Ongoing repayment tracking. `GET .../schedule` for the amortization table,
    `GET .../overdue?bucket=...` and `GET .../overview` for collections dashboards, and
-   `PATCH .../schedule/:entryId/mark-paid` each time a payment comes in.
+   `PATCH .../schedule/:entryId/mark-paid` each time a payment comes in. Once every
+   entry is `PAID`, the linked `LoanAccount.status` automatically flips to `CLEARED`
+   — no separate "close the loan" call.
+   - 7a. Daily cron (automatic, not an endpoint you call): transitions overdue
+     entries from `UPCOMING`/`PARTIAL` to `OVERDUE`, sends SMS + WhatsApp reminders
+     to borrowers per the trigger schedule (both pre-due reminders and overdue
+     escalations), and notifies every `CREDIT_MANAGER`/`CHECKER` user when entries
+     newly go overdue. Requires real `TWILIO_*` credentials in `.env` to actually
+     deliver SMS/WhatsApp — without them it logs a warning and no-ops per message.
 
 ## Side flows
 

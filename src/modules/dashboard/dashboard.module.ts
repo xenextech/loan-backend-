@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { AuditModule } from '../audit/audit.module';
 import { CreditScoreModule } from '../creditScore/credit-score.module';
 import { UtilsModule } from '../utils/utils.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 import { DashboardOverviewController } from './overview/dashboard-overview.controller';
 import { DashboardOverviewService } from './overview/dashboard-overview.service';
@@ -25,7 +26,7 @@ import { DashboardAuditController } from './audit/dashboard-audit.controller';
 import { DashboardAuditService } from './audit/dashboard-audit.service';
 
 @Module({
-  imports: [AuditModule, CreditScoreModule, UtilsModule],
+  imports: [AuditModule, CreditScoreModule, UtilsModule, NotificationsModule],
   controllers: [
     DashboardOverviewController,
     DashboardApplicationsController,
@@ -50,5 +51,6 @@ import { DashboardAuditService } from './audit/dashboard-audit.service';
     DashboardCommissionService,
     DashboardAuditService,
   ],
+  exports: [DashboardRepaymentService],
 })
 export class DashboardModule {}

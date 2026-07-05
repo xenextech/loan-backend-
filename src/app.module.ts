@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule } from '@nestjs/throttler';
+import { ScheduleModule } from '@nestjs/schedule';
 import configuration from './config/configuration';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './modules/auth/auth.module';
@@ -21,11 +22,13 @@ import { OfferLetterModule } from './modules/offer-letter/offer-letter.module';
 import { AgreementModule } from './modules/agreement/agreement.module';
 import { EnrollmentCertificateModule } from './modules/enrollment-certificate/enrollment-certificate.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
+import { DashboardJobsModule } from './modules/dashboard/jobs/dashboard-jobs.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true, load: [configuration] }),
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }]),
+    ScheduleModule.forRoot(),
     PrismaModule,
     AuthModule,
     UsersModule,
@@ -45,6 +48,7 @@ import { DashboardModule } from './modules/dashboard/dashboard.module';
     AgreementModule,
     EnrollmentCertificateModule,
     DashboardModule,
+    DashboardJobsModule,
   ],
 })
 export class AppModule {}

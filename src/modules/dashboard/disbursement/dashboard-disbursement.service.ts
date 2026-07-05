@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { AuditService } from '../../audit/audit.service';
 import { AuditAction, AuditCategory } from '../../../common/enums';
@@ -46,6 +50,7 @@ export class DashboardDisbursementService {
             select: { status: true },
           },
           disbursement: { select: { status: true } },
+          parentVerification: { select: { bankAccountNumber: true } },
         },
       }),
       this.prisma.loanApplication.count({ where }),
@@ -64,6 +69,7 @@ export class DashboardDisbursementService {
         conditionsDone: done,
         conditionsTotal: total,
         status: a.disbursement?.status ?? 'PENDING',
+        bankAccountReady: Boolean(a.parentVerification?.bankAccountNumber),
       };
     });
 
@@ -78,6 +84,7 @@ export class DashboardDisbursementService {
   private async assertApplicationExists(applicationId: string) {
     const application = await this.prisma.loanApplication.findUnique({
       where: { id: applicationId },
+      include: { parentVerification: { select: { bankAccountNumber: true } } },
     });
     if (!application) throw new NotFoundException('Application not found');
     return application;
@@ -149,7 +156,12 @@ export class DashboardDisbursementService {
     applicationId: string,
     dto: ConfirmDisbursementDto,
   ) {
-    await this.assertApplicationExists(applicationId);
+    const application = await this.assertApplicationExists(applicationId);
+    if (!application.parentVerification?.bankAccountNumber) {
+      throw new BadRequestException(
+        'Parent bank account not set up — cannot disburse',
+      );
+    }
 
     const disbursement = await this.prisma.disbursement.upsert({
       where: { applicationId },

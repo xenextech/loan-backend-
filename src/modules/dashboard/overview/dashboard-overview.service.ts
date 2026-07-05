@@ -25,6 +25,8 @@ export class DashboardOverviewService {
       supported,
       checking,
       approved,
+      rejected,
+      approvedTimings,
       alerts,
     ] = await Promise.all([
       this.prisma.disbursement.aggregate({
@@ -49,8 +51,33 @@ export class DashboardOverviewService {
       this.prisma.loanApplication.count({ where: { stage: 'SUPPORTED' } }),
       this.prisma.loanApplication.count({ where: { stage: 'CHECKING' } }),
       this.prisma.loanApplication.count({ where: { stage: 'APPROVED' } }),
+      this.prisma.loanApplication.count({ where: { stage: 'REJECTED' } }),
+      this.prisma.loanApplication.findMany({
+        where: { stage: 'APPROVED', approverDate: { not: null } },
+        select: { createdAt: true, approverDate: true },
+      }),
       this.buildAlerts(),
     ]);
+
+    const totalDecided = approved + rejected;
+    const approvalRate =
+      totalDecided > 0
+        ? Number(((approved / totalDecided) * 100).toFixed(1))
+        : null;
+    const avgProcessingTimeDays =
+      approvedTimings.length > 0
+        ? Number(
+            (
+              approvedTimings.reduce(
+                (sum, a) =>
+                  sum +
+                  (a.approverDate!.getTime() - a.createdAt.getTime()) /
+                    (24 * 60 * 60 * 1000),
+                0,
+              ) / approvedTimings.length
+            ).toFixed(1),
+          )
+        : null;
 
     const commissionThisMonth = commissionEntries.reduce(
       (sum, e) => sum + Number(e.amount),
@@ -80,6 +107,13 @@ export class DashboardOverviewService {
         supported,
         checking,
         approved,
+      },
+      approvalStats: {
+        approved,
+        rejected,
+        totalDecided,
+        approvalRate,
+        avgProcessingTimeDays,
       },
       alerts,
     };

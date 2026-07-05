@@ -1,6 +1,16 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsISO8601, IsOptional, IsString } from 'class-validator';
+import { IsIn, IsISO8601, IsOptional, IsString } from 'class-validator';
 import { PaginationDto } from '../../../common/dto/pagination.dto';
+
+export const APPLICATION_LIST_FILTERS = [
+  'my-queue',
+  'pending',
+  'approval',
+  'disbursement',
+  'rejected',
+  'sent-back',
+] as const;
+export type ApplicationListFilter = (typeof APPLICATION_LIST_FILTERS)[number];
 
 export class DashboardApplicationsQueryDto extends PaginationDto {
   @ApiPropertyOptional({
@@ -9,6 +19,15 @@ export class DashboardApplicationsQueryDto extends PaginationDto {
   @IsOptional()
   @IsString()
   search?: string;
+
+  @ApiPropertyOptional({
+    enum: APPLICATION_LIST_FILTERS,
+    description:
+      'Queue filter — "my-queue" depends on the requesting staff role (SUPPORTER sees INITIATED, CREDIT_MANAGER/CHECKER sees SUPPORTED, APPROVER sees CHECKING)',
+  })
+  @IsOptional()
+  @IsIn(APPLICATION_LIST_FILTERS)
+  filter?: ApplicationListFilter;
 
   @ApiPropertyOptional({ description: 'Filter by branch' })
   @IsOptional()

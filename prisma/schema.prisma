@@ -38,6 +38,13 @@ enum ApplicationStage {
   SENT_BACK
 }
 
+// Credit ledger status — a LoanAccount is created once an application is
+// approved and stays ACTIVE until every EMI schedule entry is paid off.
+enum LoanAccountStatus {
+  ACTIVE
+  CLEARED
+}
+
 enum StudyType {
   PROGRAM
   COURSE
@@ -103,6 +110,9 @@ enum AuditAction {
   APPLICATION_APPROVED
   APPLICATION_REJECTED
   APPLICATION_SENT_BACK
+  LOAN_ACCOUNT_CREATED
+  LOAN_CLEARED
+  PEP_SCREENING_RECORDED
   COLLEGE_FORM_SUBMITTED
   PARENT_FORM_SUBMITTED
   DISBURSEMENT_CONDITION_UPDATED
@@ -286,6 +296,13 @@ model LoanApplication {
   existingBankingRelationship String?
   isBlacklisted               Boolean?
 
+  // PEP (Politically Exposed Person) screening — recorded via a dedicated
+  // check step, not just a manually-set flag like isBlacklisted above.
+  pepStatus          Boolean?
+  pepRemarks         String?
+  pepCheckedAt       DateTime?
+  pepCheckedByUserId String?
+
   // Step 5: Family Structure / Credit Facility
   facility     String?
   purpose      String?
@@ -387,6 +404,7 @@ model LoanApplication {
   familyMember              FamilyMember[]
   disbursementConditions    DisbursementCondition[]
   disbursement              Disbursement?
+  loanAccount               LoanAccount?
   emiSchedule               EmiScheduleEntry[]
   generatedAgreements       GeneratedAgreement[]
   insurancePolicies         InsurancePolicy[]
@@ -903,6 +921,24 @@ model DisbursementCondition {
 
   @@index([applicationId])
   @@map("disbursement_conditions")
+}
+
+// Credit ledger — the master record created the moment an application is
+// approved, tying approval, disbursement, and the EMI schedule together.
+// Deliberately doesn't duplicate principal/rate/tenure/disbursed-amount:
+// those are read live off LoanApplication/Disbursement via the relations.
+model LoanAccount {
+  id                String            @id @default(uuid())
+  applicationId     String            @unique
+  loanAccountNumber String            @unique
+  status            LoanAccountStatus @default(ACTIVE)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  application LoanApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@map("loan_accounts")
 }
 
 model Disbursement {

@@ -1,13 +1,19 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as nodemailer from 'nodemailer';
+import { Twilio } from 'twilio';
 import { PrismaService } from '../../prisma/prisma.service';
-import { NotificationType } from '../../common/enums';
+import {
+  NotificationType,
+  NotificationChannel,
+  NotificationDeliveryStatus,
+} from '../../common/enums';
 
 @Injectable()
 export class NotificationsService {
   private readonly logger = new Logger(NotificationsService.name);
   private transporter: nodemailer.Transporter;
+  private twilioClient: Twilio | null;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -22,6 +28,11 @@ export class NotificationsService {
         pass: this.config.get<string>('smtp.pass'),
       },
     });
+
+    const accountSid = this.config.get<string>('twilio.accountSid');
+    const authToken = this.config.get<string>('twilio.authToken');
+    this.twilioClient =
+      accountSid && authToken ? new Twilio(accountSid, authToken) : null;
   }
 
   // ── Database notification ──────────────────────────────────────────────────
@@ -30,6 +41,8 @@ export class NotificationsService {
     title: string,
     message: string,
     applicationId?: string,
+    channel?: NotificationChannel,
+    deliveryStatus?: NotificationDeliveryStatus,
   ) {
     return this.prisma.notification.create({
       data: {
@@ -38,8 +51,43 @@ export class NotificationsService {
         message,
         applicationId,
         type: NotificationType.DATABASE,
+        channel,
+        deliveryStatus,
       },
     });
+  }
+
+  // ── Application rejected ───────────────────────────────────────────────────
+  async notifyApplicationRejected(applicationId: string) {
+    const application = await this.prisma.loanApplication.findUnique({
+      where: { id: applicationId },
+      select: {
+        userId: true,
+        email: true,
+        phoneNumber: true,
+        applicationNumber: true,
+        rejectionReason: true,
+      },
+    });
+    if (!application) return;
+
+    const title = 'Loan Application Rejected';
+    const message = `Your education loan application ${application.applicationNumber ?? ''} has been rejected. Reason: ${application.rejectionReason ?? 'Not specified'}.`;
+
+    if (application.userId) {
+      await this.createDatabaseNotification(
+        application.userId,
+        title,
+        message,
+        applicationId,
+      );
+    }
+    if (application.email) {
+      await this.sendEmail(application.email, title, `<p>${message}</p>`);
+    }
+    if (application.phoneNumber) {
+      await this.sendSms(application.phoneNumber, message);
+    }
   }
 
   // ── Application submitted ──────────────────────────────────────────────────
@@ -169,6 +217,43 @@ export class NotificationsService {
       });
     } catch (err) {
       this.logger.warn(`Failed to send email to ${to}: ${String(err)}`);
+    }
+  }
+
+  async sendSms(to: string, body: string): Promise<boolean> {
+    if (!this.twilioClient) {
+      this.logger.warn(`Twilio not configured — skipping SMS to ${to}`);
+      return false;
+    }
+    try {
+      await this.twilioClient.messages.create({
+        from: this.config.get<string>('twilio.phoneNumber'),
+        to,
+        body,
+      });
+      return true;
+    } catch (err) {
+      this.logger.warn(`Failed to send SMS to ${to}: ${String(err)}`);
+      return false;
+    }
+  }
+
+  async sendWhatsapp(to: string, body: string): Promise<boolean> {
+    if (!this.twilioClient) {
+      this.logger.warn(`Twilio not configured — skipping WhatsApp to ${to}`);
+      return false;
+    }
+    const whatsappNumber = this.config.get<string>('twilio.whatsappNumber');
+    try {
+      await this.twilioClient.messages.create({
+        from: `whatsapp:${whatsappNumber}`,
+        to: `whatsapp:${to}`,
+        body,
+      });
+      return true;
+    } catch (err) {
+      this.logger.warn(`Failed to send WhatsApp to ${to}: ${String(err)}`);
+      return false;
     }
   }
 }

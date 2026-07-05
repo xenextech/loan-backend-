@@ -25,6 +25,13 @@ export default () => ({
     from: process.env.SMTP_FROM ?? 'Cliq Edu Loan <noreply@cliqedu.com.np>',
   },
 
+  twilio: {
+    accountSid: process.env.TWILIO_ACCOUNT_SID,
+    authToken: process.env.TWILIO_AUTH_TOKEN,
+    phoneNumber: process.env.TWILIO_PHONE_NUMBER,
+    whatsappNumber: process.env.TWILIO_WHATSAPP_NUMBER,
+  },
+
   app: {
     url: process.env.APP_URL ?? 'http://localhost:3001',
     frontendUrl: process.env.FRONTEND_URL ?? 'http://localhost:3000',

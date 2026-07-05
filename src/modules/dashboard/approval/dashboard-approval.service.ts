@@ -6,11 +6,13 @@ import {
 import { PrismaService } from '../../../prisma/prisma.service';
 import { AuditService } from '../../audit/audit.service';
 import { CreditScoreService } from '../../creditScore/credit-score.service';
+import { NotificationsService } from '../../notifications/notifications.service';
 import {
   AuditAction,
   AuditCategory,
   ApplicationStage,
 } from '../../../common/enums';
+import { generateLoanAccountNumber } from '../../../common/utils/loan-account-number.util';
 import {
   paginate,
   buildPaginatedResponse,
@@ -19,6 +21,7 @@ import { PaginationDto } from '../../../common/dto/pagination.dto';
 import {
   RejectApplicationDto,
   SendBackApplicationDto,
+  PepScreeningDto,
 } from '../dto/approval-transition.dto';
 
 // Valid predecessor stage(s) for each transition — null means "no prior
@@ -38,6 +41,7 @@ export class DashboardApprovalService {
     private readonly prisma: PrismaService,
     private readonly creditScore: CreditScoreService,
     private readonly audit: AuditService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   private async getApplicationOrThrow(applicationId: string) {
@@ -108,18 +112,36 @@ export class DashboardApprovalService {
     const application = await this.getApplicationOrThrow(applicationId);
     this.assertTransitionAllowed('approve', application.stage);
 
-    const updated = await this.prisma.loanApplication.update({
-      where: { id: applicationId },
-      data: {
-        stage: ApplicationStage.APPROVED,
-        approverDate: new Date(),
-      },
-    });
+    const [updated, loanAccount] = await this.prisma.$transaction([
+      this.prisma.loanApplication.update({
+        where: { id: applicationId },
+        data: {
+          stage: ApplicationStage.APPROVED,
+          approverDate: new Date(),
+        },
+      }),
+      this.prisma.loanAccount.create({
+        data: {
+          applicationId,
+          loanAccountNumber: generateLoanAccountNumber(),
+        },
+      }),
+    ]);
 
     await this.audit.log(
       userId,
       AuditAction.APPLICATION_APPROVED,
       { stage: ApplicationStage.APPROVED },
+      applicationId,
+      AuditCategory.APPROVAL,
+    );
+    await this.audit.log(
+      userId,
+      AuditAction.LOAN_ACCOUNT_CREATED,
+      {
+        loanAccountId: loanAccount.id,
+        loanAccountNumber: loanAccount.loanAccountNumber,
+      },
       applicationId,
       AuditCategory.APPROVAL,
     );
@@ -150,6 +172,7 @@ export class DashboardApprovalService {
       applicationId,
       AuditCategory.APPROVAL,
     );
+    await this.notifications.notifyApplicationRejected(applicationId);
     return updated;
   }
 
@@ -176,6 +199,33 @@ export class DashboardApprovalService {
       userId,
       AuditAction.APPLICATION_SENT_BACK,
       { reason: dto.reason, toStage },
+      applicationId,
+      AuditCategory.APPROVAL,
+    );
+    return updated;
+  }
+
+  async recordPepScreening(
+    userId: string,
+    applicationId: string,
+    dto: PepScreeningDto,
+  ) {
+    await this.getApplicationOrThrow(applicationId);
+
+    const updated = await this.prisma.loanApplication.update({
+      where: { id: applicationId },
+      data: {
+        pepStatus: dto.status,
+        pepRemarks: dto.remarks,
+        pepCheckedAt: new Date(),
+        pepCheckedByUserId: userId,
+      },
+    });
+
+    await this.audit.log(
+      userId,
+      AuditAction.PEP_SCREENING_RECORDED,
+      { status: dto.status, remarks: dto.remarks },
       applicationId,
       AuditCategory.APPROVAL,
     );
@@ -249,8 +299,8 @@ export class DashboardApprovalService {
         },
         {
           label: 'PEP screening',
-          tracked: false,
-          value: null,
+          tracked: application.pepStatus !== null,
+          value: application.pepStatus !== null ? !application.pepStatus : null,
         },
         {
           label: 'NRB Rokka restriction check',

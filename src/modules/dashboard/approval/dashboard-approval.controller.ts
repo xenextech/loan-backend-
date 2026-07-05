@@ -20,6 +20,7 @@ import { DASHBOARD_STAFF_ROLES } from '../dashboard-roles.constant';
 import {
   RejectApplicationDto,
   SendBackApplicationDto,
+  PepScreeningDto,
 } from '../dto/approval-transition.dto';
 
 @ApiTags('Dashboard: Approval Workflow')
@@ -126,5 +127,23 @@ export class DashboardApprovalController {
     @Body() dto: SendBackApplicationDto,
   ) {
     return this.dashboardApprovalService.sendBack(user.sub, applicationId, dto);
+  }
+
+  @Post('pep-screening')
+  @Roles(UserRole.CREDIT_MANAGER, UserRole.CHECKER)
+  @ApiOperation({
+    summary:
+      'Record the applicant PEP (Politically Exposed Person) screening result',
+  })
+  recordPepScreening(
+    @CurrentUser() user: JwtPayload,
+    @Param('applicationId') applicationId: string,
+    @Body() dto: PepScreeningDto,
+  ) {
+    return this.dashboardApprovalService.recordPepScreening(
+      user.sub,
+      applicationId,
+      dto,
+    );
   }
 }

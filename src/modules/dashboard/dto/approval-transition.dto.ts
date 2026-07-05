@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsEnum, IsOptional, IsString } from 'class-validator';
+import { IsBoolean, IsEnum, IsOptional, IsString } from 'class-validator';
 import { ApplicationStage } from '../../../common/enums';
 
 export class RejectApplicationDto {
@@ -23,4 +23,18 @@ export class SendBackApplicationDto {
   @IsOptional()
   @IsEnum(ApplicationStage)
   toStage?: ApplicationStage;
+}
+
+export class PepScreeningDto {
+  @ApiProperty({
+    description: 'true if the applicant is a Politically Exposed Person',
+    example: false,
+  })
+  @IsBoolean()
+  status: boolean;
+
+  @ApiPropertyOptional({ example: 'Cross-checked against NRB Rokka list' })
+  @IsOptional()
+  @IsString()
+  remarks?: string;
 }
