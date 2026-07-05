@@ -23,6 +23,10 @@ async function main() {
       email: 'supporter@yopmail.com',
       role: UserRole.SUPPORTER,
     },
+    {
+      email: 'creditmanager@yopmail.com',
+      role: UserRole.CREDIT_MANAGER,
+    },
   ];
 
   for (const user of users) {
@@ -32,6 +36,8 @@ async function main() {
       },
       update: {
         role: user.role,
+        passwordHash,
+        isEmailVerified: true,
       },
       create: {
         email: user.email,

@@ -1,17 +1,43 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
+import { AuditService } from '../../audit/audit.service';
 import { CreditScoreService } from '../../creditScore/credit-score.service';
+import {
+  AuditAction,
+  AuditCategory,
+  ApplicationStage,
+} from '../../../common/enums';
 import {
   paginate,
   buildPaginatedResponse,
 } from '../../../common/dto/pagination.dto';
 import { PaginationDto } from '../../../common/dto/pagination.dto';
+import {
+  RejectApplicationDto,
+  SendBackApplicationDto,
+} from '../dto/approval-transition.dto';
+
+// Valid predecessor stage(s) for each transition — null means "no prior
+// stage required" (an application with stage: null can still be supported).
+const ALLOWED_FROM_STAGE: Record<
+  'support' | 'check' | 'approve',
+  (ApplicationStage | null)[]
+> = {
+  support: [null, ApplicationStage.INITIATED, ApplicationStage.SENT_BACK],
+  check: [ApplicationStage.SUPPORTED, ApplicationStage.SENT_BACK],
+  approve: [ApplicationStage.CHECKING],
+};
 
 @Injectable()
 export class DashboardApprovalService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly creditScore: CreditScoreService,
+    private readonly audit: AuditService,
   ) {}
 
   private async getApplicationOrThrow(applicationId: string) {
@@ -21,6 +47,139 @@ export class DashboardApprovalService {
     });
     if (!application) throw new NotFoundException('Application not found');
     return application;
+  }
+
+  private assertTransitionAllowed(
+    transition: keyof typeof ALLOWED_FROM_STAGE,
+    currentStage: ApplicationStage | null,
+  ) {
+    if (!ALLOWED_FROM_STAGE[transition].includes(currentStage)) {
+      throw new BadRequestException(
+        `Cannot ${transition} an application at stage "${currentStage ?? 'none'}"`,
+      );
+    }
+  }
+
+  async support(userId: string, applicationId: string) {
+    const application = await this.getApplicationOrThrow(applicationId);
+    this.assertTransitionAllowed('support', application.stage);
+
+    const updated = await this.prisma.loanApplication.update({
+      where: { id: applicationId },
+      data: {
+        stage: ApplicationStage.SUPPORTED,
+        supporterDate: new Date(),
+      },
+    });
+
+    await this.audit.log(
+      userId,
+      AuditAction.APPLICATION_SUPPORTED,
+      { stage: ApplicationStage.SUPPORTED },
+      applicationId,
+      AuditCategory.APPROVAL,
+    );
+    return updated;
+  }
+
+  async check(userId: string, applicationId: string) {
+    const application = await this.getApplicationOrThrow(applicationId);
+    this.assertTransitionAllowed('check', application.stage);
+
+    const updated = await this.prisma.loanApplication.update({
+      where: { id: applicationId },
+      data: {
+        stage: ApplicationStage.CHECKING,
+        checkerDate: new Date(),
+      },
+    });
+
+    await this.audit.log(
+      userId,
+      AuditAction.APPLICATION_CHECKED,
+      { stage: ApplicationStage.CHECKING },
+      applicationId,
+      AuditCategory.APPROVAL,
+    );
+    return updated;
+  }
+
+  async approve(userId: string, applicationId: string) {
+    const application = await this.getApplicationOrThrow(applicationId);
+    this.assertTransitionAllowed('approve', application.stage);
+
+    const updated = await this.prisma.loanApplication.update({
+      where: { id: applicationId },
+      data: {
+        stage: ApplicationStage.APPROVED,
+        approverDate: new Date(),
+      },
+    });
+
+    await this.audit.log(
+      userId,
+      AuditAction.APPLICATION_APPROVED,
+      { stage: ApplicationStage.APPROVED },
+      applicationId,
+      AuditCategory.APPROVAL,
+    );
+    return updated;
+  }
+
+  async reject(
+    userId: string,
+    applicationId: string,
+    dto: RejectApplicationDto,
+  ) {
+    await this.getApplicationOrThrow(applicationId);
+
+    const updated = await this.prisma.loanApplication.update({
+      where: { id: applicationId },
+      data: {
+        stage: ApplicationStage.REJECTED,
+        rejectionReason: dto.reason,
+        rejectedAt: new Date(),
+        rejectedByUserId: userId,
+      },
+    });
+
+    await this.audit.log(
+      userId,
+      AuditAction.APPLICATION_REJECTED,
+      { reason: dto.reason },
+      applicationId,
+      AuditCategory.APPROVAL,
+    );
+    return updated;
+  }
+
+  async sendBack(
+    userId: string,
+    applicationId: string,
+    dto: SendBackApplicationDto,
+  ) {
+    await this.getApplicationOrThrow(applicationId);
+    const toStage = dto.toStage ?? ApplicationStage.INITIATED;
+
+    const updated = await this.prisma.loanApplication.update({
+      where: { id: applicationId },
+      data: {
+        stage: ApplicationStage.SENT_BACK,
+        sentBackReason: dto.reason,
+        sentBackAt: new Date(),
+        sentBackByUserId: userId,
+        sentBackToStage: toStage,
+      },
+    });
+
+    await this.audit.log(
+      userId,
+      AuditAction.APPLICATION_SENT_BACK,
+      { reason: dto.reason, toStage },
+      applicationId,
+      AuditCategory.APPROVAL,
+    );
+    return updated;
   }
 
   async getSummary(applicationId: string) {

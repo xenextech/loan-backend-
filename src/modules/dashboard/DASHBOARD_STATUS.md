@@ -1,6 +1,6 @@
 # Dashboard Feature — Status Summary
 
-Last updated: 2026-07-04
+Last updated: 2026-07-05
 
 Plain-English writeup of what got built and why. No endpoint lists, no code. If you
 need the actual API contract, that's in `src/modules/dashboard/README.md`. The
@@ -23,10 +23,18 @@ set of UI mockups showing 10 screens, and the backend API for all 10 now exists.
    insurance, overdue payments).
 2. Applications list. A searchable, filterable table of every submitted loan
    application with the numbers reviewers actually look at: risk grade, debt ratios,
-   loan-to-value.
+   loan-to-value. Bank staff (the Initiator role) can now also start a brand new
+   application directly, without needing a pre-existing application ID — matching how
+   the mockup shows a relationship officer entering an application after a field
+   visit, alongside the existing student self-submission flow.
 3. Approval workflow. The detail screen a reviewer looks at for one application:
    borrower summary, live credit score breakdown, a compliance checklist, activity
-   history. 
+   history — plus, as of this update, the actual workflow actions: support, check,
+   approve, reject, and send-back. An application now carries a real `stage` field
+   (`INITIATED → SUPPORTED → CHECKING → APPROVED`, or `REJECTED`/`SENT_BACK`) instead
+   of the earlier fields-are-null approximation, and there's a `CREDIT_MANAGER` role
+   (replacing `CHECKER`, which still works for backwards compatibility) for the
+   "checking" step.
 4. Disbursement. Once a loan is approved, tracks the checklist of conditions that
    need to be satisfied (documents signed, deed registered, etc.) before money goes
    out, and records each payout.
@@ -48,11 +56,19 @@ set of UI mockups showing 10 screens, and the backend API for all 10 now exists.
 
 ## How solid is this
 
-Every piece of business logic behind these 10 screens has automated tests. 105 tests,
-all passing, covering the normal case, the edge cases (missing data, empty lists), and
-the error cases (not-found, invalid state transitions) for each feature. The backend
-builds and boots cleanly too. This wasn't thrown together as a demo — it's held to the
-same bar as the rest of the platform.
+Every piece of business logic behind the original 10 screens has automated tests. 105
+tests, all passing, covering the normal case, the edge cases (missing data, empty
+lists), and the error cases (not-found, invalid state transitions) for each feature.
+The backend builds and boots cleanly too. This wasn't thrown together as a demo — it's
+held to the same bar as the rest of the platform.
+
+The new approval-workflow pieces added since (the `stage` state machine, the 5
+support/check/approve/reject/send-back endpoints, the `CREDIT_MANAGER` role, the
+initiator create-without-ID endpoint) were verified by hand end-to-end against a live
+dev database — created an application, walked it through every transition including
+reject and send-back-then-resupport, confirmed the audit trail and overview counts —
+but don't have unit tests in the `*.spec.ts` suite yet. That's the next thing to add,
+not a sign the behavior is unverified.
 
 Worth mentioning: one real bug got found and fixed along the way. The existing
 credit-score calculator (used elsewhere in the app already, not new) would crash for
@@ -81,20 +97,31 @@ verified directly rather than assumed:
   formula, not a fix to something broken.
 - Who creates an application. The mockup shows the Initiator (branch/relationship
   officer) entering applications after a field visit. This backend's existing
-  `/applications` module is a separate, student-self-submission flow. Both exist,
-  which one actually feeds the dashboard's applications list is a product decision
-  still open, not something resolved by the code as it stands.
+  `/applications` module is a separate, student-self-submission flow. Both still
+  exist, but the Initiator can now also start a brand new application directly
+  (`POST /applications/initiator`, no pre-existing ID needed) — so the mockup's flow
+  is directly supported now, alongside the student flow, rather than being an open
+  question resolved by a workaround.
 
 ## Not done yet
 
 These were scoped out on purpose when this work was planned, not things that got
 missed:
 
-- No approve/reject/send-back buttons. The Approval Workflow screen shows a
-  reviewer everything they need to make a decision, but there's no formal "stage"
-  concept in the system yet (Initiated → Supported → Checking → Approved). Adding real
-  workflow actions means designing that state machine first, which is follow-up work,
-  not a bug in this pass.
+- `status` vs `stage` duality. Approving an application (via the new `approve`
+  endpoint) sets its `stage` to `APPROVED` but doesn't touch the separate `status`
+  field (`DRAFT`/`SUBMITTED`). Disbursement's pending-queue query still requires
+  `status: SUBMITTED`, so a bank-staff-created application can be fully approved and
+  still not show up there. Needs a decision on whether `status` gets retired in favor
+  of `stage`, or auto-promoted at some point in the new workflow.
+- No automated tests yet for the 5 new stage-transition endpoints (support/check/
+  approve/reject/send-back) — verified manually end-to-end, not in the `*.spec.ts`
+  suite.
+- Approval rate / average processing-time stats, application list queue filters (my
+  queue / pending / approval / disbursement / rejected / sent-back), a merged
+  single-applicant detail view, and the overdue-EMI cron + Credit Manager reminders
+  are still outstanding from the bank ops punch list this workflow was built to
+  satisfy — planned as later phases.
 - No PDF generation or e-signatures. Loan agreements can be drafted and marked
   signed in the system, but there's no actual PDF document produced, and no
   e-signature integration. Right now it's a paper trail of statuses, not documents.
@@ -122,8 +149,13 @@ down so nobody assumes they're already handled.
 
 ## For a manager reviewing progress
 
-- All 10 screens from the mockups have a working, tested backend behind them now.
-  Frontend integration can start.
-- The 4 gaps above are known and documented, not surprises waiting to be found later.
+- All 10 screens from the mockups have a working backend behind them now, plus a real
+  approval-stage workflow (Credit Manager role, support/check/approve/reject/
+  send-back) that was the biggest structural gap from the original pass.
+- The gaps above are known and documented, not surprises waiting to be found later —
+  the `status`/`stage` duality is the one most worth resolving next, since it quietly
+  caps what Disbursement can show.
 - Nothing existing was broken or changed in behavior. One incidental bug in the
-  credit-scoring logic got found and fixed on the way through.
+  credit-scoring logic got found and fixed on the way through the original pass; a
+  seed-script bug (passwords/verification never refreshed on existing users) got found
+  and fixed while testing this update.

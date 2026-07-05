@@ -100,6 +100,18 @@ export class ApplicationInitiatorListController {
     private readonly applicationInitiatorService: ApplicationInitiatorService,
   ) {}
 
+  @Post()
+  @ApiOperation({
+    summary:
+      'Start a new application from scratch — no existing application ID required. Returns the created application (with its generated id) for subsequent PATCH /applications/:applicationId/initiator calls.',
+  })
+  create(
+    @CurrentUser() user: JwtPayload,
+    @Body() dto: CreateInitiatorApplicationDto,
+  ) {
+    return this.applicationInitiatorService.createNewApplication(user.sub, dto);
+  }
+
   @Get('college-verified')
   @ApiOperation({
     summary:

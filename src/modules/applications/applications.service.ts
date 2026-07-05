@@ -23,6 +23,7 @@ import {
   paginate,
   buildPaginatedResponse,
 } from '../../common/dto/pagination.dto';
+import { generateApplicationNumber } from '../../common/utils/application-number.util';
 
 // 3-day token TTL — enough for college/parent to complete verification
 const LINK_TTL_MS = 3 * 24 * 60 * 60 * 1000;
@@ -36,19 +37,12 @@ export class ApplicationsService {
     private readonly config: ConfigService,
   ) {}
 
-  private generateApplicationNumber(): string {
-    const prefix = 'GenZ';
-    const year = new Date().getFullYear();
-    const random = Math.floor(10000 + Math.random() * 90000);
-    return `${prefix}-${year}-${random}`;
-  }
-
   // ── Create draft application ───────────────────────────────────────────────
   async create(userId: string) {
     const application = await this.prisma.loanApplication.create({
       data: {
         userId,
-        applicationNumber: this.generateApplicationNumber(),
+        applicationNumber: generateApplicationNumber(),
         status: ApplicationStatus.DRAFT,
       },
     });

@@ -8,11 +8,14 @@ sequence.
 
 ```mermaid
 flowchart TD
-    A["Initiator/ submits application\n(existing /applications flow, not dashboard)"] --> B["Shows up for staff"]
-    B -->|"GET /dashboard/applications\nGET /dashboard/overview/checker-queue"| C["Initiator opens the application"]
-    C -->|"GET /dashboard/approval/:id/summary\nGET .../credit-score\nGET .../nrb-checklist\nGET .../activity"| D["Approval decision\nNo API for this today, see gap below"]
-    D -.->|"nothing currently sets approverDate"| E["Application 'approved'"]
-    E -->|"GET /dashboard/disbursement/pending"| F["Will be empty today\n(query requires approverDate set)"]
+    A["Application created\n(POST /applications — student, or\nPOST /applications/initiator — bank staff)"] --> B["Shows up for staff"]
+    B -->|"GET /dashboard/applications\nGET /dashboard/overview/checker-queue"| C["Reviewed at each stage"]
+    C -->|"POST /dashboard/approval/:id/support"| C1["stage: SUPPORTED"]
+    C1 -->|"POST /dashboard/approval/:id/check"| C2["stage: CHECKING"]
+    C2 -->|"POST /dashboard/approval/:id/approve"| E["stage: APPROVED\n(sets approverDate)"]
+    C -.->|"POST .../reject (any stage)"| RJ["stage: REJECTED"]
+    C -.->|"POST .../send-back (any stage)"| SB["stage: SENT_BACK\n(re-enter via support)"]
+    E -->|"GET /dashboard/disbursement/pending"| F["Shows up once status\nis also SUBMITTED — see gap below"]
     F -->|"GET .../conditions\nPATCH .../conditions/:id — repeat per item"| G["Conditions satisfied"]
     G -->|"POST /dashboard/disbursement/:id/confirm\n— once per tranche"| H["Tranche disbursed"]
     H -->|"POST /dashboard/repayment/:id/generate-schedule"| I["EMI schedule created"]
@@ -22,32 +25,33 @@ flowchart TD
 
 ### Walking through it
 
-1. Application initiated. In this mockup it's the Initiator (relationship
-   officer/branch staff, e.g. "R. Bohara · RO" in the sample data) entering the
-   application after a field visit, not a student self-service submission. The
-   existing `/applications` module in this backend is actually a student-facing
-   self-submission flow, a separate thing from this dashboard, so if the real
-   product wants bank-staff-initiated applications the way the mockup shows, that's
-   either a new creation path or the existing student flow gets reused with the
-   Initiator acting on the borrower's behalf. Worth confirming which one before
-   building it. Once status is `SUBMITTED` it becomes visible to staff either way.
-2. Initiator opens it. `GET /dashboard/applications` (the list) or
-   `GET /dashboard/overview/checker-queue` (the "needs action" feed) to find it, then
-   the four read-only `GET /dashboard/approval/:id/...` calls to review it.
-3. Approval decision, the missing link. There's currently no endpoint anywhere in
-   the codebase, dashboard or otherwise, that sets `approverDate` on a
-   `LoanApplication`. It's a real schema field, nothing writes to it. Practically:
-   - The Overview's `pendingMyActionCount` and `approvalPipeline` counts stay stuck at
-     their "nothing approved yet" values.
-   - `GET /dashboard/disbursement/pending` filters on `approverDate: { not: null }`,
-     so it will always return an empty list until this gets fixed.
-   - This isn't specific to the dashboard, it's a gap in the app as a whole. Before
-     the disbursement screen can show real data, something needs to write
-     `approverDate`/`approverName`/`approverSignature`, most likely a new "approve
-     application" endpoint. Explicitly out of scope for this pass, see
-     `DASHBOARD_STATUS.md`.
-4. Conditions checklist. Once an application is (hypothetically) approved it
-   would show up in the disbursement queue. Staff loads
+1. Application created. Two paths now exist side by side: `POST /applications`
+   (student self-submission, existing flow) and `POST /applications/initiator`
+   (bank staff/relationship officer entering it directly after a field visit, no
+   pre-existing ID needed — matches the mockup's flow). Both produce a
+   `LoanApplication` with `stage: null` until someone acts on it.
+2. Initiator/staff opens it. `GET /dashboard/applications` (the list) or
+   `GET /dashboard/overview/checker-queue` (applications at `stage: SUPPORTED`
+   awaiting a Credit Manager) to find it, then the four read-only
+   `GET /dashboard/approval/:id/...` calls to review it.
+3. Approval decision — now a real state machine. `POST /dashboard/approval/:id/support`
+   → `check` → `approve` walk an application through `SUPPORTED` → `CHECKING` →
+   `APPROVED`, each stamping the relevant sign-off date and writing an audit log
+   entry; `reject` and `send-back` are available from any stage (`send-back` defaults
+   to rewinding to `INITIATED`, and `support` can be called again from `SENT_BACK` to
+   re-enter the pipeline). Each transition validates the current stage server-side
+   and 400s on an invalid move (e.g. `approve` from anything but `CHECKING`).
+   - `approve` is what finally sets `approverDate` — this used to be a dead field
+     with nothing writing to it; it's live now.
+   - Remaining gap: `approve` only touches `stage`/`approverDate`, it does not touch
+     the separate `status` field (`DRAFT`/`SUBMITTED`). `GET /dashboard/disbursement/pending`
+     still filters on `status: SUBMITTED` in addition to `approverDate`, so a bank
+     staff-created application (via `POST /applications/initiator`) that reaches
+     `stage: APPROVED` still won't appear there unless something also promotes its
+     `status`. Nothing currently does that for the initiator path. See
+     `DASHBOARD_STATUS.md`/README "Known gaps" for the open decision.
+4. Conditions checklist. Once an application is approved (and, per the gap above,
+   its `status` is `SUBMITTED`) it shows up in the disbursement queue. Staff loads
    `GET /dashboard/disbursement/:id/conditions` and ticks items off through
    `PATCH .../conditions/:conditionId` as each gets satisfied. Conditions can also be
    added ad hoc via `POST .../conditions`, the list isn't fixed.

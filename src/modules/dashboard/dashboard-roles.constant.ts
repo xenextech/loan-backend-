@@ -7,5 +7,6 @@ export const DASHBOARD_STAFF_ROLES = [
   UserRole.INITIATOR,
   UserRole.SUPPORTER,
   UserRole.CHECKER,
+  UserRole.CREDIT_MANAGER,
   UserRole.APPROVER,
 ];

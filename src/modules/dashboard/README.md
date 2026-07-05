@@ -10,8 +10,13 @@ once, then use it as a per-screen reference after that.
 Base URL & auth. Everything below is prefixed with `/api/v1` and needs an
 `Authorization: Bearer <JWT>` header. Get the token from the existing
 `POST /api/v1/auth/login`. Only staff accounts can call these routes: `ADMIN`,
-`INITIATOR`, `SUPPORTER`, `CHECKER`, `APPROVER`. A student/parent/college token gets a
-403.
+`INITIATOR`, `SUPPORTER`, `CHECKER`, `CREDIT_MANAGER`, `APPROVER`. A student/parent/college
+token gets a 403.
+
+`CREDIT_MANAGER` is the current name for what used to be the `CHECKER` role — same
+person, same job (the "checking" stage of the approval pipeline). `CHECKER` still
+works on every endpoint that accepts `CREDIT_MANAGER` (existing JWTs/accounts aren't
+broken), but new integrations should use `CREDIT_MANAGER`.
 
 Every response is wrapped. Don't destructure the raw body directly, the actual
 payload is one level down in `.data`:
@@ -61,19 +66,29 @@ Swagger. Everything's also documented live at `/api/docs` with exact
 request/response shapes and a try-it-out console. Use this doc to understand why and
 in what order to call things; use Swagger for the exact field-by-field contract.
 
-One thing worth knowing before you wire anything up: there's no formal
-approval-stage field on a loan application in this backend right now. No
-`INITIATED / SUPPORTED / CHECKING / APPROVED` enum exists. Screens that imply a staged
-pipeline (the funnel on Overview, the "stage" column on Applications) are approximated
-from other fields and explicitly marked `"approximate": true` in the response. Don't
-build UI logic assuming a real state machine sits behind this, it doesn't yet.
+There is now a real approval-stage field on a loan application: `stage`, one of
+`INITIATED / SUPPORTED / CHECKING / APPROVED / REJECTED / SENT_BACK` (`null` until the
+bank workflow has actually started on it — a bare student-submitted application sits
+at `stage: null` until someone supports it). The funnel on Overview and the "stage"
+column on Applications now reflect this field directly, there's no more
+`"approximate": true` flag. See §3 for the endpoints that move an application through
+these stages.
+
+Note `stage` is separate from `status` (`DRAFT`/`SUBMITTED`), which is unchanged and
+still tracks the student-facing draft lifecycle — a bank-created application (via §2's
+"create without ID" endpoint) can be walked all the way to `stage: APPROVED` while its
+`status` stays `DRAFT`, since nothing currently promotes `status` for that path. This
+matters for Disbursement (§4): `getPending` still filters on `status: SUBMITTED` in
+addition to `approverDate`, so an approved bank-created application won't show up there
+until that's addressed. Flagged as a known gap below, not fixed in this pass.
 
 Another one: the mockup this was built from shows applications being entered by the
 Initiator (branch/relationship officer, after a field visit), not by the borrower
 self-service. This backend already has a separate `/applications` module for
-student self-submission, which is a different flow from what the mockup depicts.
-Both exist; which one actually creates the applications you'll be listing here is a
-product decision to confirm, not something the API resolves for you.
+student self-submission, which is a different flow from what the mockup depicts. Both
+still exist, but the Initiator can now also start a brand new application without a
+pre-existing ID (`POST /applications/initiator`, see §2) — so the mockup's flow is now
+directly supported, it's just not the only path.
 
 ---
 
@@ -84,7 +99,7 @@ The landing screen. Top-line numbers plus two feeds (checker queue, alerts).
 | Method | Path | Notes |
 |---|---|---|
 | GET | `/dashboard/overview` | Not paginated, one aggregate object |
-| GET | `/dashboard/overview/checker-queue` | Paginated, applications awaiting approver sign-off |
+| GET | `/dashboard/overview/checker-queue` | Paginated, applications at `stage: SUPPORTED` awaiting a Credit Manager's check |
 | GET | `/dashboard/overview/alerts` | Paginated |
 
 `GET /dashboard/overview` response:
@@ -95,7 +110,7 @@ The landing screen. Top-line numbers plus two feeds (checker queue, alerts).
   "pendingMyActionCount": 5,
   "overdueEmi": { "count": 4, "amount": 74500 },
   "commissionThisMonth": { "total": 1800, "fromBanks": 1500, "fromColleges": 300 },
-  "approvalPipeline": { "approximate": true, "initiated": 12, "supported": 9, "approved": 3 },
+  "approvalPipeline": { "initiated": 12, "supported": 9, "checking": 4, "approved": 3 },
   "alerts": [
     { "type": "CICL_FLAG", "applicationId": "...", "message": "..." },
     { "type": "INSURANCE_EXPIRING", "applicationId": "...", "message": "..." },
@@ -113,29 +128,43 @@ Render the four stat tiles straight off this. `alerts` here is just a preview
 
 The searchable table of all submitted applications.
 
-| Method | Path |
-|---|---|
-| GET | `/dashboard/applications` |
-| GET | `/dashboard/applications/:id` |
+| Method | Path | Notes |
+|---|---|---|
+| POST | `/applications/initiator` | INITIATOR-only, note this is *not* under `/dashboard`. Starts a brand new application, no pre-existing ID needed — see below |
+| GET | `/dashboard/applications` | |
+| GET | `/dashboard/applications/:id` | |
 
 Query params: `page`, `limit`, `search` (matches name/ref no/citizenship no/phone),
 `branch`, `dateFrom`, `dateTo`.
 
-Row shape: `id, refNo, date, borrower, branch, type, amount, grade, stage, dsgir, ltv,
-daysOpen`. `stage` is just the raw `DRAFT`/`SUBMITTED` status here, not a pipeline
-stage, see the note above. `dsgir` and `ltv` are values the Initiator typed into the
-credit appraisal form, not something this API computes, there's no income/existing-debt
-data anywhere in this system to derive DSGIR from. If a real calculated DSGIR is
-needed, that's new scope (new input fields plus a formula), not a bug in what exists.
+Row shape: `id, refNo, date, borrower, branch, type, amount, grade, status, stage,
+dsgir, ltv, daysOpen`. `status` is the raw `DRAFT`/`SUBMITTED` student-facing status;
+`stage` is the real bank approval-pipeline stage (`INITIATED/SUPPORTED/CHECKING/
+APPROVED/REJECTED/SENT_BACK`, or `null` before the bank workflow starts) — see the
+note above on how the two relate. `dsgir` and `ltv` are values the Initiator typed
+into the credit appraisal form, not something this API computes, there's no
+income/existing-debt data anywhere in this system to derive DSGIR from. If a real
+calculated DSGIR is needed, that's new scope (new input fields plus a formula), not a
+bug in what exists.
 
 `GET /dashboard/applications/:id` gives the full record with nested study/loan info,
 personal guarantee, insurance, and family members. Use it for the detail view.
 
+`POST /applications/initiator` takes the same body as `CreateInitiatorApplicationDto`
+and returns the created row with its server-generated `id` and `applicationNumber`.
+Use that `id` for every subsequent `PATCH /applications/:applicationId/initiator` call
+to fill in the rest of the credit appraisal form — same create-then-patch shape as the
+student `/applications` flow. A freshly created application has `stage: null`; it
+enters the pipeline once someone calls `support` on it (§3).
+
 ---
 
-## 3. Approval Workflow (read-only)
+## 3. Approval Workflow
 
-The per-application review screen a checker/approver looks at before signing off.
+The per-application review screen a checker/approver looks at, plus the actions that
+move an application through the pipeline.
+
+Read-only:
 
 | Method | Path |
 |---|---|
@@ -144,9 +173,23 @@ The per-application review screen a checker/approver looks at before signing off
 | GET | `/dashboard/approval/:applicationId/nrb-checklist` |
 | GET | `/dashboard/approval/:applicationId/activity` (paginated) |
 
-There's no forward/send-back/reject button to wire up here, none of that exists on
-the backend yet. This screen is display-only. If the design calls for those actions,
-that's a separate backend change to ask for, not something to fake client-side.
+Stage transitions — each stamps the relevant sign-off fields (name/post/date/
+signature aren't auto-filled from the JWT today except the date; post/signature still
+need a follow-up PATCH if the UI collects them), writes an audit log entry, and
+400s if the application isn't at a valid predecessor stage for that action:
+
+| Method | Path | Role(s) | Effect |
+|---|---|---|---|
+| POST | `/dashboard/approval/:applicationId/support` | `SUPPORTER` | stage → `SUPPORTED` (valid from `null`/`INITIATED`/`SENT_BACK`) |
+| POST | `/dashboard/approval/:applicationId/check` | `CREDIT_MANAGER` (or `CHECKER`) | stage → `CHECKING` (valid from `SUPPORTED`/`SENT_BACK`) |
+| POST | `/dashboard/approval/:applicationId/approve` | `APPROVER` | stage → `APPROVED` (valid from `CHECKING` only). This is what sets `approverDate`, see the note in §4 |
+| POST | `/dashboard/approval/:applicationId/reject` | `CREDIT_MANAGER`/`CHECKER`/`APPROVER` | stage → `REJECTED` from any stage. Body: `{ reason }` |
+| POST | `/dashboard/approval/:applicationId/send-back` | `SUPPORTER`/`CREDIT_MANAGER`/`CHECKER`/`APPROVER` | stage → `SENT_BACK` from any stage. Body: `{ reason, toStage? }` (`toStage` defaults to `INITIATED`) — re-entering the pipeline (e.g. calling `support` again) is allowed from `SENT_BACK` |
+
+These 5 endpoints are new and manually verified end-to-end (create → support → check →
+approve, and separately reject / send-back-then-resupport), but don't have dedicated
+`*.spec.ts` unit tests yet — `dashboard-approval.service.spec.ts` only covers the
+original read-only methods. Worth adding before this ships to production.
 
 `nrb-checklist` returns an array of `{ label, tracked, value }`. `tracked: false`
 means "no real data behind this yet", render it as a greyed-out/not-tracked row
@@ -337,11 +380,28 @@ restrict visibility that's a backend feature to ask for first.
 
 Don't quietly build around these, flag them if the design needs them:
 
-- No approval-stage workflow / forward-reject-send-back actions, see the note near
-  the top.
+- `status` (`DRAFT`/`SUBMITTED`) and `stage` (`INITIATED`.../`APPROVED`) are separate
+  fields and nothing currently promotes a bank-created application's `status` to
+  `SUBMITTED`. An initiator-created application can reach `stage: APPROVED` while
+  still `status: DRAFT`, which means it still won't show up in Disbursement's
+  `getPending` (that query filters on both `status: SUBMITTED` and
+  `approverDate: not null`). Needs a decision on whether `status` should just be
+  retired in favor of `stage`, or promoted automatically on `support`/some other point.
+- The 5 new stage-transition endpoints (§3) don't have automated unit tests yet, only
+  manual end-to-end verification. Add `*.spec.ts` coverage before relying on this in
+  production.
 - No PDF generation or e-signature for generated agreements.
 - NRB lending cap is a hardcoded constant, not per-loan-type config.
 - "HO visibility" toggle has no backend enforcement.
 - `branch` is free text with no fixed list of valid branches. If the design wants a
   dropdown, that list needs to come from somewhere else, or be hardcoded on the
   frontend for now.
+- Approval rate / average processing-time statistics, application list queue filters
+  (my queue / pending / approval / disbursement / rejected / sent-back), and a merged
+  single-applicant detail view (application + credit score + audit trail in one call)
+  are still outstanding from the bank ops punch list — planned as later phases, not
+  started yet.
+- No cron/scheduler infrastructure exists (`@nestjs/schedule` isn't installed) —
+  overdue EMI entries only transition on-demand via a read query, nothing flips them
+  to `OVERDUE` on a timer, and no reminder notifications go out to Credit Managers
+  automatically yet.

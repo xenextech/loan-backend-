@@ -5,11 +5,12 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
-import { AuditAction } from '../../common/enums';
+import { AuditAction, ApplicationStatus } from '../../common/enums';
 import {
   paginate,
   buildPaginatedResponse,
 } from '../../common/dto/pagination.dto';
+import { generateApplicationNumber } from '../../common/utils/application-number.util';
 import { CreateInitiatorApplicationDto } from './dto/create-initiator-application.dto';
 import { UpdateInitiatorApplicationDto } from './dto/update-initiator-application.dto';
 import { QueryCollegeVerifiedDto } from './dto/query-college-verified.dto';
@@ -161,12 +162,13 @@ export class ApplicationInitiatorService {
     );
   }
 
+  // Sets initiator information on an application that already exists (e.g.
+  // one created by a student, or via `createNewApplication` below).
   async createInitiatorApplication(
     applicationId: string,
     userId: string,
     dto: CreateInitiatorApplicationDto,
   ) {
-    console.log(dto);
     const application = await this.assertApplicationExists(applicationId);
     if (application.relationshipStartDate) {
       throw new ConflictException(
@@ -174,11 +176,45 @@ export class ApplicationInitiatorService {
       );
     }
 
-    const created = await this.prisma.loanApplication.create({
+    const updated = await this.prisma.loanApplication.update({
+      where: { id: applicationId },
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       data: dto as any,
     });
 
+    await this.audit.log(
+      userId,
+      AuditAction.APPLICATION_UPDATED,
+      { section: 'initiator', action: 'create' },
+      applicationId,
+    );
+    return updated;
+  }
+
+  // Starts a brand new application from scratch — no pre-existing
+  // applicationId required. Mirrors `ApplicationsService.create()`.
+  async createNewApplication(
+    userId: string,
+    dto: CreateInitiatorApplicationDto,
+  ) {
+    const created = await this.prisma.loanApplication.create({
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+      data: {
+        applicationNumber: generateApplicationNumber(),
+        status: ApplicationStatus.DRAFT,
+        ...(dto as any),
+      },
+    });
+
+    await this.audit.log(
+      userId,
+      AuditAction.APPLICATION_CREATED,
+      {
+        applicationId: created.id,
+        applicationNumber: created.applicationNumber,
+      },
+      created.id,
+    );
     return created;
   }
 

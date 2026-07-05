@@ -14,14 +14,28 @@ enum UserRole {
   PARENT
   COLLEGE
   INITIATOR
+  // Deprecated: use CREDIT_MANAGER. Kept because Postgres enum values can't be
+  // cheaply dropped and existing rows/JWTs may still reference it.
   CHECKER
   SUPPORTER
   APPROVER
+  CREDIT_MANAGER
 }
 
 enum ApplicationStatus {
   DRAFT
   SUBMITTED
+}
+
+// Bank approval workflow stage — separate from ApplicationStatus, which only
+// tracks the student-facing draft/submitted lifecycle.
+enum ApplicationStage {
+  INITIATED
+  SUPPORTED
+  CHECKING
+  APPROVED
+  REJECTED
+  SENT_BACK
 }
 
 enum StudyType {
@@ -84,6 +98,11 @@ enum AuditAction {
   APPLICATION_UPDATED
   APPLICATION_SUBMITTED
   APPLICATION_LINK_GENERATED
+  APPLICATION_SUPPORTED
+  APPLICATION_CHECKED
+  APPLICATION_APPROVED
+  APPLICATION_REJECTED
+  APPLICATION_SENT_BACK
   COLLEGE_FORM_SUBMITTED
   PARENT_FORM_SUBMITTED
   DISBURSEMENT_CONDITION_UPDATED
@@ -212,6 +231,7 @@ model LoanApplication {
   id                String            @id @default(uuid())
   applicationNumber String?           @unique
   status            ApplicationStatus @default(DRAFT)
+  stage             ApplicationStage?
   userId            String?
   branch            String?
 
@@ -320,10 +340,26 @@ model LoanApplication {
   supporterDate      DateTime?
   supporterSignature String?
 
+  checkerName      String?
+  checkerPost      String?
+  checkerDate      DateTime?
+  checkerSignature String?
+
   approverName      String?
   approverPost      String?
   approverDate      DateTime?
   approverSignature String?
+
+  // Rejection tracking
+  rejectionReason  String?
+  rejectedAt       DateTime?
+  rejectedByUserId String?
+
+  // Send-back tracking — toStage is the stage it's being rewound to
+  sentBackReason   String?
+  sentBackAt       DateTime?
+  sentBackByUserId String?
+  sentBackToStage  ApplicationStage?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -372,6 +408,7 @@ model LoanApplication {
 
   @@index([userId])
   @@index([status])
+  @@index([stage])
   @@index([submittedAt])
   @@map("loan_applications")
 }

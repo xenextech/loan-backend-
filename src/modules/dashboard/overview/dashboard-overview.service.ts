@@ -21,8 +21,9 @@ export class DashboardOverviewService {
       pendingMyActionCount,
       overdueEmi,
       commissionEntries,
-      initiatedOnly,
+      initiated,
       supported,
+      checking,
       approved,
       alerts,
     ] = await Promise.all([
@@ -31,7 +32,9 @@ export class DashboardOverviewService {
         where: { status: { in: ['PARTIAL', 'COMPLETED'] } },
       }),
       this.prisma.loanApplication.count({
-        where: { status: 'SUBMITTED', approverDate: null },
+        where: {
+          stage: { in: ['INITIATED', 'SUPPORTED', 'CHECKING', 'SENT_BACK'] },
+        },
       }),
       this.prisma.emiScheduleEntry.aggregate({
         _sum: { emiAmount: true },
@@ -42,19 +45,10 @@ export class DashboardOverviewService {
         where: { month: { gte: monthStart, lte: monthEnd } },
         include: { partner: { select: { partnerType: true } } },
       }),
-      this.prisma.loanApplication.count({
-        where: { status: 'SUBMITTED', supporterDate: null },
-      }),
-      this.prisma.loanApplication.count({
-        where: {
-          status: 'SUBMITTED',
-          supporterDate: { not: null },
-          approverDate: null,
-        },
-      }),
-      this.prisma.loanApplication.count({
-        where: { status: 'SUBMITTED', approverDate: { not: null } },
-      }),
+      this.prisma.loanApplication.count({ where: { stage: 'INITIATED' } }),
+      this.prisma.loanApplication.count({ where: { stage: 'SUPPORTED' } }),
+      this.prisma.loanApplication.count({ where: { stage: 'CHECKING' } }),
+      this.prisma.loanApplication.count({ where: { stage: 'APPROVED' } }),
       this.buildAlerts(),
     ]);
 
@@ -81,14 +75,10 @@ export class DashboardOverviewService {
         fromBanks: commissionFromBanks,
         fromColleges: commissionFromColleges,
       },
-      // Best-effort approximation: LoanApplication has no persisted
-      // stage/workflow field. Buckets are derived from which sign-off
-      // fields are already populated, since there is no CHECKER sign-off
-      // field to derive a true "Checking" bucket from.
       approvalPipeline: {
-        approximate: true,
-        initiated: initiatedOnly,
+        initiated,
         supported,
+        checking,
         approved,
       },
       alerts,
@@ -97,7 +87,7 @@ export class DashboardOverviewService {
 
   async getCheckerQueue(query: PaginationDto) {
     const { take, skip } = paginate(query.page, query.limit);
-    const where = { status: 'SUBMITTED' as const, approverDate: null };
+    const where = { stage: 'SUPPORTED' as const };
 
     const [data, total] = await Promise.all([
       this.prisma.loanApplication.findMany({
