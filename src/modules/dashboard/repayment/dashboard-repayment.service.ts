@@ -6,19 +6,30 @@ import {
 import { PrismaService } from '../../../prisma/prisma.service';
 import { AuditService } from '../../audit/audit.service';
 import { EmiCalculatorService } from '../../utils/emi-calculator.service';
-import { AuditAction, AuditCategory } from '../../../common/enums';
+import {
+  AuditAction,
+  AuditCategory,
+  NrbLoanClassification,
+} from '../../../common/enums';
 import {
   paginate,
   buildPaginatedResponse,
   PaginationDto,
 } from '../../../common/dto/pagination.dto';
-import { OverdueQueryDto, MarkEmiPaidDto } from '../dto/repayment.dto';
+import {
+  OverdueQueryDto,
+  MarkEmiPaidDto,
+  OverdueBucket,
+} from '../dto/repayment.dto';
 import { EMI_NOTIFICATION_TRIGGERS } from './emi-notification-triggers.constant';
 
-const BUCKET_RANGES: Record<string, [number, number]> = {
+// NRB-aligned aging buckets (days overdue).
+const BUCKET_RANGES: Record<OverdueBucket, [number, number]> = {
   '1-30': [1, 30],
   '31-90': [31, 90],
-  '90+': [91, Infinity],
+  '91-180': [91, 180],
+  '181-365': [181, 365],
+  '365+': [366, Infinity],
 };
 
 @Injectable()
@@ -180,39 +191,60 @@ export class DashboardRepaymentService {
     const now = new Date();
     const day30 = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
     const day90 = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+    const day180 = new Date(now.getTime() - 180 * 24 * 60 * 60 * 1000);
+    const day365 = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
 
-    const [dueToday, overdue1to30, overdue31to90, paidCount, totalDueCount] =
-      await Promise.all([
-        this.prisma.emiScheduleEntry.aggregate({
-          _sum: { emiAmount: true },
-          _count: true,
-          where: {
-            status: 'UPCOMING',
-            dueDate: {
-              gte: new Date(now.getFullYear(), now.getMonth(), now.getDate()),
-              lt: new Date(
-                now.getFullYear(),
-                now.getMonth(),
-                now.getDate() + 1,
-              ),
-            },
+    const [
+      dueToday,
+      overdue1to30,
+      overdue31to90,
+      overdue91to180,
+      overdue181to365,
+      overdue365Plus,
+      paidCount,
+      totalDueCount,
+    ] = await Promise.all([
+      this.prisma.emiScheduleEntry.aggregate({
+        _sum: { emiAmount: true },
+        _count: true,
+        where: {
+          status: 'UPCOMING',
+          dueDate: {
+            gte: new Date(now.getFullYear(), now.getMonth(), now.getDate()),
+            lt: new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1),
           },
-        }),
-        this.prisma.emiScheduleEntry.aggregate({
-          _sum: { emiAmount: true },
-          _count: true,
-          where: { status: 'OVERDUE', dueDate: { gte: day30, lt: now } },
-        }),
-        this.prisma.emiScheduleEntry.aggregate({
-          _sum: { emiAmount: true },
-          _count: true,
-          where: { status: 'OVERDUE', dueDate: { gte: day90, lt: day30 } },
-        }),
-        this.prisma.emiScheduleEntry.count({
-          where: { status: 'PAID', dueDate: { lt: now } },
-        }),
-        this.prisma.emiScheduleEntry.count({ where: { dueDate: { lt: now } } }),
-      ]);
+        },
+      }),
+      this.prisma.emiScheduleEntry.aggregate({
+        _sum: { emiAmount: true },
+        _count: true,
+        where: { status: 'OVERDUE', dueDate: { gte: day30, lt: now } },
+      }),
+      this.prisma.emiScheduleEntry.aggregate({
+        _sum: { emiAmount: true },
+        _count: true,
+        where: { status: 'OVERDUE', dueDate: { gte: day90, lt: day30 } },
+      }),
+      this.prisma.emiScheduleEntry.aggregate({
+        _sum: { emiAmount: true },
+        _count: true,
+        where: { status: 'OVERDUE', dueDate: { gte: day180, lt: day90 } },
+      }),
+      this.prisma.emiScheduleEntry.aggregate({
+        _sum: { emiAmount: true },
+        _count: true,
+        where: { status: 'OVERDUE', dueDate: { gte: day365, lt: day180 } },
+      }),
+      this.prisma.emiScheduleEntry.aggregate({
+        _sum: { emiAmount: true },
+        _count: true,
+        where: { status: 'OVERDUE', dueDate: { lt: day365 } },
+      }),
+      this.prisma.emiScheduleEntry.count({
+        where: { status: 'PAID', dueDate: { lt: now } },
+      }),
+      this.prisma.emiScheduleEntry.count({ where: { dueDate: { lt: now } } }),
+    ]);
 
     const collectionEfficiency =
       totalDueCount > 0
@@ -231,6 +263,18 @@ export class DashboardRepaymentService {
       overdue31to90: {
         amount: overdue31to90._sum.emiAmount ?? 0,
         count: overdue31to90._count,
+      },
+      overdue91to180: {
+        amount: overdue91to180._sum.emiAmount ?? 0,
+        count: overdue91to180._count,
+      },
+      overdue181to365: {
+        amount: overdue181to365._sum.emiAmount ?? 0,
+        count: overdue181to365._count,
+      },
+      overdue365Plus: {
+        amount: overdue365Plus._sum.emiAmount ?? 0,
+        count: overdue365Plus._count,
       },
       collectionEfficiency,
     };
@@ -359,5 +403,108 @@ export class DashboardRepaymentService {
         },
       },
     });
+  }
+
+  // Business rule: penal interest = contract interest rate + 2%, simple daily
+  // interest on the overdue EMI amount, accrued once per day for every entry
+  // currently OVERDUE. Called by the daily cron, attributed to the system user.
+  async accruePenalInterest(userId: string) {
+    const PENAL_MARKUP_PERCENT = 2;
+
+    const overdueEntries = await this.prisma.emiScheduleEntry.findMany({
+      where: { status: 'OVERDUE' },
+      include: { application: { select: { interestRate: true } } },
+    });
+    if (overdueEntries.length === 0) return 0;
+
+    await this.prisma.$transaction(
+      overdueEntries.map((entry) => {
+        const contractRate = Number(entry.application.interestRate ?? 0);
+        const penalRate = contractRate + PENAL_MARKUP_PERCENT;
+        const dailyPenalInterest =
+          (Number(entry.emiAmount) * penalRate) / 100 / 365;
+        const newAccrued =
+          Math.round(
+            (Number(entry.penalInterestAccrued) + dailyPenalInterest) * 100,
+          ) / 100;
+
+        return this.prisma.emiScheduleEntry.update({
+          where: { id: entry.id },
+          data: { penalInterestAccrued: newAccrued },
+        });
+      }),
+    );
+
+    await this.audit.log(
+      userId,
+      AuditAction.PENAL_INTEREST_ACCRUED,
+      { count: overdueEntries.length },
+      undefined,
+      AuditCategory.REPAYMENT,
+    );
+
+    return overdueEntries.length;
+  }
+
+  // Business rule: reclassify each loan (not each installment) by its oldest
+  // unpaid installment's days-overdue — PASS (<90d) -> SUBSTANDARD (90-179d)
+  // -> DOUBTFUL (180-364d) -> LOSS (365d+). Loans with no overdue installments
+  // are reset back to PASS. Called by the daily cron. Label only for now — does
+  // not gate disbursement, reporting, or any other behavior.
+  async reclassifyLoans(userId: string) {
+    const now = new Date();
+
+    const overdueByApplication = await this.prisma.emiScheduleEntry.groupBy({
+      by: ['applicationId'],
+      where: { status: 'OVERDUE' },
+      _min: { dueDate: true },
+    });
+
+    const classify = (daysOverdue: number): NrbLoanClassification => {
+      if (daysOverdue >= 365) return 'LOSS';
+      if (daysOverdue >= 180) return 'DOUBTFUL';
+      if (daysOverdue >= 90) return 'SUBSTANDARD';
+      return 'PASS';
+    };
+
+    const reclassified = overdueByApplication.map((row) => {
+      const oldestDueDate = row._min.dueDate!;
+      const daysOverdue = Math.floor(
+        (now.getTime() - oldestDueDate.getTime()) / (24 * 60 * 60 * 1000),
+      );
+      return {
+        applicationId: row.applicationId,
+        classification: classify(daysOverdue),
+      };
+    });
+
+    const stillOverdueIds = reclassified.map((r) => r.applicationId);
+
+    await this.prisma.$transaction([
+      // Loans that no longer have any overdue installment go back to PASS.
+      this.prisma.loanApplication.updateMany({
+        where: {
+          nrbClassification: { not: 'PASS' },
+          id: { notIn: stillOverdueIds },
+        },
+        data: { nrbClassification: 'PASS', nrbClassifiedAt: now },
+      }),
+      ...reclassified.map((r) =>
+        this.prisma.loanApplication.update({
+          where: { id: r.applicationId },
+          data: { nrbClassification: r.classification, nrbClassifiedAt: now },
+        }),
+      ),
+    ]);
+
+    await this.audit.log(
+      userId,
+      AuditAction.LOAN_RECLASSIFIED,
+      { count: reclassified.length },
+      undefined,
+      AuditCategory.REPAYMENT,
+    );
+
+    return reclassified.length;
   }
 }

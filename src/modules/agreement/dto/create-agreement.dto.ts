@@ -157,7 +157,7 @@ export class AgreementQrDto {
   @MaxLength(100)
   qrToken?: string;
 
-  @ApiPropertyOptional({ example: 'verify.genzloan.com.np/doc/BON-20810031' })
+  @ApiPropertyOptional({ example: 'verify.Unnati.com.np/doc/BON-20810031' })
   @IsString()
   @IsOptional()
   @MaxLength(500)

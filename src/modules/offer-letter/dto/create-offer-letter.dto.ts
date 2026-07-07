@@ -258,7 +258,7 @@ export class QrInfoDto {
   @MaxLength(100)
   qrToken?: string;
 
-  @ApiPropertyOptional({ example: 'verify.genzloan.com.np/doc/OL-20810031' })
+  @ApiPropertyOptional({ example: 'verify.Unnati.com.np/doc/OL-20810031' })
   @IsString()
   @IsOptional()
   @MaxLength(500)

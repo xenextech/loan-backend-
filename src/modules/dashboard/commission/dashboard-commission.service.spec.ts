@@ -147,7 +147,7 @@ describe('DashboardCommissionService', () => {
       loanApplicationFindManyMock.mockResolvedValueOnce([
         {
           id: 'app-1',
-          applicationNumber: 'GenZ-2026-00001',
+          applicationNumber: 'Unnati-2026-00001',
           fullName: 'Birgunj Traders',
           creditLimit: NRB_DIGITAL_LENDING_CAP * 1.2,
         },
@@ -157,7 +157,7 @@ describe('DashboardCommissionService', () => {
       const result = await service.getNrbCapCompliance({ page: 1, limit: 20 });
       expect(result.data[0]).toEqual({
         applicationId: 'app-1',
-        refNo: 'GenZ-2026-00001',
+        refNo: 'Unnati-2026-00001',
         borrower: 'Birgunj Traders',
         creditLimit: NRB_DIGITAL_LENDING_CAP * 1.2,
         nrbCapAmount: NRB_DIGITAL_LENDING_CAP,
@@ -170,7 +170,7 @@ describe('DashboardCommissionService', () => {
       loanApplicationFindManyMock.mockResolvedValueOnce([
         {
           id: 'app-2',
-          applicationNumber: 'GenZ-2026-00002',
+          applicationNumber: 'Unnati-2026-00002',
           fullName: 'Sunita Shrestha',
           creditLimit: NRB_DIGITAL_LENDING_CAP * 0.5,
         },

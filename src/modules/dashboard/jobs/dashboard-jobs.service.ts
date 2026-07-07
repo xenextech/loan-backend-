@@ -12,7 +12,7 @@ import {
 } from '../../../common/enums';
 import { EMI_NOTIFICATION_TRIGGERS } from '../repayment/emi-notification-triggers.constant';
 
-const SYSTEM_USER_EMAIL = 'system@genzloan.internal';
+const SYSTEM_USER_EMAIL = 'system@Unnati.internal';
 
 @Injectable()
 export class DashboardJobsService {
@@ -54,8 +54,13 @@ export class DashboardJobsService {
 
     await this.sendDueReminders();
 
+    const penalCount = await this.repayment.accruePenalInterest(systemUserId);
+    const reclassifiedCount =
+      await this.repayment.reclassifyLoans(systemUserId);
+
     this.logger.log(
-      `Daily EMI job complete — ${newlyOverdue.length} entries marked overdue`,
+      `Daily EMI job complete — ${newlyOverdue.length} entries marked overdue, ` +
+        `${penalCount} entries accrued penal interest, ${reclassifiedCount} loans reclassified`,
     );
   }
 

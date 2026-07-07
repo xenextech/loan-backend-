@@ -88,7 +88,7 @@ describe('DashboardDisbursementService', () => {
       loanApplicationFindManyMock.mockResolvedValueOnce([
         {
           id: 'app-1',
-          applicationNumber: 'GenZ-2026-00001',
+          applicationNumber: 'Unnati-2026-00001',
           fullName: 'Sharada Sah Godh',
           creditLimit: 710000,
           disbursementConditions: [{ status: 'DONE' }, { status: 'PENDING' }],
@@ -99,7 +99,7 @@ describe('DashboardDisbursementService', () => {
       const result = await service.getPending({ page: 1, limit: 20 });
       expect(result.data[0]).toEqual({
         applicationId: 'app-1',
-        refNo: 'GenZ-2026-00001',
+        refNo: 'Unnati-2026-00001',
         borrower: 'Sharada Sah Godh',
         amount: 710000,
         conditionsDone: 1,
@@ -112,7 +112,7 @@ describe('DashboardDisbursementService', () => {
       loanApplicationFindManyMock.mockResolvedValueOnce([
         {
           id: 'app-2',
-          applicationNumber: 'GenZ-2026-00002',
+          applicationNumber: 'Unnati-2026-00002',
           fullName: 'Sunita Shrestha',
           creditLimit: 450000,
           disbursementConditions: [],

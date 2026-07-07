@@ -52,7 +52,7 @@ async function bootstrap() {
 
   // ── Swagger ───────────────────────────────────────────────────────────────
   const swaggerConfig = new DocumentBuilder()
-    .setTitle('GenZ Loan API')
+    .setTitle('Unnati Loan API')
     .setDescription('Education Loan Application Platform — MVP 0.1')
     .setVersion('0.1.0')
     .addBearerAuth(
@@ -73,7 +73,7 @@ async function bootstrap() {
   });
 
   await app.listen(port);
-  console.log(`🚀  GenZ Loan API running on http://localhost:${port}/api/v1`);
+  console.log(`🚀  Unnati Loan API running on http://localhost:${port}/api/v1`);
   console.log(`📖  Swagger docs at  http://localhost:${port}/api/docs`);
 }
 

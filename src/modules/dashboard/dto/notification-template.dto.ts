@@ -18,7 +18,7 @@ export class CreateNotificationTemplateDto {
 
   @ApiProperty({
     example:
-      'Dear {name}, your EMI of Rs {amount} is due on {date}. Pay via {link}. — GenZ Loan',
+      'Dear {name}, your EMI of Rs {amount} is due on {date}. Pay via {link}. — Unnati Loan',
   })
   @IsString()
   body: string;

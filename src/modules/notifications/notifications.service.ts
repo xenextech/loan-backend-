@@ -117,7 +117,7 @@ export class NotificationsService {
 
     await this.sendEmail(
       email,
-      'Verify your GenZ Loan account',
+      'Verify your Unnati Loan account',
       `
       <h2>Welcome to Cliq Edu Loan!</h2>
       <p>Please verify your email address by clicking the link below:</p>
@@ -134,7 +134,7 @@ export class NotificationsService {
 
     await this.sendEmail(
       email,
-      'Reset your GenZ Loan password',
+      'Reset your Unnati Loan password',
       `
       <h2>Password Reset Request</h2>
       <p>Click the button below to reset your password. This link expires in 1 hour.</p>
@@ -152,7 +152,7 @@ export class NotificationsService {
   ) {
     await this.sendEmail(
       email,
-      'Your loan application has been submitted — GenZ Loan',
+      'Your loan application has been submitted — Unnati Loan',
       `
       <h2>Application Submitted!</h2>
       <p>Your education loan application <strong>${applicationNumber}</strong> has been successfully submitted.</p>
@@ -164,7 +164,7 @@ export class NotificationsService {
       <p><strong>College verification link</strong> — share this with your institution so they can upload the required documents:</p>
       <a href="${collegeLink}" style="background:#0D9488;color:#fff;padding:10px 20px;border-radius:6px;text-decoration:none;display:inline-block;">College Verification Link</a>
       <p style="margin-top:16px;font-size:13px;color:#6B7280;">Both links are valid for 3 days. Keep them confidential.</p>
-      <p>Thank you for choosing GenZ Loan.</p>
+      <p>Thank you for choosing Unnati Loan.</p>
     `,
     );
   }
@@ -183,7 +183,7 @@ export class NotificationsService {
       <p>Please click the button below to view the application details:</p>
       <a href="${parentLink}" style="background:#4F46E5;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;display:inline-block;">View Application</a>
       <p style="margin-top:16px;font-size:13px;color:#6B7280;">This link is valid for 3 days. If you were not expecting this email, you can safely ignore it.</p>
-      <p>Thank you,<br/>GenZ Loan Team</p>
+      <p>Thank you,<br/>Unnati Loan Team</p>
     `,
     );
   }
@@ -202,7 +202,7 @@ export class NotificationsService {
       <p>Please click the button below to complete the verification — you will need to upload the offer letter and enrollment documents:</p>
       <a href="${collegeLink}" style="background:#0D9488;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;display:inline-block;">Complete College Verification</a>
       <p style="margin-top:16px;font-size:13px;color:#6B7280;">This link is valid for 3 days. If you were not expecting this email, you can safely ignore it.</p>
-      <p>Thank you,<br/>GenZ Loan Team</p>
+      <p>Thank you,<br/>Unnati Loan Team</p>
     `,
     );
   }

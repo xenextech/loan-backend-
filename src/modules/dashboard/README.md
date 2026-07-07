@@ -1,6 +1,6 @@
 # Dashboard API — Frontend Integration Guide
 
-Backend for the credit-ops "GenZ Loan Bank OS" admin screens: Dashboard,
+Backend for the credit-ops "Unnati Loan Bank OS" admin screens: Dashboard,
 Applications, Approval workflow, Disbursement, EMI schedule, Notifications, Document
 center, Insurance tracker, Commission management, Audit ledger. Read it top to bottom
 once, then use it as a per-screen reference after that.
@@ -50,7 +50,7 @@ Every list endpoint paginates the same way. Query params `page` (default 1) and
 
 ```json
 {
-  "data": [ "...rows" ],
+  "data": ["...rows"],
   "meta": {
     "total": 132,
     "page": 1,
@@ -96,11 +96,11 @@ directly supported, it's just not the only path.
 
 The landing screen. Top-line numbers plus two feeds (checker queue, alerts).
 
-| Method | Path | Notes |
-|---|---|---|
-| GET | `/dashboard/overview` | Not paginated, one aggregate object |
-| GET | `/dashboard/overview/checker-queue` | Paginated, applications at `stage: SUPPORTED` awaiting a Credit Manager's check |
-| GET | `/dashboard/overview/alerts` | Paginated |
+| Method | Path                                | Notes                                                                           |
+| ------ | ----------------------------------- | ------------------------------------------------------------------------------- |
+| GET    | `/dashboard/overview`               | Not paginated, one aggregate object                                             |
+| GET    | `/dashboard/overview/checker-queue` | Paginated, applications at `stage: SUPPORTED` awaiting a Credit Manager's check |
+| GET    | `/dashboard/overview/alerts`        | Paginated                                                                       |
 
 `GET /dashboard/overview` response:
 
@@ -109,9 +109,24 @@ The landing screen. Top-line numbers plus two feeds (checker queue, alerts).
   "portfolioTotal": 1840000,
   "pendingMyActionCount": 5,
   "overdueEmi": { "count": 4, "amount": 74500 },
-  "commissionThisMonth": { "total": 1800, "fromBanks": 1500, "fromColleges": 300 },
-  "approvalPipeline": { "initiated": 12, "supported": 9, "checking": 4, "approved": 3 },
-  "approvalStats": { "approved": 6, "rejected": 2, "totalDecided": 8, "approvalRate": 75, "avgProcessingTimeDays": 2.3 },
+  "commissionThisMonth": {
+    "total": 1800,
+    "fromBanks": 1500,
+    "fromColleges": 300
+  },
+  "approvalPipeline": {
+    "initiated": 12,
+    "supported": 9,
+    "checking": 4,
+    "approved": 3
+  },
+  "approvalStats": {
+    "approved": 6,
+    "rejected": 2,
+    "totalDecided": 8,
+    "approvalRate": 75,
+    "avgProcessingTimeDays": 2.3
+  },
   "alerts": [
     { "type": "CICL_FLAG", "applicationId": "...", "message": "..." },
     { "type": "INSURANCE_EXPIRING", "applicationId": "...", "message": "..." },
@@ -132,12 +147,12 @@ has been approved or rejected yet. `avgProcessingTimeDays` is the average
 
 The searchable table of all submitted applications.
 
-| Method | Path | Notes |
-|---|---|---|
-| POST | `/applications/initiator` | INITIATOR-only, note this is *not* under `/dashboard`. Starts a brand new application, no pre-existing ID needed — see below |
-| GET | `/dashboard/applications` | Supports `?filter=` — see below |
-| GET | `/dashboard/applications/:id` | |
-| GET | `/dashboard/applications/:id/detail` | Merged applicant view — see below |
+| Method | Path                                 | Notes                                                                                                                        |
+| ------ | ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
+| POST   | `/applications/initiator`            | INITIATOR-only, note this is _not_ under `/dashboard`. Starts a brand new application, no pre-existing ID needed — see below |
+| GET    | `/dashboard/applications`            | Supports `?filter=` — see below                                                                                              |
+| GET    | `/dashboard/applications/:id`        |                                                                                                                              |
+| GET    | `/dashboard/applications/:id/detail` | Merged applicant view — see below                                                                                            |
 
 Query params: `page`, `limit`, `search` (matches name/ref no/citizenship no/phone),
 `branch`, `dateFrom`, `dateTo`, `filter`.
@@ -185,26 +200,26 @@ move an application through the pipeline.
 
 Read-only:
 
-| Method | Path |
-|---|---|
-| GET | `/dashboard/approval/:applicationId/summary` |
-| GET | `/dashboard/approval/:applicationId/credit-score` |
-| GET | `/dashboard/approval/:applicationId/nrb-checklist` |
-| GET | `/dashboard/approval/:applicationId/activity` (paginated) |
+| Method | Path                                                      |
+| ------ | --------------------------------------------------------- |
+| GET    | `/dashboard/approval/:applicationId/summary`              |
+| GET    | `/dashboard/approval/:applicationId/credit-score`         |
+| GET    | `/dashboard/approval/:applicationId/nrb-checklist`        |
+| GET    | `/dashboard/approval/:applicationId/activity` (paginated) |
 
 Stage transitions — each stamps the relevant sign-off fields (name/post/date/
 signature aren't auto-filled from the JWT today except the date; post/signature still
 need a follow-up PATCH if the UI collects them), writes an audit log entry, and
 400s if the application isn't at a valid predecessor stage for that action:
 
-| Method | Path | Role(s) | Effect |
-|---|---|---|---|
-| POST | `/dashboard/approval/:applicationId/support` | `SUPPORTER` | stage → `SUPPORTED` (valid from `null`/`INITIATED`/`SENT_BACK`) |
-| POST | `/dashboard/approval/:applicationId/check` | `CREDIT_MANAGER` (or `CHECKER`) | stage → `CHECKING` (valid from `SUPPORTED`/`SENT_BACK`) |
-| POST | `/dashboard/approval/:applicationId/approve` | `APPROVER` | stage → `APPROVED` (valid from `CHECKING` only). Sets `approverDate` and auto-creates the `LoanAccount` credit ledger (see §4) |
-| POST | `/dashboard/approval/:applicationId/reject` | `CREDIT_MANAGER`/`CHECKER`/`APPROVER` | stage → `REJECTED` from any stage. Body: `{ reason }`. Now also notifies the applicant (email + SMS if a phone number is on file) |
-| POST | `/dashboard/approval/:applicationId/send-back` | `SUPPORTER`/`CREDIT_MANAGER`/`CHECKER`/`APPROVER` | stage → `SENT_BACK` from any stage. Body: `{ reason, toStage? }` (`toStage` defaults to `INITIATED`) — re-entering the pipeline (e.g. calling `support` again) is allowed from `SENT_BACK` |
-| POST | `/dashboard/approval/:applicationId/pep-screening` | `CREDIT_MANAGER`/`CHECKER` | Records the applicant's PEP (Politically Exposed Person) check. Body: `{ status: boolean, remarks? }` — `status: true` means the applicant *is* a PEP |
+| Method | Path                                               | Role(s)                                           | Effect                                                                                                                                                                                     |
+| ------ | -------------------------------------------------- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| POST   | `/dashboard/approval/:applicationId/support`       | `SUPPORTER`                                       | stage → `SUPPORTED` (valid from `null`/`INITIATED`/`SENT_BACK`)                                                                                                                            |
+| POST   | `/dashboard/approval/:applicationId/check`         | `CREDIT_MANAGER` (or `CHECKER`)                   | stage → `CHECKING` (valid from `SUPPORTED`/`SENT_BACK`)                                                                                                                                    |
+| POST   | `/dashboard/approval/:applicationId/approve`       | `APPROVER`                                        | stage → `APPROVED` (valid from `CHECKING` only). Sets `approverDate` and auto-creates the `LoanAccount` credit ledger (see §4)                                                             |
+| POST   | `/dashboard/approval/:applicationId/reject`        | `CREDIT_MANAGER`/`CHECKER`/`APPROVER`             | stage → `REJECTED` from any stage. Body: `{ reason }`. Now also notifies the applicant (email + SMS if a phone number is on file)                                                          |
+| POST   | `/dashboard/approval/:applicationId/send-back`     | `SUPPORTER`/`CREDIT_MANAGER`/`CHECKER`/`APPROVER` | stage → `SENT_BACK` from any stage. Body: `{ reason, toStage? }` (`toStage` defaults to `INITIATED`) — re-entering the pipeline (e.g. calling `support` again) is allowed from `SENT_BACK` |
+| POST   | `/dashboard/approval/:applicationId/pep-screening` | `CREDIT_MANAGER`/`CHECKER`                        | Records the applicant's PEP (Politically Exposed Person) check. Body: `{ status: boolean, remarks? }` — `status: true` means the applicant _is_ a PEP                                      |
 
 These endpoints are new and manually verified end-to-end (create → support → check →
 approve, and separately reject / send-back-then-resupport / pep-screening), but don't
@@ -226,14 +241,14 @@ activity trail.
 The disbursement queue, per-application conditions checklist, and confirming a
 tranche payout.
 
-| Method | Path | Notes |
-|---|---|---|
-| GET | `/dashboard/disbursement/pending` | Paginated, approved apps not yet fully disbursed |
-| GET | `/dashboard/disbursement/:applicationId/conditions` | |
-| POST | `/dashboard/disbursement/:applicationId/conditions` | Body: `{ label }` |
-| PATCH | `/dashboard/disbursement/:applicationId/conditions/:conditionId` | Body: `{ status: "PENDING"\|"DONE"\|"MISSING", remarks? }` |
-| POST | `/dashboard/disbursement/:applicationId/confirm` | see below |
-| GET | `/dashboard/disbursement/history` | Paginated tranche history |
+| Method | Path                                                             | Notes                                                      |
+| ------ | ---------------------------------------------------------------- | ---------------------------------------------------------- |
+| GET    | `/dashboard/disbursement/pending`                                | Paginated, approved apps not yet fully disbursed           |
+| GET    | `/dashboard/disbursement/:applicationId/conditions`              |                                                            |
+| POST   | `/dashboard/disbursement/:applicationId/conditions`              | Body: `{ label }`                                          |
+| PATCH  | `/dashboard/disbursement/:applicationId/conditions/:conditionId` | Body: `{ status: "PENDING"\|"DONE"\|"MISSING", remarks? }` |
+| POST   | `/dashboard/disbursement/:applicationId/confirm`                 | see below                                                  |
+| GET    | `/dashboard/disbursement/history`                                | Paginated tranche history                                  |
 
 `confirm` body: `{ trancheNumber, amount, accountCredited?, commissionAmount?, date? }`.
 It's additive, call it once per tranche disbursed rather than sending the whole
@@ -264,14 +279,14 @@ its `conditions` → let the user tick them off through `PATCH` → once satisfi
 
 Viewing/generating a loan's amortization schedule and tracking overdue collections.
 
-| Method | Path | Notes |
-|---|---|---|
-| POST | `/dashboard/repayment/:applicationId/generate-schedule` | Idempotent, safe to call again, replaces the schedule |
-| GET | `/dashboard/repayment/:applicationId/schedule` | Paginated |
-| GET | `/dashboard/repayment/overdue?bucket=1-30\|31-90\|90+` | Paginated, `bucket` optional |
-| GET | `/dashboard/repayment/overview` | Not paginated, the stat tiles |
-| PATCH | `/dashboard/repayment/schedule/:entryId/mark-paid` | Body: `{ paidAmount, paidDate }` |
-| GET | `/dashboard/repayment/notification-triggers` | Static config list, no params |
+| Method | Path                                                    | Notes                                                 |
+| ------ | ------------------------------------------------------- | ----------------------------------------------------- |
+| POST   | `/dashboard/repayment/:applicationId/generate-schedule` | Idempotent, safe to call again, replaces the schedule |
+| GET    | `/dashboard/repayment/:applicationId/schedule`          | Paginated                                             |
+| GET    | `/dashboard/repayment/overdue?bucket=1-30\|31-90\|90+`  | Paginated, `bucket` optional                          |
+| GET    | `/dashboard/repayment/overview`                         | Not paginated, the stat tiles                         |
+| PATCH  | `/dashboard/repayment/schedule/:entryId/mark-paid`      | Body: `{ paidAmount, paidDate }`                      |
+| GET    | `/dashboard/repayment/notification-triggers`            | Static config list, no params                         |
 
 Sequencing matters here: a schedule only exists after `generate-schedule` gets
 called, which is expected to happen once a disbursement is confirmed (screen 4), not
@@ -317,12 +332,12 @@ source of the small difference).
 
 The notification log viewer plus message template CRUD.
 
-| Method | Path |
-|---|---|
-| GET | `/dashboard/notifications/log` |
-| GET | `/dashboard/notifications/templates` |
-| POST | `/dashboard/notifications/templates` |
-| PATCH | `/dashboard/notifications/templates/:id` |
+| Method | Path                                     |
+| ------ | ---------------------------------------- |
+| GET    | `/dashboard/notifications/log`           |
+| GET    | `/dashboard/notifications/templates`     |
+| POST   | `/dashboard/notifications/templates`     |
+| PATCH  | `/dashboard/notifications/templates/:id` |
 | DELETE | `/dashboard/notifications/templates/:id` |
 
 `log` filters: `channel` (`APP`/`EMAIL`/`SMS`/`WHATSAPP`), `deliveryStatus`
@@ -339,14 +354,14 @@ no templating engine needed on the frontend.
 Verifying a borrower's offer letter, browsing the document vault, generating loan
 agreements.
 
-| Method | Path | Notes |
-|---|---|---|
-| POST | `/dashboard/documents/offer-letter/verify` | Body: `{ applicationId, refOrQrToken }` |
-| GET | `/dashboard/documents/vault` | Paginated, filters `applicationId`/`documentType` |
-| GET | `/dashboard/documents/agreements` | Paginated |
-| POST | `/dashboard/documents/agreements` | Body: `{ applicationId, agreementType }` |
-| POST | `/dashboard/documents/agreements/:id/send-to-sign` | |
-| PATCH | `/dashboard/documents/agreements/:id/mark-signed` | |
+| Method | Path                                               | Notes                                             |
+| ------ | -------------------------------------------------- | ------------------------------------------------- |
+| POST   | `/dashboard/documents/offer-letter/verify`         | Body: `{ applicationId, refOrQrToken }`           |
+| GET    | `/dashboard/documents/vault`                       | Paginated, filters `applicationId`/`documentType` |
+| GET    | `/dashboard/documents/agreements`                  | Paginated                                         |
+| POST   | `/dashboard/documents/agreements`                  | Body: `{ applicationId, agreementType }`          |
+| POST   | `/dashboard/documents/agreements/:id/send-to-sign` |                                                   |
+| PATCH  | `/dashboard/documents/agreements/:id/mark-signed`  |                                                   |
 
 `verify` returns `{ matched: boolean, offerLetter, verification }`. `matched: false`
 just means nothing matched that ref/QR, show a "not found" state rather than an
@@ -364,12 +379,12 @@ than wiring it to a dead link.
 
 Tracking insurance policies attached to loans and their expiry.
 
-| Method | Path |
-|---|---|
-| GET | `/dashboard/insurance/stats` |
-| GET | `/dashboard/insurance/policies` |
-| POST | `/dashboard/insurance/policies` |
-| GET | `/dashboard/insurance/policies/:id` |
+| Method | Path                                |
+| ------ | ----------------------------------- |
+| GET    | `/dashboard/insurance/stats`        |
+| GET    | `/dashboard/insurance/policies`     |
+| POST   | `/dashboard/insurance/policies`     |
+| GET    | `/dashboard/insurance/policies/:id` |
 
 Every policy in a list/detail response has a computed `status`: `ACTIVE` /
 `EXPIRING_SOON` (within 30 days) / `EXPIRED`. It's computed fresh on every request
@@ -385,16 +400,16 @@ premiumAmount?, startDate?, expiryDate }`.
 
 Tracking bank/college MOU commission rates and the resulting earnings ledger.
 
-| Method | Path |
-|---|---|
-| GET | `/dashboard/commission/summary` |
-| GET | `/dashboard/commission/by-bank` |
-| GET | `/dashboard/commission/by-college` |
-| GET | `/dashboard/commission/nrb-cap-compliance` |
-| GET/POST | `/dashboard/commission/partners` |
-| PATCH | `/dashboard/commission/partners/:id` |
-| GET/POST | `/dashboard/commission/entries` |
-| PATCH | `/dashboard/commission/entries/:id` |
+| Method   | Path                                       |
+| -------- | ------------------------------------------ |
+| GET      | `/dashboard/commission/summary`            |
+| GET      | `/dashboard/commission/by-bank`            |
+| GET      | `/dashboard/commission/by-college`         |
+| GET      | `/dashboard/commission/nrb-cap-compliance` |
+| GET/POST | `/dashboard/commission/partners`           |
+| PATCH    | `/dashboard/commission/partners/:id`       |
+| GET/POST | `/dashboard/commission/entries`            |
+| PATCH    | `/dashboard/commission/entries/:id`        |
 
 A `CommissionPartner` (a bank or college MOU record) has to exist before you can log
 a `CommissionEntry` against it, `partners` is reference data, `entries` is the
@@ -414,11 +429,11 @@ with at least one commission entry against that partner, not raw entry count.
 
 The immutable activity log with category tabs and CSV export.
 
-| Method | Path |
-|---|---|
-| GET | `/dashboard/audit` |
-| POST | `/dashboard/audit/manual-entry` |
-| GET | `/dashboard/audit/export/csv` |
+| Method | Path                            |
+| ------ | ------------------------------- |
+| GET    | `/dashboard/audit`              |
+| POST   | `/dashboard/audit/manual-entry` |
+| GET    | `/dashboard/audit/export/csv`   |
 
 `GET /dashboard/audit` filters: `category` (`APPROVAL`/`DISBURSEMENT`/`REPAYMENT`/
 `COMMISSION`/`SYSTEM`), `userId`, `applicationId`, `dateFrom`/`dateTo`. Map the

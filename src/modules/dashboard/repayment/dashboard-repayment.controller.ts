@@ -66,7 +66,7 @@ export class DashboardRepaymentController {
   @Get('overview')
   @ApiOperation({
     summary:
-      'Repayment overview — due today, overdue buckets (1-30d, 31-90d), collection efficiency',
+      'Repayment overview — due today, overdue aging buckets (1-30d, 31-90d, 91-180d, 181-365d, 365d+), collection efficiency',
   })
   getOverview() {
     return this.dashboardRepaymentService.getOverview();

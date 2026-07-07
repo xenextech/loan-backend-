@@ -12,7 +12,7 @@ describe('DashboardApprovalService', () => {
 
   const baseApplication = {
     id: 'app-1',
-    applicationNumber: 'GenZ-2026-00001',
+    applicationNumber: 'Unnati-2026-00001',
     status: 'SUBMITTED',
     dsgir: 30,
     loanToValueRatio: 55,
@@ -51,7 +51,7 @@ describe('DashboardApprovalService', () => {
       const summary = await service.getSummary('app-1');
       expect(summary).toEqual({
         applicationId: 'app-1',
-        applicationNumber: 'GenZ-2026-00001',
+        applicationNumber: 'Unnati-2026-00001',
         status: 'SUBMITTED',
         dsgir: 30,
         loanToValueRatio: 55,

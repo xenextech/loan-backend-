@@ -6,7 +6,7 @@ See [AGENTS.md](AGENTS.md) for the full project overview, layout, commands, and 
 
 ## Quick orientation
 
-- NestJS 11 + TypeScript REST API ("GenZ Loan API") for an education loan platform. PostgreSQL via Prisma 7, Supabase storage, JWT auth, nodemailer email.
+- NestJS 11 + TypeScript REST API ("Unnati Loan API") for an education loan platform. PostgreSQL via Prisma 7, Supabase storage, JWT auth, nodemailer email.
 - Global API prefix `/api/v1`, Swagger at `/api/docs`.
 - Feature code lives in `src/modules/<name>/` (module/controller/service/dto per feature). Shared cross-cutting code is in `src/common/`. Data model is defined once in `prisma/schema.prisma`.
 - Sibling frontend repo is available as an additional working directory (`edu-loan-frontend`) — check it when an API change needs a matching client-side update.

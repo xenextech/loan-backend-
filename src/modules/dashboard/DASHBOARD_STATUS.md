@@ -9,7 +9,7 @@ if anyone wants the engineering-level version.
 
 ## What this is
 
-This is the bank-staff side of GenZ Loan: a "Credit Head" operating dashboard that
+This is the bank-staff side of Unnati Loan: a "Credit Head" operating dashboard that
 covers the full lifecycle of a loan after a student submits it. Reviewing it,
 approving it, disbursing the money, tracking repayment, managing insurance and
 commission relationships, and keeping an audit trail of all of it. It was built off a

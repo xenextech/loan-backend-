@@ -95,7 +95,7 @@ describe('DashboardAuditService', () => {
       findManyMock.mockResolvedValueOnce([
         {
           createdAt: new Date('2026-06-29T13:05:00.000Z'),
-          user: { email: 'prem.napit@genzloan.com', role: 'APPROVER' },
+          user: { email: 'prem.napit@Unnati.com', role: 'APPROVER' },
           category: AuditCategory.APPROVAL,
           action: AuditAction.MANUAL_AUDIT_ENTRY,
           applicationId: 'app-1',
@@ -109,7 +109,7 @@ describe('DashboardAuditService', () => {
       expect(header).toBe(
         'Timestamp,User,Role,Category,Action,Application ID,Payload',
       );
-      expect(row).toContain('prem.napit@genzloan.com');
+      expect(row).toContain('prem.napit@Unnati.com');
       // JSON.stringify escapes the inner quotes with backslashes, then CSV
       // quoting doubles every raw `"` — so the field-level `"` becomes `""`.
       expect(row).toContain('\\""quotes\\""');

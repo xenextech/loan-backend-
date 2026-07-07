@@ -2,11 +2,20 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsIn, IsISO8601, IsNumber, IsOptional } from 'class-validator';
 import { PaginationDto } from '../../../common/dto/pagination.dto';
 
+export const OVERDUE_BUCKETS = [
+  '1-30',
+  '31-90',
+  '91-180',
+  '181-365',
+  '365+',
+] as const;
+export type OverdueBucket = (typeof OVERDUE_BUCKETS)[number];
+
 export class OverdueQueryDto extends PaginationDto {
-  @ApiPropertyOptional({ enum: ['1-30', '31-90', '90+'] })
+  @ApiPropertyOptional({ enum: OVERDUE_BUCKETS })
   @IsOptional()
-  @IsIn(['1-30', '31-90', '90+'])
-  bucket?: '1-30' | '31-90' | '90+';
+  @IsIn(OVERDUE_BUCKETS)
+  bucket?: OverdueBucket;
 }
 
 export class MarkEmiPaidDto {

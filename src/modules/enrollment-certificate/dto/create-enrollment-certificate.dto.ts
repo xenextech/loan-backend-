@@ -166,7 +166,7 @@ export class EnrollQrDto {
   @MaxLength(100)
   qrToken?: string;
 
-  @ApiPropertyOptional({ example: 'verify.genzloan.com.np/doc/ENR-20810031' })
+  @ApiPropertyOptional({ example: 'verify.Unnati.com.np/doc/ENR-20810031' })
   @IsString()
   @IsOptional()
   @MaxLength(500)

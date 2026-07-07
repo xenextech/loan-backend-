@@ -71,7 +71,7 @@ describe('DashboardApplicationsService', () => {
       findManyMock.mockResolvedValueOnce([
         {
           id: 'app-1',
-          applicationNumber: 'GenZ-2026-00001',
+          applicationNumber: 'Unnati-2026-00001',
           submittedAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000),
           createdAt: new Date(Date.now() - 6 * 24 * 60 * 60 * 1000),
           fullName: 'Sharada Sah Godh',
@@ -90,7 +90,7 @@ describe('DashboardApplicationsService', () => {
       expect(result.data[0]).toEqual(
         expect.objectContaining({
           id: 'app-1',
-          refNo: 'GenZ-2026-00001',
+          refNo: 'Unnati-2026-00001',
           borrower: 'Sharada Sah Godh',
           branch: 'Birgunj',
           type: 'Agriculture',
@@ -108,7 +108,7 @@ describe('DashboardApplicationsService', () => {
       findManyMock.mockResolvedValueOnce([
         {
           id: 'app-2',
-          applicationNumber: 'GenZ-2026-00002',
+          applicationNumber: 'Unnati-2026-00002',
           submittedAt: null,
           createdAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000),
           fullName: 'Test User',

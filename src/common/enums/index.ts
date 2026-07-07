@@ -86,6 +86,7 @@ export {
   CommissionEntryStatus,
   ApplicationStage,
   LoanAccountStatus,
+  NrbLoanClassification,
 } from '@prisma/client';
 export const CREDIT_FACILITY_SIZE_BELOW1M_WEIGHT = 2;
 export const CREDIT_FACILITY_SIZE_BELOW1M_POINT = 1;

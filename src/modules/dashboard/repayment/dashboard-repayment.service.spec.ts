@@ -23,6 +23,16 @@ interface EntryUpdateCallArgs {
   data: { status: string; paidAmount: number; paidDate: Date };
 }
 
+interface AppUpdateManyCallArgs {
+  where: { nrbClassification?: { not: string }; id?: { notIn: string[] } };
+  data: { nrbClassification: string; nrbClassifiedAt: Date };
+}
+
+interface AppUpdateCallArgs {
+  where: { id: string };
+  data: { nrbClassification: string; nrbClassifiedAt: Date };
+}
+
 describe('DashboardRepaymentService', () => {
   const applicationId = 'app-1';
   const application = {
@@ -42,6 +52,9 @@ describe('DashboardRepaymentService', () => {
   let entryFindUniqueMock: jest.Mock;
   let entryUpdateMock: jest.Mock<unknown, [EntryUpdateCallArgs]>;
   let auditLogMock: jest.Mock;
+  let groupByMock: jest.Mock;
+  let appUpdateManyMock: jest.Mock<unknown, [AppUpdateManyCallArgs]>;
+  let appUpdateMock: jest.Mock<unknown, [AppUpdateCallArgs]>;
   let service: DashboardRepaymentService;
 
   function buildService() {
@@ -55,9 +68,21 @@ describe('DashboardRepaymentService', () => {
     entryFindUniqueMock = jest.fn().mockResolvedValue(null);
     entryUpdateMock = jest.fn<unknown, [EntryUpdateCallArgs]>();
     auditLogMock = jest.fn().mockResolvedValue(undefined);
+    groupByMock = jest.fn().mockResolvedValue([]);
+    appUpdateManyMock = jest
+      .fn<unknown, [AppUpdateManyCallArgs]>()
+      .mockResolvedValue({ count: 0 });
+    appUpdateMock = jest.fn<unknown, [AppUpdateCallArgs]>();
 
     const prisma = {
-      loanApplication: { findUnique: findUniqueMock },
+      loanApplication: {
+        findUnique: findUniqueMock,
+        updateMany: appUpdateManyMock,
+        update: appUpdateMock,
+      },
+      loanAccount: {
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+      },
       emiScheduleEntry: {
         deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
         createMany: jest
@@ -71,7 +96,9 @@ describe('DashboardRepaymentService', () => {
         aggregate: aggregateMock,
         findUnique: entryFindUniqueMock,
         update: entryUpdateMock,
+        groupBy: groupByMock,
       },
+      $transaction: jest.fn((ops: unknown[]) => Promise.all(ops)),
     } as unknown as PrismaService;
 
     const audit = { log: auditLogMock } as unknown as AuditService;
@@ -173,11 +200,21 @@ describe('DashboardRepaymentService', () => {
       );
     });
 
-    it('leaves the lower bound open-ended for the 90+ bucket', async () => {
-      await service.getOverdue({ page: 1, limit: 20, bucket: '90+' });
+    it('leaves the lower bound open-ended for the 365+ bucket', async () => {
+      await service.getOverdue({ page: 1, limit: 20, bucket: '365+' });
       const { where } = findManyMock.mock.calls[0][0];
       expect(where.dueDate.gte).toBeUndefined();
       expect(where.dueDate.lte).toBeInstanceOf(Date);
+    });
+
+    it('bounds the 91-180 day bucket on both ends', async () => {
+      await service.getOverdue({ page: 1, limit: 20, bucket: '91-180' });
+      const { where } = findManyMock.mock.calls[0][0];
+      expect(where.dueDate.gte).toBeInstanceOf(Date);
+      expect(where.dueDate.lte).toBeInstanceOf(Date);
+      expect(where.dueDate.gte.getTime()).toBeLessThan(
+        where.dueDate.lte.getTime(),
+      );
     });
   });
 
@@ -208,6 +245,90 @@ describe('DashboardRepaymentService', () => {
       expect(overview.dueToday).toEqual({ amount: 32000, count: 42 });
       expect(overview.overdue1to30).toEqual({ amount: 18000, count: 18 });
       expect(overview.overdue31to90).toEqual({ amount: 7400, count: 6 });
+    });
+
+    it('surfaces the extended 91-180/181-365/365+ NRB aging buckets', async () => {
+      aggregateMock
+        .mockResolvedValueOnce({ _sum: { emiAmount: 0 }, _count: 0 }) // dueToday
+        .mockResolvedValueOnce({ _sum: { emiAmount: 0 }, _count: 0 }) // overdue1to30
+        .mockResolvedValueOnce({ _sum: { emiAmount: 0 }, _count: 0 }) // overdue31to90
+        .mockResolvedValueOnce({ _sum: { emiAmount: 5000 }, _count: 2 }) // overdue91to180
+        .mockResolvedValueOnce({ _sum: { emiAmount: 9000 }, _count: 3 }) // overdue181to365
+        .mockResolvedValueOnce({ _sum: { emiAmount: 15000 }, _count: 1 }); // overdue365Plus
+
+      const overview = await service.getOverview();
+      expect(overview.overdue91to180).toEqual({ amount: 5000, count: 2 });
+      expect(overview.overdue181to365).toEqual({ amount: 9000, count: 3 });
+      expect(overview.overdue365Plus).toEqual({ amount: 15000, count: 1 });
+    });
+  });
+
+  describe('accruePenalInterest', () => {
+    it('accrues one day of (contract rate + 2%) simple interest on the overdue EMI amount', async () => {
+      findManyMock.mockResolvedValueOnce([
+        {
+          id: 'entry-1',
+          emiAmount: 10000,
+          penalInterestAccrued: 0,
+          application: { interestRate: 12 },
+        },
+      ] as never);
+
+      await service.accruePenalInterest('system-user');
+
+      // (12% + 2%) / 365 * 10000 ≈ 3.84
+      expect(entryUpdateMock).toHaveBeenCalledWith({
+        where: { id: 'entry-1' },
+        data: { penalInterestAccrued: 3.84 },
+      });
+      expect(auditLogMock).toHaveBeenCalledWith(
+        'system-user',
+        AuditAction.PENAL_INTEREST_ACCRUED,
+        { count: 1 },
+        undefined,
+        AuditCategory.REPAYMENT,
+      );
+    });
+
+    it('does nothing when there are no overdue entries', async () => {
+      findManyMock.mockResolvedValueOnce([]);
+      const count = await service.accruePenalInterest('system-user');
+      expect(count).toBe(0);
+      expect(entryUpdateMock).not.toHaveBeenCalled();
+      expect(auditLogMock).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('reclassifyLoans', () => {
+    it('classifies a loan as SUBSTANDARD at 90+ days overdue', async () => {
+      const oldestDueDate = new Date(Date.now() - 100 * 24 * 60 * 60 * 1000);
+      groupByMock.mockResolvedValueOnce([
+        { applicationId: 'app-1', _min: { dueDate: oldestDueDate } },
+      ]);
+
+      await service.reclassifyLoans('system-user');
+
+      expect(appUpdateMock).toHaveBeenCalledWith({
+        where: { id: 'app-1' },
+        data: {
+          nrbClassification: 'SUBSTANDARD',
+          nrbClassifiedAt: expect.any(Date) as Date,
+        },
+      });
+    });
+
+    it('resets loans with no remaining overdue entries back to PASS', async () => {
+      groupByMock.mockResolvedValueOnce([]);
+
+      await service.reclassifyLoans('system-user');
+
+      expect(appUpdateManyMock).toHaveBeenCalledWith({
+        where: { nrbClassification: { not: 'PASS' }, id: { notIn: [] } },
+        data: {
+          nrbClassification: 'PASS',
+          nrbClassifiedAt: expect.any(Date) as Date,
+        },
+      });
     });
   });
 

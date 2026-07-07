@@ -121,6 +121,8 @@ enum AuditAction {
   EMI_SCHEDULE_GENERATED
   EMI_PAYMENT_RECORDED
   EMI_MARKED_OVERDUE
+  PENAL_INTEREST_ACCRUED
+  LOAN_RECLASSIFIED
   COMMISSION_ENTRY_CREATED
   COMMISSION_ENTRY_PAID
   COMMISSION_PARTNER_UPDATED
@@ -182,6 +184,16 @@ enum EmiStatus {
   PAID
   OVERDUE
   PARTIAL
+}
+
+// NRB-aligned loan classification, driven by the oldest unpaid installment's
+// days-overdue: PASS (<90d) -> SUBSTANDARD (90-179d) -> DOUBTFUL (180-364d) -> LOSS (365d+).
+// Recomputed daily by the same cron that marks entries overdue.
+enum NrbLoanClassification {
+  PASS
+  SUBSTANDARD
+  DOUBTFUL
+  LOSS
 }
 
 enum GeneratedAgreementType {
@@ -423,6 +435,12 @@ model LoanApplication {
   riskGrade                 String?
   totalScore                Int?
   totalPercentage           Decimal?                @db.Decimal(5, 2)
+
+  // NRB loan classification — recomputed daily from the oldest unpaid EMI
+  // installment's days-overdue (see NrbLoanClassification). Display label only;
+  // does not gate any other behavior.
+  nrbClassification         NrbLoanClassification   @default(PASS)
+  nrbClassifiedAt           DateTime?
 
   @@index([userId])
   @@index([status])
@@ -993,6 +1011,10 @@ model EmiScheduleEntry {
   status               EmiStatus @default(UPCOMING)
   paidAmount           Decimal?  @default(0) @db.Decimal(18, 2)
   paidDate             DateTime?
+
+  // Running penal-interest balance — accrued daily by the cron while this entry
+  // is OVERDUE, at (contract interest rate + 2%) simple daily interest on emiAmount.
+  penalInterestAccrued Decimal @default(0) @db.Decimal(18, 2)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
