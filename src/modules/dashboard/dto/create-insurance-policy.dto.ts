@@ -6,6 +6,10 @@ export class CreateInsurancePolicyDto {
   @IsString()
   applicationId: string;
 
+  @ApiProperty({ example: 'Applicant Name' })
+  @IsString()
+  applicantName: string;
+
   @ApiProperty({ example: 'IMG-PROP-2080-092' })
   @IsString()
   policyNumber: string;

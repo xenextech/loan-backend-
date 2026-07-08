@@ -30,9 +30,15 @@ export class ResponseInterceptor<T> implements NestInterceptor<
 
     return next.handle().pipe(
       map((data: unknown) => {
-        // If data already has a success field, it's a pre-formatted response — pass through
+        // If data already has a success field, it's a pre-formatted response —
+        // pass it through unchanged, only backfilling `timestamp` if whoever
+        // built it forgot to (so every response is guaranteed one without
+        // requiring every future hand-rolled envelope to remember it).
         if (data !== null && typeof data === 'object' && 'success' in data) {
-          return data as ApiResponse<T>;
+          const preFormatted = data as ApiResponse<T>;
+          return preFormatted.timestamp
+            ? preFormatted
+            : { ...preFormatted, timestamp: new Date().toISOString() };
         }
 
         return {

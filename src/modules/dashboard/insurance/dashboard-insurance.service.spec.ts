@@ -7,6 +7,7 @@ import { AuditAction, AuditCategory } from '../../../common/enums';
 interface PolicyCreateCallArgs {
   data: {
     applicationId: string;
+    applicantName?: string;
     policyNumber: string;
     addedByUserId: string;
   };
@@ -141,6 +142,7 @@ describe('DashboardInsuranceService', () => {
       await expect(
         service.create('user-1', {
           applicationId: 'missing',
+          applicantName: 'Jane Student',
           policyNumber: 'POL-1',
           insurer: 'IME',
           sumInsured: 100000,
@@ -150,7 +152,7 @@ describe('DashboardInsuranceService', () => {
       expect(policyCreateMock).not.toHaveBeenCalled();
     });
 
-    it('creates the policy and logs an audit entry', async () => {
+    it('creates the policy — including applicantName — and logs an audit entry', async () => {
       policyCreateMock.mockResolvedValueOnce({
         id: 'p1',
         policyNumber: 'POL-1',
@@ -159,6 +161,7 @@ describe('DashboardInsuranceService', () => {
 
       const result = await service.create('user-1', {
         applicationId: 'app-1',
+        applicantName: 'Jane Student',
         policyNumber: 'POL-1',
         insurer: 'IME',
         sumInsured: 100000,
@@ -169,6 +172,7 @@ describe('DashboardInsuranceService', () => {
       expect(createArgs.data).toEqual(
         expect.objectContaining({
           applicationId: 'app-1',
+          applicantName: 'Jane Student',
           policyNumber: 'POL-1',
           addedByUserId: 'user-1',
         }),

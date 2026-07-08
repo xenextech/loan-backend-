@@ -6,18 +6,19 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { ApplicationsService } from '../applications/applications.service';
 import {
   AuditAction,
-  ApplicationStatus,
+  ApplicationSource,
   BlacklistStatus,
 } from '../../common/enums';
 import {
   paginate,
   buildPaginatedResponse,
 } from '../../common/dto/pagination.dto';
-import { generateApplicationNumber } from '../../common/utils/application-number.util';
 import { CreateInitiatorApplicationDto } from './dto/create-initiator-application.dto';
 import { UpdateInitiatorApplicationDto } from './dto/update-initiator-application.dto';
+import { CreateInitiatorNewApplicationDto } from './dto/create-initiator-new-application.dto';
 import { QueryCollegeVerifiedDto } from './dto/query-college-verified.dto';
 
 @Injectable()
@@ -25,6 +26,7 @@ export class ApplicationInitiatorService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly applicationsService: ApplicationsService,
   ) {}
 
   private async assertApplicationExists(applicationId: string) {
@@ -153,6 +155,7 @@ export class ApplicationInitiatorService {
         id: true,
         applicationNumber: true,
         status: true,
+        source: true,
 
         // Step 1: Personal Information
         fullName: true,
@@ -247,6 +250,61 @@ export class ApplicationInitiatorService {
     );
   }
 
+  // The Initiator's unified work queue — everything ready for the Initiator
+  // to act on, regardless of how it arrived: college-verified student
+  // applications (existing flow, unchanged) plus Initiator-sourced
+  // applications, which are ready the instant they're created since they
+  // never wait on a college or student step. Deliberately a *new*, additive
+  // endpoint rather than broadening getCollegeVerifiedApplications() above —
+  // that one's name and response shape (always a non-null collegeVerification)
+  // are a real contract existing callers rely on; this one's shape says
+  // upfront that collegeVerification can be null.
+  async getInitiatorQueue(query: QueryCollegeVerifiedDto) {
+    const { take, skip } = paginate(query.page, query.limit);
+    const where = {
+      OR: [
+        { collegeVerification: { isApplicationVerified: true } },
+        { source: ApplicationSource.INITIATOR },
+      ],
+    };
+
+    const [applications, total] = await Promise.all([
+      this.prisma.loanApplication.findMany({
+        where,
+        take,
+        skip,
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          applicationNumber: true,
+          status: true,
+          source: true,
+          fullName: true,
+          email: true,
+          phoneNumber: true,
+          createdAt: true,
+          user: { select: { id: true, email: true, role: true } },
+          collegeVerification: true,
+        },
+      }),
+      this.prisma.loanApplication.count({ where }),
+    ]);
+
+    const data = applications.map(({ collegeVerification, ...student }) => ({
+      applicationId: student.id,
+      source: student.source,
+      student,
+      collegeVerification,
+    }));
+
+    return buildPaginatedResponse(
+      data,
+      total,
+      query.page ?? 1,
+      query.limit ?? 20,
+    );
+  }
+
   // Sets initiator information on an application that already exists (e.g.
   // one created by a student, or via `createNewApplication` below).
   async createInitiatorApplication(
@@ -276,31 +334,24 @@ export class ApplicationInitiatorService {
     return updated;
   }
 
-  // Starts a brand new application from scratch — no pre-existing
-  // applicationId required. Mirrors `ApplicationsService.create()`.
+  // Starts a brand-new, complete application from scratch — no pre-existing
+  // applicationId, and no student submission or college verification
+  // required. Delegates entirely to ApplicationsService.createComplete(),
+  // the same place the student flow's own creation logic lives, tagged
+  // `source: INITIATOR` — so field shape, validation, and the
+  // LoanApplication + StudyInformation + LoanInformation write pattern are
+  // shared with (not duplicated from) the student flow. The Initiator's own
+  // credit-appraisal fields (customerName, relationshipStartDate, etc.) are
+  // added afterward through the existing createInitiatorApplication()/
+  // updateInitiatorApplication() above — this call only handles the
+  // student-shaped part of the record.
   async createNewApplication(
     userId: string,
-    dto: CreateInitiatorApplicationDto,
+    dto: CreateInitiatorNewApplicationDto,
   ) {
-    const created = await this.prisma.loanApplication.create({
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-      data: {
-        applicationNumber: generateApplicationNumber(),
-        status: ApplicationStatus.DRAFT,
-        ...(dto as any),
-      },
+    return this.applicationsService.createComplete(userId, dto, {
+      source: ApplicationSource.INITIATOR,
     });
-
-    await this.audit.log(
-      userId,
-      AuditAction.APPLICATION_CREATED,
-      {
-        applicationId: created.id,
-        applicationNumber: created.applicationNumber,
-      },
-      created.id,
-    );
-    return created;
   }
 
   async updateInitiatorApplication(

@@ -120,6 +120,7 @@ export class DashboardInsuranceService {
     const policy = await this.prisma.insurancePolicy.create({
       data: {
         applicationId: dto.applicationId,
+        applicantName: dto.applicantName,
         policyNumber: dto.policyNumber,
         insurer: dto.insurer,
         policyType: dto.policyType,

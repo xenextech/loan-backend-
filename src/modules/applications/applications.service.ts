@@ -18,6 +18,7 @@ import {
   ApplicationStatus,
   AuditAction,
   ApplicationLinkType,
+  ApplicationSource,
 } from '../../common/enums';
 import {
   paginate,
@@ -67,6 +68,85 @@ export class ApplicationsService {
     );
 
     return application;
+  }
+
+  // ── Create a complete application in one shot (Initiator-sourced) ─────────
+  // Reuses the exact same field shape (Step1/2/3Dto) and DOB-resolution logic
+  // as the student's own step-by-step flow — the only differences are that
+  // everything is supplied and persisted in a single call, `source` is
+  // tagged, and `userId` (the student-owner FK) stays whatever the caller
+  // passes, which is intentionally absent when the Initiator originates the
+  // record. Called by ApplicationInitiatorService.createNewApplication() —
+  // kept here, not duplicated there, since this is the one place that knows
+  // how a LoanApplication + its StudyInformation/LoanInformation rows are
+  // built from step-shaped form data.
+  async createComplete(
+    actorUserId: string,
+    dto: Step1Dto & Step2Dto & Step3Dto,
+    options: { ownerUserId?: string; source?: ApplicationSource } = {},
+  ) {
+    const { ownerUserId, source = ApplicationSource.STUDENT } = options;
+    const {
+      studyType,
+      courseName,
+      boardUniversity,
+      courseDuration,
+      loanAmount,
+      expectedSalary,
+      feeStructureMethod,
+      feeStructureUrl,
+      feeStructureText,
+      dateOfBirth: legacyDobAd,
+      dobAd,
+      dobBs,
+      issuedDate,
+      ...personalFields
+    } = dto;
+    const resolvedDob = this.resolveDateOfBirth({
+      dateOfBirth: legacyDobAd,
+      dobAd,
+      dobBs,
+    });
+
+    const application = await this.prisma.loanApplication.create({
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+      data: {
+        ...personalFields,
+        userId: ownerUserId,
+        applicationNumber: generateApplicationNumber(),
+        status: ApplicationStatus.DRAFT,
+        source,
+        dateOfBirth: resolvedDob.dateOfBirth,
+        dobBs: resolvedDob.dobBs,
+        issuedDate: issuedDate ? new Date(issuedDate) : undefined,
+        studyInformation: {
+          create: { studyType, courseName, boardUniversity, courseDuration },
+        },
+        loanInformation: {
+          create: {
+            loanAmount,
+            expectedSalary,
+            feeStructureMethod,
+            feeStructureUrl,
+            feeStructureText,
+          },
+        },
+      } as any,
+      include: { studyInformation: true, loanInformation: true },
+    });
+
+    await this.audit.log(
+      actorUserId,
+      AuditAction.APPLICATION_CREATED,
+      {
+        applicationId: application.id,
+        applicationNumber: application.applicationNumber,
+        source,
+      },
+      application.id,
+    );
+
+    return this.withComputedDob(application);
   }
 
   // ── List student's own applications ───────────────────────────────────────
@@ -197,45 +277,57 @@ export class ApplicationsService {
     return this.findOne(id, userId, 'STUDENT');
   }
 
+  // dobAd / legacy dateOfBirth / dobBs — any one may arrive; AD stays
+  // canonical, BS is derived (or cross-checked, if both were supplied).
+  // Shared by saveStep2 (student self-service) and createComplete
+  // (Initiator one-shot creation) so the two never drift.
+  private resolveDateOfBirth(dto: {
+    dateOfBirth?: string;
+    dobAd?: string;
+    dobBs?: string;
+  }): { dateOfBirth?: Date; dobBs?: string } {
+    const adInput = dto.dobAd ?? dto.dateOfBirth;
+
+    if (adInput && dto.dobBs) {
+      const parsedAd = new Date(adInput);
+      const derivedBs = convertAdToBs(parsedAd);
+      if (derivedBs !== dto.dobBs) {
+        throw new BadRequestException(
+          'dobAd and dobBs do not refer to the same calendar date',
+        );
+      }
+      return { dateOfBirth: parsedAd, dobBs: dto.dobBs };
+    }
+    if (adInput) {
+      const dateOfBirth = new Date(adInput);
+      return { dateOfBirth, dobBs: convertAdToBs(dateOfBirth) };
+    }
+    if (dto.dobBs) {
+      return { dateOfBirth: convertBsToAd(dto.dobBs), dobBs: dto.dobBs };
+    }
+    return {};
+  }
+
   // ── Step 2: Save identity & address ───────────────────────────────────────
   async saveStep2(id: string, userId: string, dto: Step2Dto) {
     await this.assertEditableByUser(id, userId);
 
     const { dateOfBirth: legacyDobAd, dobAd, dobBs, issuedDate, ...rest } = dto;
-
-    // dobAd / legacy dateOfBirth / dobBs — any one may arrive; AD stays
-    // canonical, BS is derived (or cross-checked, if both were supplied).
-    const adInput = dobAd ?? legacyDobAd;
-    let dateOfBirthValue: Date | undefined;
-    let dobBsValue: string | undefined;
-
-    if (adInput && dobBs) {
-      const parsedAd = new Date(adInput);
-      const derivedBs = convertAdToBs(parsedAd);
-      if (derivedBs !== dobBs) {
-        throw new BadRequestException(
-          'dobAd and dobBs do not refer to the same calendar date',
-        );
-      }
-      dateOfBirthValue = parsedAd;
-      dobBsValue = dobBs;
-    } else if (adInput) {
-      dateOfBirthValue = new Date(adInput);
-      dobBsValue = convertAdToBs(dateOfBirthValue);
-    } else if (dobBs) {
-      dateOfBirthValue = convertBsToAd(dobBs);
-      dobBsValue = dobBs;
-    }
+    const resolved = this.resolveDateOfBirth({
+      dateOfBirth: legacyDobAd,
+      dobAd,
+      dobBs,
+    });
 
     await this.prisma.loanApplication.update({
       where: { id },
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       data: {
         ...rest,
-        ...(dateOfBirthValue !== undefined && {
-          dateOfBirth: dateOfBirthValue,
+        ...(resolved.dateOfBirth !== undefined && {
+          dateOfBirth: resolved.dateOfBirth,
         }),
-        ...(dobBsValue !== undefined && { dobBs: dobBsValue }),
+        ...(resolved.dobBs !== undefined && { dobBs: resolved.dobBs }),
         issuedDate: issuedDate ? new Date(issuedDate) : undefined,
       } as any,
     });

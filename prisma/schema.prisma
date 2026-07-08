@@ -27,6 +27,18 @@ enum ApplicationStatus {
   SUBMITTED
 }
 
+// Who originated the application. STUDENT = self-service, walks the
+// Student -> Parent -> College -> Initiator pipeline. INITIATOR = bank staff
+// entered it directly (no student/parent/college step required) — it enters
+// the same downstream Supporter -> Checker -> Approver -> Credit Manager
+// workflow either way. Deliberately its own enum (not folded into
+// ApplicationStage) so adding a future source — Agent, Branch, Partner —
+// is a one-line enum addition with no change to the approval state machine.
+enum ApplicationSource {
+  STUDENT
+  INITIATOR
+}
+
 // Bank approval workflow stage — separate from ApplicationStatus, which only
 // tracks the student-facing draft/submitted lifecycle.
 enum ApplicationStage {
@@ -282,6 +294,7 @@ model LoanApplication {
   applicationNumber String?           @unique
   status            ApplicationStatus @default(DRAFT)
   stage             ApplicationStage?
+  source            ApplicationSource @default(STUDENT)
   userId            String?
   branch            String?
 
@@ -486,6 +499,7 @@ model LoanApplication {
   @@index([userId])
   @@index([status])
   @@index([stage])
+  @@index([source])
   @@index([submittedAt])
   @@map("loan_applications")
 }
@@ -1213,8 +1227,14 @@ model InsurancePolicy {
   id            String @id @default(cuid())
   applicationId String
 
-  policyNumber  String
-  insurer       String
+  // Denormalized at creation time so the policy list/CSV/print views don't
+  // need a join back to LoanApplication.fullName — nullable since older
+  // rows predate this field. Not treated as the source of truth for the
+  // applicant's name; LoanApplication.fullName remains that.
+  applicantName String?
+
+  policyNumber String
+  insurer      String
   policyType    String?
   sumInsured    Decimal   @db.Decimal(18, 2)
   premiumAmount Decimal?  @db.Decimal(18, 2)

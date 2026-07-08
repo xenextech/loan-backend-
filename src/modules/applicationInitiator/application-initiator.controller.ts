@@ -12,6 +12,7 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ApplicationInitiatorService } from './application-initiator.service';
 import { CreateInitiatorApplicationDto } from './dto/create-initiator-application.dto';
 import { UpdateInitiatorApplicationDto } from './dto/update-initiator-application.dto';
+import { CreateInitiatorNewApplicationDto } from './dto/create-initiator-new-application.dto';
 import { QueryCollegeVerifiedDto } from './dto/query-college-verified.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
@@ -110,11 +111,11 @@ export class ApplicationInitiatorListController {
   @Post()
   @ApiOperation({
     summary:
-      'Start a new application from scratch — no existing application ID required. Returns the created application (with its generated id) for subsequent PATCH /applications/:applicationId/initiator calls.',
+      'Create a complete new student application directly (Initiator-sourced) — no prior student submission or college verification required. Accepts the same personal/identity/family/study/loan fields as the student Step1-3 forms; the returned application is immediately visible via GET /applications/initiator/queue and proceeds through the normal Supporter → Checker → Approver → Credit Manager workflow. Follow up with POST/PATCH /applications/:applicationId/initiator for the credit-appraisal section.',
   })
   create(
     @CurrentUser() user: JwtPayload,
-    @Body() dto: CreateInitiatorApplicationDto,
+    @Body() dto: CreateInitiatorNewApplicationDto,
   ) {
     return this.applicationInitiatorService.createNewApplication(user.sub, dto);
   }
@@ -122,11 +123,20 @@ export class ApplicationInitiatorListController {
   @Get('college-verified')
   @ApiOperation({
     summary:
-      'List students whose application has been verified by their college (paginated), mapped by applicationId',
+      'List students whose application has been verified by their college (paginated), mapped by applicationId. Unchanged — College-verified applications only. See GET /applications/initiator/queue for College-verified + Initiator-created combined.',
   })
   getCollegeVerified(@Query() query: QueryCollegeVerifiedDto) {
     return this.applicationInitiatorService.getCollegeVerifiedApplications(
       query,
     );
+  }
+
+  @Get('queue')
+  @ApiOperation({
+    summary:
+      'The Initiator work queue (paginated) — College-verified student applications plus Initiator-created applications, combined. Each row carries `source` (STUDENT | INITIATOR); `collegeVerification` is null for Initiator-sourced rows.',
+  })
+  getQueue(@Query() query: QueryCollegeVerifiedDto) {
+    return this.applicationInitiatorService.getInitiatorQueue(query);
   }
 }

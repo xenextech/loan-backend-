@@ -87,6 +87,7 @@ export {
   CommissionRateType,
   CommissionEntryStatus,
   ApplicationStage,
+  ApplicationSource,
   LoanAccountStatus,
   NrbLoanClassification,
   ParentDocumentType,
