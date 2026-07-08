@@ -2,6 +2,7 @@ import { ApiPropertyOptional } from '@nestjs/swagger';
 import { IsOptional, IsString, IsEnum, IsDateString } from 'class-validator';
 import { Transform } from 'class-transformer';
 import { IdentityType, Gender, Occupation } from '../../../common/enums';
+import { IsBsDate } from '../../../common/validators/is-bs-date.validator';
 
 export class Step2Dto {
   // Identity
@@ -22,11 +23,41 @@ export class Step2Dto {
   @IsString()
   identityName?: string;
 
-  @ApiPropertyOptional({ example: '1998-05-20' })
-  @Transform(({ value }) => value || undefined)
+  @ApiPropertyOptional({
+    example: '1998-05-20',
+    description:
+      'Date of birth, AD/Gregorian (YYYY-MM-DD). Deprecated — use dobAd instead. ' +
+      'Kept for backward compatibility; behaves identically to dobAd.',
+    deprecated: true,
+  })
+  @Transform(({ value }: { value: unknown }) => value || undefined)
   @IsOptional()
   @IsDateString()
   dateOfBirth?: string;
+
+  @ApiPropertyOptional({
+    example: '1998-05-20',
+    description:
+      'Date of birth, AD/Gregorian (YYYY-MM-DD). Either dobAd or dobBs may be ' +
+      'supplied — the backend derives whichever one is missing and keeps both ' +
+      'in sync. AD is the canonical value used for storage and age calculation.',
+  })
+  @Transform(({ value }: { value: unknown }) => value || undefined)
+  @IsOptional()
+  @IsDateString()
+  dobAd?: string;
+
+  @ApiPropertyOptional({
+    example: '2055-02-06',
+    description:
+      'Date of birth, Bikram Sambat (YYYY-MM-DD). Either dobAd or dobBs may be ' +
+      'supplied — the backend derives whichever one is missing and keeps both ' +
+      'in sync. Supported years: 2000-2090 BS.',
+  })
+  @Transform(({ value }: { value: unknown }) => value || undefined)
+  @IsOptional()
+  @IsBsDate()
+  dobBs?: string;
 
   @ApiPropertyOptional({ enum: Gender })
   @IsOptional()
@@ -44,7 +75,7 @@ export class Step2Dto {
   issuedDistrict?: string;
 
   @ApiPropertyOptional({ example: '2015-03-10' })
-  @Transform(({ value }) => value || undefined)
+  @Transform(({ value }: { value: unknown }) => value || undefined)
   @IsOptional()
   @IsDateString()
   issuedDate?: string;

@@ -2,13 +2,19 @@ import {
   IsArray,
   IsBoolean,
   IsISO8601,
-  IsNumber,
+  IsInt,
   IsOptional,
   IsString,
+  Max,
+  Min,
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiPropertyOptional } from '@nestjs/swagger';
+import {
+  IsMoneyAmount,
+  IsPercentage,
+} from '../../../common/decorators/numeric-range.decorators';
 
 export class FamilyMemberDto {
   @ApiPropertyOptional({
@@ -21,7 +27,9 @@ export class FamilyMemberDto {
 
   @ApiPropertyOptional({ description: 'Age of the family member', example: 42 })
   @IsOptional()
-  @IsNumber()
+  @IsInt()
+  @Min(0)
+  @Max(120, { message: 'age must not exceed 120' })
   age?: number;
 
   @ApiPropertyOptional({
@@ -72,7 +80,9 @@ export class PersonalGuaranteeDto {
     example: 50,
   })
   @IsOptional()
-  @IsNumber()
+  @IsInt()
+  @Min(0)
+  @Max(120, { message: 'age must not exceed 120' })
   age?: number;
 
   @ApiPropertyOptional({
@@ -80,7 +90,7 @@ export class PersonalGuaranteeDto {
     example: 15000000,
   })
   @IsOptional()
-  @IsNumber()
+  @IsMoneyAmount()
   netWorth?: number;
 
   @ApiPropertyOptional({
@@ -134,7 +144,9 @@ export class RepaymentCapacityDto {
     example: 5000000,
   })
   @IsOptional()
-  @IsNumber()
+  @IsInt()
+  @Min(0)
+  @Max(2147483647, { message: 'insuredAssets must not exceed 2147483647' })
   insuredAssets?: number;
 
   @ApiPropertyOptional({
@@ -143,7 +155,7 @@ export class RepaymentCapacityDto {
     example: 6000000,
   })
   @IsOptional()
-  @IsNumber()
+  @IsMoneyAmount()
   valueOfAssets?: number;
 
   @ApiPropertyOptional({
@@ -152,7 +164,7 @@ export class RepaymentCapacityDto {
     example: 6500000,
   })
   @IsOptional()
-  @IsNumber()
+  @IsMoneyAmount()
   sumOfInsurance?: number;
 
   @ApiPropertyOptional({
@@ -170,7 +182,7 @@ export class RepaymentCapacityDto {
     example: 90,
   })
   @IsOptional()
-  @IsNumber()
+  @IsPercentage()
   insuranceCoverage?: number;
 }
 
@@ -208,7 +220,9 @@ export class UpdateInitiatorApplicationDto {
     example: 102938,
   })
   @IsOptional()
-  @IsNumber()
+  @IsInt()
+  @Min(0)
+  @Max(2147483647, { message: 'obligorNumber must not exceed 2147483647' })
   obligorNumber?: number;
 
   @ApiPropertyOptional({
@@ -332,7 +346,9 @@ export class UpdateInitiatorApplicationDto {
     example: 75,
   })
   @IsOptional()
-  @IsNumber()
+  @IsInt()
+  @Min(0)
+  @Max(100, { message: 'baselRiskWeight must be between 0 and 100' })
   baselRiskWeight?: number;
 
   @ApiPropertyOptional({
@@ -440,19 +456,15 @@ export class UpdateInitiatorApplicationDto {
     example: 5000000,
   })
   @IsOptional()
-  @IsNumber()
+  @IsMoneyAmount()
   creditLimit?: number;
 
-  @ApiPropertyOptional({
-    description: 'Classification size of the credit facility',
-    example: 'Mid-Sized Commercial',
-  })
   @ApiPropertyOptional({
     description: 'Loan-to-Value (LTV) ratio calculation',
     example: 65.5,
   })
   @IsOptional()
-  @IsNumber()
+  @IsPercentage()
   loanToValueRatio?: number;
 
   @ApiPropertyOptional({
@@ -460,7 +472,7 @@ export class UpdateInitiatorApplicationDto {
     example: 35.2,
   })
   @IsOptional()
-  @IsNumber()
+  @IsPercentage()
   dsgir?: number;
 
   @ApiPropertyOptional({
@@ -468,7 +480,9 @@ export class UpdateInitiatorApplicationDto {
     example: 4,
   })
   @IsOptional()
-  @IsNumber()
+  @IsInt()
+  @Min(0)
+  @Max(100, { message: 'performanceYears must not exceed 100' })
   performanceYears?: number;
 
   @ApiPropertyOptional({
@@ -476,7 +490,9 @@ export class UpdateInitiatorApplicationDto {
     example: 85,
   })
   @IsOptional()
-  @IsNumber()
+  @IsInt()
+  @Min(0)
+  @Max(100, { message: 'bankingRelationshipScore must be between 0 and 100' })
   bankingRelationshipScore?: number;
 
   @ApiPropertyOptional({
@@ -484,6 +500,7 @@ export class UpdateInitiatorApplicationDto {
     example: 1200000,
   })
   @IsOptional()
+  @IsString()
   parentsBorrowingsWithBFIs?: string;
 
   @ApiPropertyOptional({
@@ -491,7 +508,9 @@ export class UpdateInitiatorApplicationDto {
     example: 90,
   })
   @IsOptional()
-  @IsNumber()
+  @IsInt()
+  @Min(0)
+  @Max(100, { message: 'sourceOfIncomeScore must be between 0 and 100' })
   sourceOfIncomeScore?: number;
 
   @ApiPropertyOptional({
@@ -499,7 +518,7 @@ export class UpdateInitiatorApplicationDto {
     example: 78,
   })
   @IsOptional()
-  @IsNumber()
+  @IsPercentage()
   operationOfInstitution?: number;
 
   @ApiPropertyOptional({
@@ -523,7 +542,9 @@ export class UpdateInitiatorApplicationDto {
     example: 425,
   })
   @IsOptional()
-  @IsNumber()
+  @IsInt()
+  @Min(0)
+  @Max(2147483647, { message: 'totalScore must not exceed 2147483647' })
   totalScore?: number;
 
   @ApiPropertyOptional({
@@ -531,7 +552,7 @@ export class UpdateInitiatorApplicationDto {
     example: 85.4,
   })
   @IsOptional()
-  @IsNumber()
+  @IsPercentage()
   totalPercentage?: number;
 
   // =========================
@@ -570,7 +591,7 @@ export class UpdateInitiatorApplicationDto {
     example: 3000000,
   })
   @IsOptional()
-  @IsNumber()
+  @IsMoneyAmount()
   limit?: number;
 
   @ApiPropertyOptional({
@@ -578,7 +599,9 @@ export class UpdateInitiatorApplicationDto {
     example: 60,
   })
   @IsOptional()
-  @IsNumber()
+  @IsInt()
+  @Min(0)
+  @Max(2147483647, { message: 'period must not exceed 2147483647' })
   period?: number;
 
   @ApiPropertyOptional({
@@ -586,7 +609,7 @@ export class UpdateInitiatorApplicationDto {
     example: 11.5,
   })
   @IsOptional()
-  @IsNumber()
+  @IsPercentage({ message: 'Interest rate must be between 0 and 100' })
   interestRate?: number;
 
   @ApiPropertyOptional({
@@ -594,7 +617,7 @@ export class UpdateInitiatorApplicationDto {
     example: 0.5,
   })
   @IsOptional()
-  @IsNumber()
+  @IsMoneyAmount()
   fee?: number;
 
   @ApiPropertyOptional({
@@ -623,7 +646,7 @@ export class UpdateInitiatorApplicationDto {
     example: 10000000,
   })
   @IsOptional()
-  @IsNumber()
+  @IsMoneyAmount()
   fmv?: number;
 
   @ApiPropertyOptional({
@@ -631,7 +654,7 @@ export class UpdateInitiatorApplicationDto {
     example: 6000000,
   })
   @IsOptional()
-  @IsNumber()
+  @IsMoneyAmount()
   proposedLoan?: number;
 
   @ApiPropertyOptional({
@@ -639,7 +662,7 @@ export class UpdateInitiatorApplicationDto {
     example: 60,
   })
   @IsOptional()
-  @IsNumber()
+  @IsPercentage()
   financeAgainstFmv?: number;
 
   // =========================
@@ -674,7 +697,7 @@ export class UpdateInitiatorApplicationDto {
     example: 8000000,
   })
   @IsOptional()
-  @IsNumber()
+  @IsMoneyAmount()
   valueOfAssets?: number;
 
   @ApiPropertyOptional({
@@ -682,7 +705,7 @@ export class UpdateInitiatorApplicationDto {
     example: 8500000,
   })
   @IsOptional()
-  @IsNumber()
+  @IsMoneyAmount()
   sumOfInsurance?: number;
 
   @ApiPropertyOptional({
@@ -698,7 +721,7 @@ export class UpdateInitiatorApplicationDto {
     example: 100,
   })
   @IsOptional()
-  @IsNumber()
+  @IsPercentage()
   insuranceCoverage?: number;
 
   // =========================

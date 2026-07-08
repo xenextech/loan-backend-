@@ -76,6 +76,8 @@ enum IdentityType {
   CITIZENSHIP
   PASSPORT
   DRIVING_LICENSE
+  NATIONAL_ID
+  PAN_NUMBER
 }
 
 enum Gender {
@@ -107,6 +109,7 @@ enum FeeStructureMethod {
 enum DocumentType {
   IDENTITY_FRONT
   IDENTITY_BACK
+  IDENTITY_DOCUMENT
   APPLICANT_PHOTO
   ACADEMIC_RECORD
   FEE_STRUCTURE
@@ -291,7 +294,11 @@ model LoanApplication {
   identityType   IdentityType?
   identityNumber String?
   identityName   String?
+  // Canonical AD date of birth — used for storage, age calculation, and as the
+  // source of truth. dobBs (Bikram Sambat) is kept in sync automatically from
+  // this value; see BsAdDate utils in common/utils/bs-ad-date.util.ts.
   dateOfBirth    DateTime?
+  dobBs          String?
   gender         Gender?
   occupation     Occupation?
   issuedDistrict String?
@@ -332,6 +339,14 @@ model LoanApplication {
   licenseNumber               String?
   existingBankingRelationship String?
   isBlacklisted               Boolean?
+
+  // Detailed blacklist section — conditionally required based on
+  // blacklistStatus; see ApplicationInitiatorService's blacklist validation.
+  // isBlacklisted above is a separate legacy flag, left untouched.
+  blacklistStatus          BlacklistStatus?
+  blacklistReason          String?
+  blacklistDate            DateTime?
+  blacklistReferenceNumber String?
 
   // PEP (Politically Exposed Person) screening — recorded via a dedicated
   // check step, not just a manually-set flag like isBlacklisted above.
@@ -768,7 +783,9 @@ model ParentVerification {
   salaryBankName    String?
   bankAccountNumber String?
 
-  // Salary sheet document
+  // Legacy single salary sheet document — superseded by ParentDocument
+  // (SALARY_SHEET type, supports multiple files). Kept for existing data;
+  // no longer written to by new uploads.
   salarySheetFileName         String?
   salarySheetOriginalFileName String?
   salarySheetMimeType         String?
@@ -781,9 +798,42 @@ model ParentVerification {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
-  application LoanApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  application LoanApplication  @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  documents   ParentDocument[]
 
   @@map("parent_verifications")
+}
+
+enum ParentDocumentType {
+  NID
+  PAN_ID
+  SALARY_SHEET
+}
+
+model ParentDocument {
+  id                   String             @id @default(uuid())
+  parentVerificationId String
+  documentType         ParentDocumentType
+
+  // Editable, parent-facing name for the document (e.g. "March Salary")
+  label String?
+
+  fileName         String
+  originalFileName String
+  mimeType         String
+  size             Int
+  bucketName       String
+  filePath         String
+  publicUrl        String
+  uploadedAt       DateTime @default(now())
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  parentVerification ParentVerification @relation(fields: [parentVerificationId], references: [id], onDelete: Cascade)
+
+  @@index([parentVerificationId])
+  @@map("parent_documents")
 }
 
 // ─── College Document Templates ───────────────────────────────────────────────

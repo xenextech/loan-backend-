@@ -20,6 +20,7 @@ import {
   ApiBearerAuth,
   ApiConsumes,
   ApiBody,
+  ApiParam,
 } from '@nestjs/swagger';
 import { memoryStorage } from 'multer';
 import { DocumentsService } from './documents.service';
@@ -39,12 +40,28 @@ export class DocumentsController {
 
   @Post(':documentType')
   @Roles(UserRole.STUDENT)
-  @ApiOperation({ summary: 'Upload a document for an application' })
+  @ApiOperation({
+    summary: 'Upload a document for an application',
+    description:
+      'Accepts JPG, JPEG, PNG, WEBP images or a PDF file (application/pdf), depending on documentType. ' +
+      'For identity documents: IDENTITY_FRONT/IDENTITY_BACK are image-only and must be uploaded as a pair ' +
+      '(Citizenship only). IDENTITY_DOCUMENT is a single file — image or PDF for Passport/Driving ' +
+      'License/National ID/PAN Number, but PDF-only when identityType is Citizenship. ' +
+      'IDENTITY_DOCUMENT cannot be combined with IDENTITY_FRONT/IDENTITY_BACK on the same application.',
+  })
+  @ApiParam({ name: 'documentType', enum: DocumentType })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
     schema: {
       type: 'object',
-      properties: { file: { type: 'string', format: 'binary' } },
+      properties: {
+        file: {
+          type: 'string',
+          format: 'binary',
+          description:
+            'image/jpeg, image/png, image/jpg, image/webp, or application/pdf',
+        },
+      },
     },
   })
   @UseInterceptors(FileInterceptor('file', { storage: memoryStorage() }))

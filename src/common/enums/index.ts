@@ -17,6 +17,8 @@ export enum IdentityType {
   CITIZENSHIP = 'CITIZENSHIP',
   PASSPORT = 'PASSPORT',
   DRIVING_LICENSE = 'DRIVING_LICENSE',
+  NATIONAL_ID = 'NATIONAL_ID',
+  PAN_NUMBER = 'PAN_NUMBER',
 }
 
 export enum Gender {
@@ -87,6 +89,7 @@ export {
   ApplicationStage,
   LoanAccountStatus,
   NrbLoanClassification,
+  ParentDocumentType,
 } from '@prisma/client';
 export const CREDIT_FACILITY_SIZE_BELOW1M_WEIGHT = 2;
 export const CREDIT_FACILITY_SIZE_BELOW1M_POINT = 1;

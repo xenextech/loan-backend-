@@ -11,9 +11,16 @@ import {
   DOCUMENT_BUCKET,
   ALLOWED_IMAGE_TYPES,
   ALLOWED_DOCUMENT_TYPES,
+  ALLOWED_IDENTITY_DOCUMENT_TYPES,
   MAX_IMAGE_SIZE,
   MAX_DOCUMENT_SIZE,
 } from '../storage/storage.constants';
+import {
+  IDENTITY_DOCUMENT_TYPES,
+  isIdentityDocumentType,
+  assertIdentityUploadNotConflicting,
+  assertIdentitySingleDocumentMimeType,
+} from '../../common/utils/identity-document.util';
 
 const DOCUMENT_CONFIG: Record<
   DocumentType,
@@ -26,12 +33,17 @@ const DOCUMENT_CONFIG: Record<
   },
   [DocumentType.IDENTITY_FRONT]: {
     bucket: DOCUMENT_BUCKET,
-    allowedTypes: [...ALLOWED_IMAGE_TYPES, ...ALLOWED_DOCUMENT_TYPES],
+    allowedTypes: ALLOWED_IMAGE_TYPES,
     maxSize: MAX_DOCUMENT_SIZE,
   },
   [DocumentType.IDENTITY_BACK]: {
     bucket: DOCUMENT_BUCKET,
-    allowedTypes: [...ALLOWED_IMAGE_TYPES, ...ALLOWED_DOCUMENT_TYPES],
+    allowedTypes: ALLOWED_IMAGE_TYPES,
+    maxSize: MAX_DOCUMENT_SIZE,
+  },
+  [DocumentType.IDENTITY_DOCUMENT]: {
+    bucket: DOCUMENT_BUCKET,
+    allowedTypes: ALLOWED_IDENTITY_DOCUMENT_TYPES,
     maxSize: MAX_DOCUMENT_SIZE,
   },
   [DocumentType.ACADEMIC_RECORD]: {
@@ -89,9 +101,27 @@ export class DocumentsService {
     documentType: DocumentType,
     file: Express.Multer.File,
   ) {
-    await this.assertApplicationAccess(applicationId, userId);
+    const application = await this.assertApplicationAccess(
+      applicationId,
+      userId,
+    );
 
     const config = DOCUMENT_CONFIG[documentType];
+
+    if (isIdentityDocumentType(documentType)) {
+      const existingIdentityDocs = await this.prisma.document.findMany({
+        where: { applicationId, documentType: { in: IDENTITY_DOCUMENT_TYPES } },
+      });
+      assertIdentityUploadNotConflicting(
+        documentType,
+        existingIdentityDocs.map((d) => d.documentType),
+      );
+      assertIdentitySingleDocumentMimeType(
+        application.identityType,
+        documentType,
+        file.mimetype,
+      );
+    }
 
     // Remove previous document of same type
     const existing = await this.prisma.document.findFirst({

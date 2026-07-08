@@ -3,8 +3,10 @@ import {
   IsOptional,
   IsString,
   IsDateString,
-  IsNumber,
+  IsInt,
   IsBoolean,
+  Max,
+  Min,
 } from 'class-validator';
 
 export class CreateInitiatorApplicationDto {
@@ -28,7 +30,9 @@ export class CreateInitiatorApplicationDto {
 
   @ApiPropertyOptional({ description: 'Obligor No.' })
   @IsOptional()
-  @IsNumber()
+  @IsInt()
+  @Min(0)
+  @Max(2147483647, { message: 'obligorNumber must not exceed 2147483647' })
   obligorNumber?: number;
 
   @ApiPropertyOptional({ description: 'Permanent Address' })

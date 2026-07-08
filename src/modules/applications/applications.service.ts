@@ -24,6 +24,15 @@ import {
   buildPaginatedResponse,
 } from '../../common/dto/pagination.dto';
 import { generateApplicationNumber } from '../../common/utils/application-number.util';
+import {
+  IDENTITY_DOCUMENT_TYPES,
+  assertIdentityDocumentsComplete,
+} from '../../common/utils/identity-document.util';
+import {
+  convertAdToBs,
+  convertBsToAd,
+  calculateAge,
+} from '../../common/utils/bs-ad-date.util';
 
 // 3-day token TTL — enough for college/parent to complete verification
 const LINK_TTL_MS = 3 * 24 * 60 * 60 * 1000;
@@ -85,7 +94,7 @@ export class ApplicationsService {
     ]);
 
     return buildPaginatedResponse(
-      data,
+      data.map((application) => this.withComputedDob(application)),
       total,
       query.page ?? 1,
       query.limit ?? 20,
@@ -108,7 +117,24 @@ export class ApplicationsService {
       throw new ForbiddenException('Access denied');
     }
 
-    return application;
+    return this.withComputedDob(application);
+  }
+
+  // Adds the AD-canonical `dobAd` alias, a backfilled `dobBs` (for rows saved
+  // before this field existed), and a live-calculated `age` — derived on read
+  // so it never goes stale, rather than stored.
+  private withComputedDob<
+    T extends { dateOfBirth: Date | null; dobBs: string | null },
+  >(application: T): T & { dobAd: Date | null; age: number | null } {
+    if (!application.dateOfBirth) {
+      return { ...application, dobAd: null, age: null };
+    }
+    return {
+      ...application,
+      dobAd: application.dateOfBirth,
+      dobBs: application.dobBs ?? convertAdToBs(application.dateOfBirth),
+      age: calculateAge(application.dateOfBirth),
+    };
   }
 
   // ── Assert draft & ownership ──────────────────────────────────────────────
@@ -175,13 +201,43 @@ export class ApplicationsService {
   async saveStep2(id: string, userId: string, dto: Step2Dto) {
     await this.assertEditableByUser(id, userId);
 
+    const { dateOfBirth: legacyDobAd, dobAd, dobBs, issuedDate, ...rest } = dto;
+
+    // dobAd / legacy dateOfBirth / dobBs — any one may arrive; AD stays
+    // canonical, BS is derived (or cross-checked, if both were supplied).
+    const adInput = dobAd ?? legacyDobAd;
+    let dateOfBirthValue: Date | undefined;
+    let dobBsValue: string | undefined;
+
+    if (adInput && dobBs) {
+      const parsedAd = new Date(adInput);
+      const derivedBs = convertAdToBs(parsedAd);
+      if (derivedBs !== dobBs) {
+        throw new BadRequestException(
+          'dobAd and dobBs do not refer to the same calendar date',
+        );
+      }
+      dateOfBirthValue = parsedAd;
+      dobBsValue = dobBs;
+    } else if (adInput) {
+      dateOfBirthValue = new Date(adInput);
+      dobBsValue = convertAdToBs(dateOfBirthValue);
+    } else if (dobBs) {
+      dateOfBirthValue = convertBsToAd(dobBs);
+      dobBsValue = dobBs;
+    }
+
     await this.prisma.loanApplication.update({
       where: { id },
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       data: {
-        ...dto,
-        dateOfBirth: dto.dateOfBirth ? new Date(dto.dateOfBirth) : undefined,
-        issuedDate: dto.issuedDate ? new Date(dto.issuedDate) : undefined,
-      },
+        ...rest,
+        ...(dateOfBirthValue !== undefined && {
+          dateOfBirth: dateOfBirthValue,
+        }),
+        ...(dobBsValue !== undefined && { dobBs: dobBsValue }),
+        issuedDate: issuedDate ? new Date(issuedDate) : undefined,
+      } as any,
     });
 
     await this.audit.log(
@@ -261,6 +317,18 @@ export class ApplicationsService {
         'You must confirm both declaration fields to submit',
       );
     }
+
+    const identityDocuments = await this.prisma.document.findMany({
+      where: {
+        applicationId: id,
+        documentType: { in: IDENTITY_DOCUMENT_TYPES },
+      },
+      select: { documentType: true, mimeType: true },
+    });
+    assertIdentityDocumentsComplete(
+      application.identityType,
+      identityDocuments,
+    );
 
     const expiresAt = new Date(Date.now() + LINK_TTL_MS);
     const parentToken = crypto.randomBytes(32).toString('hex');

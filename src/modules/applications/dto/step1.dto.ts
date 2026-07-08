@@ -56,6 +56,6 @@ export class Step1Dto {
   @Type(() => Number)
   @IsNumber()
   @Min(1)
-  @Max(5_000_000)
+  @Max(15_00_000)
   loanAmount?: number;
 }
