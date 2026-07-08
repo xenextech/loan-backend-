@@ -195,7 +195,7 @@ export class NotificationsService {
       email,
       'Verify your Unnati Loan account',
       `
-      <h2>Welcome to Unati Loan!</h2>
+      <h2>Welcome to Unnati Loan!</h2>
       <p>Please verify your email address by clicking the link below:</p>
       <a href="${link}" style="background:#4F46E5;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;">Verify Email</a>
       <p>This link expires in 24 hours.</p>
