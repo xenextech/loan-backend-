@@ -1032,14 +1032,28 @@ model LoanAccount {
   loanAccountNumber String            @unique
   status            LoanAccountStatus @default(ACTIVE)
 
-  // Loan servicing configuration (Credit Manager, post-approval). The
-  // approved principal (LoanApplication.creditLimit) is never overridden
-  // here — only rate/tenure/grace/start-date are Credit-Manager-adjustable.
-  // Omitted fields fall back to the application's originally approved
-  // values when the schedule is (re)generated.
-  finalInterestRate  Decimal?  @db.Decimal(5, 2)
-  finalTenureMonths  Int?
-  repaymentFrequency RepaymentFrequency @default(MONTHLY)
+  // Loan servicing configuration (Credit Manager, post-approval, only
+  // enterable once a disbursement exists — see DashboardRepaymentService.
+  // configureServicing()). Omitted fields fall back to the application's
+  // originally approved values, or — for principal — the actual disbursed
+  // amount, when the schedule is (re)generated.
+  finalInterestRate Decimal? @db.Decimal(5, 2)
+  finalTenureMonths Int?
+
+  // repaymentFrequency is the EMI/installment cadence; interestFrequency is
+  // the compounding cadence and is independently settable — null means
+  // "compounds at the same cadence as repaymentFrequency" (the pre-existing
+  // behavior, and still the common case). When they differ, the nominal
+  // rate is converted to an equivalent rate at the payment cadence via
+  // common/utils/interest-rate.util.ts before amortizing, rather than
+  // teaching the EMI formula two frequencies.
+  repaymentFrequency RepaymentFrequency  @default(MONTHLY)
+  interestFrequency  RepaymentFrequency?
+
+  // Credit Manager override of the principal used for servicing math —
+  // defaults to the actual Disbursement.totalDisbursedAmount when null.
+  finalPrincipalAmount Decimal? @db.Decimal(18, 2)
+
   gracePeriodMonths  Int       @default(0)
   emiStartDate       DateTime?
   firstDueDate       DateTime?

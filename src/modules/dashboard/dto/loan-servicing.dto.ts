@@ -11,10 +11,8 @@ import {
 import { CollectionActivityType, RepaymentFrequency } from '@prisma/client';
 import { PaginationDto } from '../../../common/dto/pagination.dto';
 
-// Loan amount is deliberately absent — the Approver's approved credit limit
-// is locked and never overridden by loan servicing configuration. EMI amount
-// is also absent — it's a computed output of amount + rate + tenure, not an
-// independently settable input.
+// EMI amount is deliberately absent — it's a computed output of principal +
+// rate + tenure, not an independently settable input.
 export class ConfigureLoanServicingDto {
   @ApiPropertyOptional({
     example: 12.5,
@@ -40,11 +38,31 @@ export class ConfigureLoanServicingDto {
     enum: RepaymentFrequency,
     example: RepaymentFrequency.MONTHLY,
     description:
-      'Drives both interest compounding and installment period. Defaults to Monthly.',
+      'EMI/installment cadence — how often the borrower pays. Defaults to Monthly.',
   })
   @IsOptional()
   @IsEnum(RepaymentFrequency)
   repaymentFrequency?: RepaymentFrequency;
+
+  @ApiPropertyOptional({
+    enum: RepaymentFrequency,
+    example: RepaymentFrequency.YEARLY,
+    description:
+      'Interest compounding cadence — can differ from repaymentFrequency (e.g. interest compounds yearly but EMIs are paid monthly). Defaults to repaymentFrequency if omitted, matching pre-existing behavior.',
+  })
+  @IsOptional()
+  @IsEnum(RepaymentFrequency)
+  interestFrequency?: RepaymentFrequency;
+
+  @ApiPropertyOptional({
+    example: 495000,
+    description:
+      'Overrides the principal used for servicing math. Defaults to the actual Disbursement.totalDisbursedAmount — visible in the response as disbursedAmount either way. Only meaningful once at least one tranche has been disbursed.',
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  finalPrincipalAmount?: number;
 
   @ApiPropertyOptional({
     example: 3,

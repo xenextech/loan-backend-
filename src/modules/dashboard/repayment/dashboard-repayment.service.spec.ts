@@ -5,6 +5,7 @@ import { AuditService } from '../../audit/audit.service';
 import { NotificationsService } from '../../notifications/notifications.service';
 import { CollectionActivityType } from '@prisma/client';
 import { AuditAction, AuditCategory } from '../../../common/enums';
+import { toEquivalentNominalRate } from '../../../common/utils/interest-rate.util';
 import { EMI_NOTIFICATION_TRIGGERS } from './emi-notification-triggers.constant';
 
 interface ScheduleEntryRow {
@@ -196,6 +197,55 @@ describe('DashboardRepaymentService', () => {
       await expect(
         service.generateSchedule('user-1', 'missing'),
       ).rejects.toThrow();
+    });
+
+    it("uses the Credit Manager's finalPrincipalAmount override instead of the disbursed/credit-limit amount", async () => {
+      findUniqueMock.mockResolvedValueOnce({
+        ...application,
+        disbursement: { totalDisbursedAmount: 500000 },
+      });
+      loanAccountFindUniqueMock.mockResolvedValueOnce({
+        finalPrincipalAmount: 300000,
+      });
+
+      const schedule = await service.generateSchedule('user-1', applicationId);
+      const totalPrincipal = schedule.reduce(
+        (sum, e) => sum + Number(e.principalComponent),
+        0,
+      );
+      expect(totalPrincipal).toBeCloseTo(300000, 0);
+    });
+
+    it('compounds interest at interestFrequency, not repaymentFrequency, when the two are configured independently', async () => {
+      // Yearly-compounding, monthly-paying loan account.
+      loanAccountFindUniqueMock.mockResolvedValueOnce({
+        repaymentFrequency: 'MONTHLY',
+        interestFrequency: 'YEARLY',
+      });
+
+      const schedule = await service.generateSchedule('user-1', applicationId);
+      const equivalentRate = toEquivalentNominalRate(12, 1, 12);
+      const calculator = new EmiCalculatorService();
+      const expected = calculator.calculate({
+        loanAmount: 500000,
+        interestRate: equivalentRate,
+        tenureMonths: 12,
+        installmentsPerYear: 12,
+      });
+      const sameFrequencyBaseline = calculator.calculate({
+        loanAmount: 500000,
+        interestRate: 12,
+        tenureMonths: 12,
+        installmentsPerYear: 12,
+      });
+
+      expect(Number(schedule[0].emiAmount)).toBeCloseTo(expected.monthlyEmi, 2);
+      // Yearly compounding of the same nominal rate is cheaper per-period
+      // than monthly compounding of that same nominal rate, so the
+      // converted EMI must be strictly below the same-frequency baseline.
+      expect(Number(schedule[0].emiAmount)).toBeLessThan(
+        sameFrequencyBaseline.monthlyEmi,
+      );
     });
   });
 
@@ -448,6 +498,24 @@ describe('DashboardRepaymentService', () => {
       ).rejects.toThrow();
     });
 
+    it('throws BadRequestException when the application has not been disbursed yet', async () => {
+      loanAccountFindUniqueMock.mockResolvedValueOnce({
+        applicationId,
+        status: 'ACTIVE',
+      });
+      findUniqueMock.mockResolvedValueOnce({
+        ...application,
+        disbursement: null,
+      });
+
+      await expect(
+        service.configureServicing('cm-1', applicationId, {}),
+      ).rejects.toThrow(
+        'This application has not been disbursed yet — confirm at least one disbursement tranche before configuring loan servicing',
+      );
+      expect(loanAccountUpdateMock).not.toHaveBeenCalled();
+    });
+
     it('updates the loan account config and regenerates the schedule', async () => {
       loanAccountFindUniqueMock
         .mockResolvedValueOnce({ applicationId, status: 'ACTIVE' }) // pre-check
@@ -459,6 +527,10 @@ describe('DashboardRepaymentService', () => {
           finalTenureMonths: 24,
           gracePeriodMonths: 2,
         }); // final read-back
+      findUniqueMock.mockResolvedValue({
+        ...application,
+        disbursement: { totalDisbursedAmount: 500000 },
+      });
 
       await service.configureServicing('cm-1', applicationId, {
         finalInterestRate: 11,
@@ -487,6 +559,42 @@ describe('DashboardRepaymentService', () => {
         applicationId,
         AuditCategory.REPAYMENT,
       );
+    });
+
+    it('passes interestFrequency and a finalPrincipalAmount override through to the loan account, and reports both amounts', async () => {
+      loanAccountFindUniqueMock
+        .mockResolvedValueOnce({ applicationId, status: 'ACTIVE' }) // pre-check
+        .mockResolvedValueOnce({
+          finalPrincipalAmount: 480000,
+          repaymentFrequency: 'MONTHLY',
+          interestFrequency: 'YEARLY',
+        }) // read inside generateSchedule
+        .mockResolvedValueOnce({
+          applicationId,
+          status: 'ACTIVE',
+          finalPrincipalAmount: 480000,
+          repaymentFrequency: 'MONTHLY',
+          interestFrequency: 'YEARLY',
+        }); // final read-back
+      findUniqueMock.mockResolvedValue({
+        ...application,
+        disbursement: { totalDisbursedAmount: 500000 },
+      });
+
+      const result = await service.configureServicing('cm-1', applicationId, {
+        interestFrequency: 'YEARLY',
+        finalPrincipalAmount: 480000,
+      });
+
+      expect(loanAccountUpdateMock).toHaveBeenCalledWith({
+        where: { applicationId },
+        data: expect.objectContaining({
+          interestFrequency: 'YEARLY',
+          finalPrincipalAmount: 480000,
+        }) as unknown,
+      });
+      expect(result.disbursedAmount).toBe(500000);
+      expect(result.principalAmount).toBe(480000);
     });
   });
 

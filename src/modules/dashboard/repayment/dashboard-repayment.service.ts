@@ -7,6 +7,7 @@ import { PrismaService } from '../../../prisma/prisma.service';
 import { AuditService } from '../../audit/audit.service';
 import { EmiCalculatorService } from '../../utils/emi-calculator.service';
 import { NotificationsService } from '../../notifications/notifications.service';
+import { toEquivalentNominalRate } from '../../../common/utils/interest-rate.util';
 import {
   AuditAction,
   AuditCategory,
@@ -74,12 +75,14 @@ export class DashboardRepaymentService {
       where: { applicationId },
     });
 
-    // Principal is the actual approved *disbursement* amount, not the
-    // originally approved credit limit — the two can differ once tranches
-    // are confirmed. Falls back to the approved credit limit only when
-    // nothing has been disbursed yet.
+    // Principal is the Credit Manager's override if one was set, otherwise
+    // the actual approved *disbursement* amount, not the originally approved
+    // credit limit — the two can differ once tranches are confirmed. Falls
+    // back to the approved credit limit only when nothing has been
+    // disbursed yet.
     const loanAmount = Number(
-      application.disbursement?.totalDisbursedAmount ??
+      loanAccount?.finalPrincipalAmount ??
+        application.disbursement?.totalDisbursedAmount ??
         application.creditLimit ??
         application.loanInformation?.loanAmount ??
         0,
@@ -96,6 +99,16 @@ export class DashboardRepaymentService {
     const frequency = loanAccount?.repaymentFrequency ?? 'MONTHLY';
     const { periodMonths, installmentsPerYear } = FREQUENCY_CONFIG[frequency];
 
+    // Interest can compound at a different cadence than the borrower pays —
+    // defaults to repaymentFrequency (identical to pre-existing behavior)
+    // when not explicitly configured.
+    const interestFrequency = loanAccount?.interestFrequency ?? frequency;
+    const effectiveInterestRate = toEquivalentNominalRate(
+      interestRate,
+      FREQUENCY_CONFIG[interestFrequency].installmentsPerYear,
+      installmentsPerYear,
+    );
+
     if (loanAmount <= 0 || interestRate <= 0 || tenureMonths <= 0) {
       throw new BadRequestException(
         'Application is missing loan amount, interest rate, or period required to generate an EMI schedule',
@@ -110,12 +123,12 @@ export class DashboardRepaymentService {
     const numberOfInstallments = tenureMonths / periodMonths;
     const { monthlyEmi: installmentAmount } = this.emiCalculator.calculate({
       loanAmount,
-      interestRate,
+      interestRate: effectiveInterestRate,
       tenureMonths,
       installmentsPerYear,
     });
 
-    const periodicRate = interestRate / installmentsPerYear / 100;
+    const periodicRate = effectiveInterestRate / installmentsPerYear / 100;
     let outstanding = loanAmount;
     const entries: {
       applicationId: string;
@@ -181,8 +194,11 @@ export class DashboardRepaymentService {
   }
 
   // ── Loan Servicing: Stage 1 — Configuration ────────────────────────────────
-  // Approved principal is never touched here (see ConfigureLoanServicingDto) —
-  // only rate/tenure/grace-period/start-date. Regenerates the schedule via the
+  // Only runnable once the Approver's LoanAccount exists *and* at least one
+  // tranche has actually been disbursed — this is deliberately a post-
+  // disbursement step, not just post-approval. Principal defaults to the
+  // real disbursed amount (never hand-typed) but the Credit Manager may
+  // override it via finalPrincipalAmount. Regenerates the schedule via the
   // same generateSchedule() every other caller uses, so there is exactly one
   // amortization code path.
   async configureServicing(
@@ -204,12 +220,27 @@ export class DashboardRepaymentService {
       );
     }
 
+    const application = await this.prisma.loanApplication.findUnique({
+      where: { id: applicationId },
+      include: { disbursement: true },
+    });
+    const disbursedAmount = Number(
+      application?.disbursement?.totalDisbursedAmount ?? 0,
+    );
+    if (disbursedAmount <= 0) {
+      throw new BadRequestException(
+        'This application has not been disbursed yet — confirm at least one disbursement tranche before configuring loan servicing',
+      );
+    }
+
     await this.prisma.loanAccount.update({
       where: { applicationId },
       data: {
         finalInterestRate: dto.finalInterestRate,
         finalTenureMonths: dto.finalTenureMonths,
         repaymentFrequency: dto.repaymentFrequency,
+        interestFrequency: dto.interestFrequency,
+        finalPrincipalAmount: dto.finalPrincipalAmount,
         gracePeriodMonths: dto.gracePeriodMonths,
         emiStartDate: dto.emiStartDate ? new Date(dto.emiStartDate) : undefined,
         configuredByUserId: userId,
@@ -231,6 +262,8 @@ export class DashboardRepaymentService {
         finalInterestRate: dto.finalInterestRate,
         finalTenureMonths: dto.finalTenureMonths,
         repaymentFrequency: dto.repaymentFrequency,
+        interestFrequency: dto.interestFrequency,
+        finalPrincipalAmount: dto.finalPrincipalAmount,
         gracePeriodMonths: dto.gracePeriodMonths,
         emiStartDate: dto.emiStartDate,
       },
@@ -238,18 +271,11 @@ export class DashboardRepaymentService {
       AuditCategory.REPAYMENT,
     );
 
-    const [updatedLoanAccount, applicationWithDisbursement] =
-      await Promise.all([
-        this.prisma.loanAccount.findUnique({ where: { applicationId } }),
-        this.prisma.loanApplication.findUnique({
-          where: { id: applicationId },
-          include: { disbursement: true },
-        }),
-      ]);
-    const disbursementAmount = Number(
-      applicationWithDisbursement?.disbursement?.totalDisbursedAmount ??
-        applicationWithDisbursement?.creditLimit ??
-        0,
+    const updatedLoanAccount = await this.prisma.loanAccount.findUnique({
+      where: { applicationId },
+    });
+    const principalAmount = Number(
+      updatedLoanAccount?.finalPrincipalAmount ?? disbursedAmount,
     );
 
     return {
@@ -257,7 +283,11 @@ export class DashboardRepaymentService {
       installmentAmount,
       totalRepayable,
       numberOfInstallments: schedule.length,
-      disbursementAmount,
+      // Actual amount confirmed through Disbursement, always visible —
+      // principalAmount is what's actually used for the math above, which
+      // only differs from it when finalPrincipalAmount overrides it.
+      disbursedAmount,
+      principalAmount,
     };
   }
 

@@ -11,13 +11,20 @@ import {
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiBearerAuth,
+  ApiOkResponse,
+} from '@nestjs/swagger';
 import { ApplicationsService } from './applications.service';
+import { ApplicationTrackerService } from './application-tracker.service';
 import { Step1Dto } from './dto/step1.dto';
 import { Step2Dto } from './dto/step2.dto';
 import { Step3Dto } from './dto/step3.dto';
 import { Step4Dto } from './dto/step4.dto';
 import { QueryApplicationDto } from './dto/query-application.dto';
+import { ApplicationTrackerResponseDto } from './dto/application-tracker.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -30,7 +37,10 @@ import { JwtPayload } from '../../common/interfaces/jwt-payload.interface';
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('applications')
 export class ApplicationsController {
-  constructor(private readonly applicationsService: ApplicationsService) {}
+  constructor(
+    private readonly applicationsService: ApplicationsService,
+    private readonly applicationTrackerService: ApplicationTrackerService,
+  ) {}
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
@@ -51,6 +61,28 @@ export class ApplicationsController {
   @ApiOperation({ summary: 'Get application by ID' })
   findOne(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
     return this.applicationsService.findOne(id, user.sub, user.role);
+  }
+
+  @Get(':id/tracker')
+  @Roles(UserRole.STUDENT)
+  @ApiOperation({
+    summary: 'Application progress tracker for the student dashboard',
+    description:
+      'Returns every stage of the application lifecycle (Student → Parent → ' +
+      'College → Initiator → Supporter → Credit Manager Review → Approver → ' +
+      'Credit Manager Loan Setup → Disbursement), each with a status of ' +
+      'COMPLETED / IN_PROGRESS / PENDING / REJECTED / SENT_BACK, plus the ' +
+      'current stage, current owner role, and overall progress percentage. ' +
+      'Derived entirely from existing fields (stage, sign-off dates, ' +
+      'verification submittedAt columns, LoanAccount/Disbursement records) ' +
+      'and the audit log — nothing is stored separately for this endpoint.',
+  })
+  @ApiOkResponse({ type: ApplicationTrackerResponseDto })
+  getTracker(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+  ): Promise<ApplicationTrackerResponseDto> {
+    return this.applicationTrackerService.getTracker(id, user.sub, user.role);
   }
 
   @Patch(':id/step1')
