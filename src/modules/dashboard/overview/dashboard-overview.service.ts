@@ -119,6 +119,71 @@ export class DashboardOverviewService {
     };
   }
 
+  // "This month" throughput — how many applications *transitioned* into each
+  // stage this month (via the timestamp columns), distinct from getOverview()'s
+  // approvalPipeline/approvalStats which are an all-time/current-stage snapshot.
+  // Same Promise.all + rate/avg-processing-time calc pattern as getOverview(),
+  // just re-scoped by transition timestamp instead of current stage.
+  async getPipelineStatsThisMonth() {
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    const inMonth = { gte: monthStart, lte: monthEnd };
+
+    const [initiated, supported, checked, approved, rejected, approvedTimings] =
+      await Promise.all([
+        this.prisma.loanApplication.count({
+          where: { submittedAt: inMonth },
+        }),
+        this.prisma.loanApplication.count({
+          where: { supporterDate: inMonth },
+        }),
+        this.prisma.loanApplication.count({
+          where: { checkerDate: inMonth },
+        }),
+        this.prisma.loanApplication.count({
+          where: { approverDate: inMonth },
+        }),
+        this.prisma.loanApplication.count({
+          where: { rejectedAt: inMonth },
+        }),
+        this.prisma.loanApplication.findMany({
+          where: { approverDate: inMonth, submittedAt: { not: null } },
+          select: { submittedAt: true, approverDate: true },
+        }),
+      ]);
+
+    const totalDecided = approved + rejected;
+    const approvalRate =
+      totalDecided > 0
+        ? Number(((approved / totalDecided) * 100).toFixed(1))
+        : null;
+    const avgProcessingTimeDays =
+      approvedTimings.length > 0
+        ? Number(
+            (
+              approvedTimings.reduce(
+                (sum, a) =>
+                  sum +
+                  (a.approverDate!.getTime() - a.submittedAt!.getTime()) /
+                    (24 * 60 * 60 * 1000),
+                0,
+              ) / approvedTimings.length
+            ).toFixed(1),
+          )
+        : null;
+
+    return {
+      initiated,
+      supported,
+      checked,
+      approved,
+      rejected,
+      approvalRate,
+      avgProcessingTimeDays,
+    };
+  }
+
   async getCheckerQueue(query: PaginationDto) {
     const { take, skip } = paginate(query.page, query.limit);
     const where = { stage: 'SUPPORTED' as const };

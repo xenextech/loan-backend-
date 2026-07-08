@@ -52,6 +52,38 @@ export class DashboardApplicationsService {
         return { stage: ApplicationStage.REJECTED };
       case 'sent-back':
         return { stage: ApplicationStage.SENT_BACK };
+      // Credit Manager portfolio sub-filters — same stage: APPROVED scope as
+      // 'disbursement', narrowed by loan-account/disbursement/EMI state.
+      case 'action-needed':
+        return {
+          stage: ApplicationStage.APPROVED,
+          OR: [
+            { loanAccount: { status: 'NEEDS_REVIEW' } },
+            { emiSchedule: { some: { status: 'OVERDUE' } } },
+            {
+              loanAccount: {
+                configuredAt: { not: null },
+                borrowerNotifiedAt: null,
+              },
+            },
+          ],
+        };
+      case 'pending-disbursement':
+        // Same OR-shape as dashboard-disbursement.service.ts's getPending(),
+        // scoped by stage instead of status+approverDate — not duplicated
+        // logic, just applied through the applications list.
+        return {
+          stage: ApplicationStage.APPROVED,
+          OR: [
+            { disbursement: null },
+            { disbursement: { status: { not: 'COMPLETED' } } },
+          ],
+        };
+      case 'disbursed':
+        return {
+          stage: ApplicationStage.APPROVED,
+          disbursement: { isNot: null },
+        };
       default:
         return { status: 'SUBMITTED' };
     }
@@ -116,6 +148,10 @@ export class DashboardApplicationsService {
           creditLimit: true,
           status: true,
           stage: true,
+          loanAccount: {
+            select: { status: true, borrowerNotifiedAt: true },
+          },
+          disbursement: { select: { status: true } },
         },
       }),
       this.prisma.loanApplication.count({ where }),
@@ -135,6 +171,9 @@ export class DashboardApplicationsService {
       dsgir: a.dsgir,
       ltv: a.loanToValueRatio,
       daysOpen: this.daysOpen(a),
+      loanAccountStatus: a.loanAccount?.status ?? null,
+      borrowerNotifiedAt: a.loanAccount?.borrowerNotifiedAt ?? null,
+      disbursementStatus: a.disbursement?.status ?? null,
     }));
 
     return buildPaginatedResponse(
@@ -172,6 +211,7 @@ export class DashboardApplicationsService {
         insurance: true,
         familyMember: true,
         loanAccount: true,
+        disbursement: { select: { status: true, totalDisbursedAmount: true } },
       },
     });
     if (!application) throw new NotFoundException('Application not found');
@@ -192,6 +232,7 @@ export class DashboardApplicationsService {
     return {
       application,
       loanAccount: application.loanAccount,
+      disbursement: application.disbursement,
       creditScore,
       activity: buildPaginatedResponse(
         activityData,

@@ -77,8 +77,9 @@ export class DashboardJobsService {
 
         const message = `Dear ${application.fullName ?? 'borrower'}, ${trigger.messageType}: EMI of ${Number(entry.emiAmount)} due ${entry.dueDate.toDateString()}.`;
 
+        let sent = false;
         if (application.phoneNumber) {
-          const sent = await this.notifications.sendSms(
+          sent = await this.notifications.sendSms(
             application.phoneNumber,
             message,
           );
@@ -88,6 +89,21 @@ export class DashboardJobsService {
           );
           this.logger.debug(
             `Reminder "${trigger.trigger}" to ${application.phoneNumber}: ${sent ? 'sent' : 'skipped/failed'}`,
+          );
+        }
+
+        // Persisted so it's queryable via GET /dashboard/notifications/log —
+        // reuses the existing notification log rather than a new history table.
+        if (application.userId) {
+          await this.notifications.createDatabaseNotification(
+            application.userId,
+            `EMI reminder — ${trigger.trigger}`,
+            message,
+            entry.applicationId,
+            NotificationChannel.SMS,
+            sent
+              ? NotificationDeliveryStatus.SENT
+              : NotificationDeliveryStatus.FAILED,
           );
         }
       }

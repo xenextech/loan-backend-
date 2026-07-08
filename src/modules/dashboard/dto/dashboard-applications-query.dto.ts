@@ -9,6 +9,9 @@ export const APPLICATION_LIST_FILTERS = [
   'disbursement',
   'rejected',
   'sent-back',
+  'action-needed',
+  'pending-disbursement',
+  'disbursed',
 ] as const;
 export type ApplicationListFilter = (typeof APPLICATION_LIST_FILTERS)[number];
 

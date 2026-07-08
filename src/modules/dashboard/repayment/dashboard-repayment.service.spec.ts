@@ -2,6 +2,8 @@ import { DashboardRepaymentService } from './dashboard-repayment.service';
 import { EmiCalculatorService } from '../../utils/emi-calculator.service';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { AuditService } from '../../audit/audit.service';
+import { NotificationsService } from '../../notifications/notifications.service';
+import { CollectionActivityType } from '@prisma/client';
 import { AuditAction, AuditCategory } from '../../../common/enums';
 import { EMI_NOTIFICATION_TRIGGERS } from './emi-notification-triggers.constant';
 
@@ -55,6 +57,13 @@ describe('DashboardRepaymentService', () => {
   let groupByMock: jest.Mock;
   let appUpdateManyMock: jest.Mock<unknown, [AppUpdateManyCallArgs]>;
   let appUpdateMock: jest.Mock<unknown, [AppUpdateCallArgs]>;
+  let loanAccountFindUniqueMock: jest.Mock;
+  let loanAccountUpdateMock: jest.Mock;
+  let loanAccountUpdateManyMock: jest.Mock;
+  let collectionActivityCreateMock: jest.Mock;
+  let collectionActivityFindManyMock: jest.Mock;
+  let collectionActivityCountMock: jest.Mock;
+  let notifyLoanFinalizedMock: jest.Mock;
   let service: DashboardRepaymentService;
 
   function buildService() {
@@ -73,6 +82,17 @@ describe('DashboardRepaymentService', () => {
       .fn<unknown, [AppUpdateManyCallArgs]>()
       .mockResolvedValue({ count: 0 });
     appUpdateMock = jest.fn<unknown, [AppUpdateCallArgs]>();
+    loanAccountFindUniqueMock = jest.fn().mockResolvedValue(null);
+    loanAccountUpdateMock = jest.fn();
+    loanAccountUpdateManyMock = jest.fn().mockResolvedValue({ count: 0 });
+    collectionActivityCreateMock = jest.fn();
+    collectionActivityFindManyMock = jest.fn().mockResolvedValue([]);
+    collectionActivityCountMock = jest.fn().mockResolvedValue(0);
+    notifyLoanFinalizedMock = jest.fn().mockResolvedValue({
+      studentNotified: true,
+      parentNotified: false,
+      parentChannel: null,
+    });
 
     const prisma = {
       loanApplication: {
@@ -81,7 +101,14 @@ describe('DashboardRepaymentService', () => {
         update: appUpdateMock,
       },
       loanAccount: {
-        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+        findUnique: loanAccountFindUniqueMock,
+        update: loanAccountUpdateMock,
+        updateMany: loanAccountUpdateManyMock,
+      },
+      collectionActivity: {
+        create: collectionActivityCreateMock,
+        findMany: collectionActivityFindManyMock,
+        count: collectionActivityCountMock,
       },
       emiScheduleEntry: {
         deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
@@ -103,8 +130,16 @@ describe('DashboardRepaymentService', () => {
 
     const audit = { log: auditLogMock } as unknown as AuditService;
     const emiCalculator = new EmiCalculatorService();
+    const notifications = {
+      notifyLoanFinalized: notifyLoanFinalizedMock,
+    } as unknown as NotificationsService;
 
-    return new DashboardRepaymentService(prisma, audit, emiCalculator);
+    return new DashboardRepaymentService(
+      prisma,
+      audit,
+      emiCalculator,
+      notifications,
+    );
   }
 
   beforeEach(() => {
@@ -392,6 +427,278 @@ describe('DashboardRepaymentService', () => {
   describe('getNotificationTriggers', () => {
     it('returns the static trigger schedule unmodified', () => {
       expect(service.getNotificationTriggers()).toBe(EMI_NOTIFICATION_TRIGGERS);
+    });
+  });
+
+  describe('configureServicing', () => {
+    it('throws NotFoundException when the application has no loan account', async () => {
+      loanAccountFindUniqueMock.mockResolvedValueOnce(null);
+      await expect(
+        service.configureServicing('cm-1', applicationId, {}),
+      ).rejects.toThrow();
+    });
+
+    it('throws when the loan is already cleared', async () => {
+      loanAccountFindUniqueMock.mockResolvedValueOnce({
+        applicationId,
+        status: 'CLEARED',
+      });
+      await expect(
+        service.configureServicing('cm-1', applicationId, {}),
+      ).rejects.toThrow();
+    });
+
+    it('updates the loan account config and regenerates the schedule', async () => {
+      loanAccountFindUniqueMock
+        .mockResolvedValueOnce({ applicationId, status: 'ACTIVE' }) // pre-check
+        .mockResolvedValueOnce({ applicationId, status: 'ACTIVE' }) // read inside generateSchedule
+        .mockResolvedValueOnce({
+          applicationId,
+          status: 'ACTIVE',
+          finalInterestRate: 11,
+          finalTenureMonths: 24,
+          gracePeriodMonths: 2,
+        }); // final read-back
+
+      await service.configureServicing('cm-1', applicationId, {
+        finalInterestRate: 11,
+        finalTenureMonths: 24,
+        gracePeriodMonths: 2,
+      });
+
+      expect(loanAccountUpdateMock).toHaveBeenCalledWith({
+        where: { applicationId },
+        data: {
+          finalInterestRate: 11,
+          finalTenureMonths: 24,
+          gracePeriodMonths: 2,
+          emiStartDate: undefined,
+          configuredByUserId: 'cm-1',
+          configuredAt: expect.any(Date) as Date,
+        },
+      });
+      expect(auditLogMock).toHaveBeenCalledWith(
+        'cm-1',
+        AuditAction.LOAN_SERVICING_CONFIGURED,
+        expect.objectContaining({
+          finalInterestRate: 11,
+          finalTenureMonths: 24,
+        }),
+        applicationId,
+        AuditCategory.REPAYMENT,
+      );
+    });
+  });
+
+  describe('notifyBorrower', () => {
+    it('throws when loan servicing has not been configured yet', async () => {
+      loanAccountFindUniqueMock.mockResolvedValueOnce({
+        applicationId,
+        configuredAt: null,
+      });
+      await expect(
+        service.notifyBorrower('cm-1', applicationId),
+      ).rejects.toThrow();
+    });
+
+    it('throws when no EMI schedule exists', async () => {
+      loanAccountFindUniqueMock.mockResolvedValueOnce({
+        applicationId,
+        configuredAt: new Date(),
+      });
+      findManyMock.mockResolvedValueOnce([]);
+      await expect(
+        service.notifyBorrower('cm-1', applicationId),
+      ).rejects.toThrow();
+    });
+
+    it('composes borrower notification data and marks borrowerNotifiedAt', async () => {
+      findUniqueMock.mockResolvedValueOnce({
+        ...application,
+        userId: 'student-1',
+        fullName: 'Jane Doe',
+        email: 'jane@example.com',
+        phoneNumber: '9800000000',
+        parentVerification: { phone: '9811111111', contact: null },
+      });
+      loanAccountFindUniqueMock.mockResolvedValueOnce({
+        applicationId,
+        configuredAt: new Date(),
+        finalInterestRate: 11,
+        finalTenureMonths: 24,
+        gracePeriodMonths: 1,
+      });
+      findManyMock.mockResolvedValueOnce([
+        {
+          installmentNumber: 1,
+          emiAmount: 5000,
+          dueDate: new Date('2026-08-01'),
+        },
+        {
+          installmentNumber: 2,
+          emiAmount: 5000,
+          dueDate: new Date('2026-09-01'),
+        },
+      ]);
+
+      const result = await service.notifyBorrower('cm-1', applicationId);
+
+      expect(notifyLoanFinalizedMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: 'student-1',
+          applicationId,
+          fullName: 'Jane Doe',
+          emiAmount: 5000,
+          tenureMonths: 24,
+          gracePeriodMonths: 1,
+          totalRepayable: 10000,
+          parentPhone: '9811111111',
+        }),
+      );
+      expect(loanAccountUpdateMock).toHaveBeenCalledWith({
+        where: { applicationId },
+        data: { borrowerNotifiedAt: expect.any(Date) as Date },
+      });
+      expect(result).toEqual({
+        studentNotified: true,
+        parentNotified: false,
+        parentChannel: null,
+      });
+    });
+  });
+
+  describe('collection activity', () => {
+    it('records a collection activity against the application', async () => {
+      findUniqueMock.mockResolvedValueOnce({ id: applicationId });
+      collectionActivityCreateMock.mockResolvedValueOnce({
+        id: 'activity-1',
+        applicationId,
+        activityType: CollectionActivityType.CALL,
+      });
+
+      await service.recordCollectionActivity('cm-1', applicationId, {
+        activityType: CollectionActivityType.CALL,
+        notes: 'Called borrower',
+      });
+
+      expect(collectionActivityCreateMock).toHaveBeenCalledWith({
+        data: {
+          applicationId,
+          createdByUserId: 'cm-1',
+          activityType: CollectionActivityType.CALL,
+          notes: 'Called borrower',
+          contactedPerson: undefined,
+        },
+      });
+      expect(auditLogMock).toHaveBeenCalledWith(
+        'cm-1',
+        AuditAction.COLLECTION_ACTIVITY_RECORDED,
+        { activityId: 'activity-1', activityType: 'CALL' },
+        applicationId,
+        AuditCategory.REPAYMENT,
+      );
+    });
+
+    it('throws NotFoundException when the application does not exist', async () => {
+      findUniqueMock.mockResolvedValueOnce(null);
+      await expect(
+        service.recordCollectionActivity('cm-1', 'missing', {
+          activityType: CollectionActivityType.CALL,
+          notes: 'x',
+        }),
+      ).rejects.toThrow();
+    });
+
+    it('paginates collection activity for an application', async () => {
+      collectionActivityCountMock.mockResolvedValueOnce(5);
+      const result = await service.listCollectionActivity(applicationId, {
+        page: 1,
+        limit: 20,
+      });
+      expect(collectionActivityFindManyMock).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { applicationId } }),
+      );
+      expect(result.meta.total).toBe(5);
+    });
+  });
+
+  describe('needs review', () => {
+    it('flags a loan for review with a mandatory reason', async () => {
+      loanAccountFindUniqueMock.mockResolvedValueOnce({
+        applicationId,
+        status: 'ACTIVE',
+      });
+      loanAccountUpdateMock.mockResolvedValueOnce({
+        applicationId,
+        status: 'NEEDS_REVIEW',
+      });
+
+      await service.flagNeedsReview('cm-1', applicationId, {
+        reason: 'Repeated missed installments',
+      });
+
+      expect(loanAccountUpdateMock).toHaveBeenCalledWith({
+        where: { applicationId },
+        data: {
+          status: 'NEEDS_REVIEW',
+          reviewReason: 'Repeated missed installments',
+          reviewRequestedByUserId: 'cm-1',
+          reviewRequestedAt: expect.any(Date) as Date,
+          reviewResolvedByUserId: null,
+          reviewResolvedAt: null,
+        },
+      });
+      expect(auditLogMock).toHaveBeenCalledWith(
+        'cm-1',
+        AuditAction.LOAN_NEEDS_REVIEW,
+        { reason: 'Repeated missed installments' },
+        applicationId,
+        AuditCategory.REPAYMENT,
+      );
+    });
+
+    it('throws when the loan is already cleared', async () => {
+      loanAccountFindUniqueMock.mockResolvedValueOnce({
+        applicationId,
+        status: 'CLEARED',
+      });
+      await expect(
+        service.flagNeedsReview('cm-1', applicationId, { reason: 'x' }),
+      ).rejects.toThrow();
+    });
+
+    it('resolves a loan back to ACTIVE from NEEDS_REVIEW', async () => {
+      loanAccountFindUniqueMock.mockResolvedValueOnce({
+        applicationId,
+        status: 'NEEDS_REVIEW',
+      });
+      loanAccountUpdateMock.mockResolvedValueOnce({
+        applicationId,
+        status: 'ACTIVE',
+      });
+
+      await service.resolveReview('cm-1', applicationId, {
+        resolutionNotes: 'Arrears cleared',
+      });
+
+      expect(loanAccountUpdateMock).toHaveBeenCalledWith({
+        where: { applicationId },
+        data: {
+          status: 'ACTIVE',
+          reviewResolvedByUserId: 'cm-1',
+          reviewResolvedAt: expect.any(Date) as Date,
+        },
+      });
+    });
+
+    it('throws when the loan is not currently under review', async () => {
+      loanAccountFindUniqueMock.mockResolvedValueOnce({
+        applicationId,
+        status: 'ACTIVE',
+      });
+      await expect(
+        service.resolveReview('cm-1', applicationId, {}),
+      ).rejects.toThrow();
     });
   });
 });

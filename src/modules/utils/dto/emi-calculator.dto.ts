@@ -1,5 +1,5 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsNumber, Min, Max } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsIn, IsNumber, IsOptional, Min, Max } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class EmiCalculatorDto {
@@ -23,4 +23,15 @@ export class EmiCalculatorDto {
   @Min(1)
   @Max(360)
   tenureMonths: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Installments per year (12 = monthly, 4 = quarterly, 1 = yearly). Defaults to monthly — tenureMonths always stays in months regardless of this value.',
+    example: 12,
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @IsIn([1, 4, 12])
+  installmentsPerYear?: number;
 }

@@ -6,6 +6,7 @@ import {
 import { PrismaService } from '../../../prisma/prisma.service';
 import { AuditService } from '../../audit/audit.service';
 import { EmiCalculatorService } from '../../utils/emi-calculator.service';
+import { NotificationsService } from '../../notifications/notifications.service';
 import {
   AuditAction,
   AuditCategory,
@@ -21,6 +22,12 @@ import {
   MarkEmiPaidDto,
   OverdueBucket,
 } from '../dto/repayment.dto';
+import {
+  ConfigureLoanServicingDto,
+  RecordCollectionActivityDto,
+  FlagNeedsReviewDto,
+  ResolveReviewDto,
+} from '../dto/loan-servicing.dto';
 import { EMI_NOTIFICATION_TRIGGERS } from './emi-notification-triggers.constant';
 
 // NRB-aligned aging buckets (days overdue).
@@ -32,43 +39,83 @@ const BUCKET_RANGES: Record<OverdueBucket, [number, number]> = {
   '365+': [366, Infinity],
 };
 
+// Repayment frequency → (months per installment period, installments per year).
+// MONTHLY is the default and reduces to exactly the pre-frequency-support math.
+const FREQUENCY_CONFIG: Record<
+  string,
+  { periodMonths: number; installmentsPerYear: number }
+> = {
+  MONTHLY: { periodMonths: 1, installmentsPerYear: 12 },
+  QUARTERLY: { periodMonths: 3, installmentsPerYear: 4 },
+  YEARLY: { periodMonths: 12, installmentsPerYear: 1 },
+};
+
 @Injectable()
 export class DashboardRepaymentService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly emiCalculator: EmiCalculatorService,
+    private readonly notifications: NotificationsService,
   ) {}
 
+  // Reads the loan's servicing configuration (if the Credit Manager has set
+  // one via configureServicing()) and falls back to the originally approved
+  // application fields otherwise — so applications with no servicing config
+  // yet generate exactly the same schedule as before this feature existed.
   async generateSchedule(userId: string, applicationId: string) {
     const application = await this.prisma.loanApplication.findUnique({
       where: { id: applicationId },
-      include: { loanInformation: true },
+      include: { loanInformation: true, disbursement: true },
     });
     if (!application) throw new NotFoundException('Application not found');
 
+    const loanAccount = await this.prisma.loanAccount.findUnique({
+      where: { applicationId },
+    });
+
+    // Principal is the actual approved *disbursement* amount, not the
+    // originally approved credit limit — the two can differ once tranches
+    // are confirmed. Falls back to the approved credit limit only when
+    // nothing has been disbursed yet.
     const loanAmount = Number(
-      application.creditLimit ?? application.loanInformation?.loanAmount ?? 0,
+      application.disbursement?.totalDisbursedAmount ??
+        application.creditLimit ??
+        application.loanInformation?.loanAmount ??
+        0,
     );
-    const interestRate = Number(application.interestRate ?? 0);
+    const interestRate = Number(
+      loanAccount?.finalInterestRate ?? application.interestRate ?? 0,
+    );
     const tenureMonths =
-      application.periodUnit === 'YEAR'
+      loanAccount?.finalTenureMonths ??
+      (application.periodUnit === 'YEAR'
         ? (application.period ?? 0) * 12
-        : (application.period ?? 0);
+        : (application.period ?? 0));
+    const gracePeriodMonths = loanAccount?.gracePeriodMonths ?? 0;
+    const frequency = loanAccount?.repaymentFrequency ?? 'MONTHLY';
+    const { periodMonths, installmentsPerYear } = FREQUENCY_CONFIG[frequency];
 
     if (loanAmount <= 0 || interestRate <= 0 || tenureMonths <= 0) {
       throw new BadRequestException(
         'Application is missing loan amount, interest rate, or period required to generate an EMI schedule',
       );
     }
+    if (tenureMonths % periodMonths !== 0) {
+      throw new BadRequestException(
+        `Tenure (${tenureMonths} months) must be a multiple of ${periodMonths} for ${frequency.toLowerCase()} repayment`,
+      );
+    }
 
-    const { monthlyEmi } = this.emiCalculator.calculate({
+    const numberOfInstallments = tenureMonths / periodMonths;
+    const { monthlyEmi: installmentAmount } = this.emiCalculator.calculate({
       loanAmount,
       interestRate,
       tenureMonths,
+      installmentsPerYear,
     });
 
-    const monthlyRate = interestRate / 12 / 100;
+    const periodicRate = interestRate / installmentsPerYear / 100;
     let outstanding = loanAmount;
     const entries: {
       applicationId: string;
@@ -80,23 +127,28 @@ export class DashboardRepaymentService {
       outstandingPrincipal: number;
     }[] = [];
 
-    const startDate = new Date();
-    for (let i = 1; i <= tenureMonths; i++) {
+    const startDate = loanAccount?.emiStartDate ?? new Date();
+    for (let i = 1; i <= numberOfInstallments; i++) {
       const interestComponent =
-        Math.round(outstanding * monthlyRate * 100) / 100;
+        Math.round(outstanding * periodicRate * 100) / 100;
       let principalComponent =
-        Math.round((monthlyEmi - interestComponent) * 100) / 100;
-      if (i === tenureMonths) principalComponent = outstanding;
+        Math.round((installmentAmount - interestComponent) * 100) / 100;
+      if (i === numberOfInstallments) principalComponent = outstanding;
       outstanding = Math.round((outstanding - principalComponent) * 100) / 100;
 
+      // gracePeriodMonths only delays when the schedule starts — it does not
+      // change the amortization math, so a grace period never accrues
+      // interest on its own.
       const dueDate = new Date(startDate);
-      dueDate.setMonth(dueDate.getMonth() + i);
+      dueDate.setMonth(
+        dueDate.getMonth() + gracePeriodMonths + i * periodMonths,
+      );
 
       entries.push({
         applicationId,
         installmentNumber: i,
         dueDate,
-        emiAmount: monthlyEmi,
+        emiAmount: installmentAmount,
         principalComponent,
         interestComponent,
         outstandingPrincipal: Math.max(outstanding, 0),
@@ -107,10 +159,17 @@ export class DashboardRepaymentService {
     await this.prisma.emiScheduleEntry.deleteMany({ where: { applicationId } });
     await this.prisma.emiScheduleEntry.createMany({ data: entries });
 
+    if (loanAccount) {
+      await this.prisma.loanAccount.update({
+        where: { applicationId },
+        data: { firstDueDate: entries[0]?.dueDate },
+      });
+    }
+
     await this.audit.log(
       userId,
       AuditAction.EMI_SCHEDULE_GENERATED,
-      { installments: tenureMonths, monthlyEmi },
+      { installments: numberOfInstallments, installmentAmount, frequency },
       applicationId,
       AuditCategory.REPAYMENT,
     );
@@ -119,6 +178,288 @@ export class DashboardRepaymentService {
       where: { applicationId },
       orderBy: { installmentNumber: 'asc' },
     });
+  }
+
+  // ── Loan Servicing: Stage 1 — Configuration ────────────────────────────────
+  // Approved principal is never touched here (see ConfigureLoanServicingDto) —
+  // only rate/tenure/grace-period/start-date. Regenerates the schedule via the
+  // same generateSchedule() every other caller uses, so there is exactly one
+  // amortization code path.
+  async configureServicing(
+    userId: string,
+    applicationId: string,
+    dto: ConfigureLoanServicingDto,
+  ) {
+    const loanAccount = await this.prisma.loanAccount.findUnique({
+      where: { applicationId },
+    });
+    if (!loanAccount) {
+      throw new NotFoundException(
+        'This application has no loan account yet — it must be approved before loan servicing can be configured',
+      );
+    }
+    if (loanAccount.status === 'CLEARED') {
+      throw new BadRequestException(
+        'This loan is already cleared and cannot be reconfigured',
+      );
+    }
+
+    await this.prisma.loanAccount.update({
+      where: { applicationId },
+      data: {
+        finalInterestRate: dto.finalInterestRate,
+        finalTenureMonths: dto.finalTenureMonths,
+        repaymentFrequency: dto.repaymentFrequency,
+        gracePeriodMonths: dto.gracePeriodMonths,
+        emiStartDate: dto.emiStartDate ? new Date(dto.emiStartDate) : undefined,
+        configuredByUserId: userId,
+        configuredAt: new Date(),
+      },
+    });
+
+    const schedule = await this.generateSchedule(userId, applicationId);
+    const installmentAmount = Number(schedule[0]?.emiAmount ?? 0);
+    const totalRepayable = schedule.reduce(
+      (sum, e) => sum + Number(e.emiAmount),
+      0,
+    );
+
+    await this.audit.log(
+      userId,
+      AuditAction.LOAN_SERVICING_CONFIGURED,
+      {
+        finalInterestRate: dto.finalInterestRate,
+        finalTenureMonths: dto.finalTenureMonths,
+        repaymentFrequency: dto.repaymentFrequency,
+        gracePeriodMonths: dto.gracePeriodMonths,
+        emiStartDate: dto.emiStartDate,
+      },
+      applicationId,
+      AuditCategory.REPAYMENT,
+    );
+
+    const [updatedLoanAccount, applicationWithDisbursement] =
+      await Promise.all([
+        this.prisma.loanAccount.findUnique({ where: { applicationId } }),
+        this.prisma.loanApplication.findUnique({
+          where: { id: applicationId },
+          include: { disbursement: true },
+        }),
+      ]);
+    const disbursementAmount = Number(
+      applicationWithDisbursement?.disbursement?.totalDisbursedAmount ??
+        applicationWithDisbursement?.creditLimit ??
+        0,
+    );
+
+    return {
+      ...updatedLoanAccount,
+      installmentAmount,
+      totalRepayable,
+      numberOfInstallments: schedule.length,
+      disbursementAmount,
+    };
+  }
+
+  // ── Loan Servicing: Stage 2 — Notify Student & Parent ──────────────────────
+  async notifyBorrower(userId: string, applicationId: string) {
+    const application = await this.prisma.loanApplication.findUnique({
+      where: { id: applicationId },
+      include: { parentVerification: true, disbursement: true },
+    });
+    if (!application) throw new NotFoundException('Application not found');
+
+    const loanAccount = await this.prisma.loanAccount.findUnique({
+      where: { applicationId },
+    });
+    if (!loanAccount || !loanAccount.configuredAt) {
+      throw new BadRequestException(
+        'Configure loan servicing before notifying the borrower',
+      );
+    }
+
+    const scheduleEntries = await this.prisma.emiScheduleEntry.findMany({
+      where: { applicationId },
+      orderBy: { installmentNumber: 'asc' },
+    });
+    if (scheduleEntries.length === 0) {
+      throw new BadRequestException(
+        'No EMI schedule found for this application',
+      );
+    }
+
+    const totalRepayable = scheduleEntries.reduce(
+      (sum, e) => sum + Number(e.emiAmount),
+      0,
+    );
+
+    const result = await this.notifications.notifyLoanFinalized({
+      userId: application.userId,
+      applicationId,
+      fullName: application.fullName,
+      email: application.email,
+      phoneNumber: application.phoneNumber,
+      parentPhone:
+        application.parentVerification?.phone ??
+        application.parentVerification?.contact ??
+        null,
+      approvedAmount: Number(application.creditLimit ?? 0),
+      disbursementAmount: Number(
+        application.disbursement?.totalDisbursedAmount ??
+          application.creditLimit ??
+          0,
+      ),
+      interestRate: Number(
+        loanAccount.finalInterestRate ?? application.interestRate ?? 0,
+      ),
+      emiAmount: Number(scheduleEntries[0].emiAmount),
+      tenureMonths: loanAccount.finalTenureMonths ?? scheduleEntries.length,
+      repaymentFrequency: loanAccount.repaymentFrequency,
+      gracePeriodMonths: loanAccount.gracePeriodMonths,
+      firstDueDate: scheduleEntries[0].dueDate,
+      totalRepayable,
+    });
+
+    await this.prisma.loanAccount.update({
+      where: { applicationId },
+      data: { borrowerNotifiedAt: new Date() },
+    });
+
+    await this.audit.log(
+      userId,
+      AuditAction.LOAN_SERVICING_NOTIFIED,
+      result,
+      applicationId,
+      AuditCategory.REPAYMENT,
+    );
+
+    return result;
+  }
+
+  // ── Loan Servicing: Stage 4 — Collection & Follow-up ───────────────────────
+  async recordCollectionActivity(
+    userId: string,
+    applicationId: string,
+    dto: RecordCollectionActivityDto,
+  ) {
+    const application = await this.prisma.loanApplication.findUnique({
+      where: { id: applicationId },
+      select: { id: true },
+    });
+    if (!application) throw new NotFoundException('Application not found');
+
+    const activity = await this.prisma.collectionActivity.create({
+      data: {
+        applicationId,
+        createdByUserId: userId,
+        activityType: dto.activityType,
+        notes: dto.notes,
+        contactedPerson: dto.contactedPerson,
+      },
+    });
+
+    await this.audit.log(
+      userId,
+      AuditAction.COLLECTION_ACTIVITY_RECORDED,
+      { activityId: activity.id, activityType: dto.activityType },
+      applicationId,
+      AuditCategory.REPAYMENT,
+    );
+
+    return activity;
+  }
+
+  async listCollectionActivity(applicationId: string, query: PaginationDto) {
+    const { take, skip } = paginate(query.page, query.limit);
+
+    const [data, total] = await Promise.all([
+      this.prisma.collectionActivity.findMany({
+        where: { applicationId },
+        take,
+        skip,
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.collectionActivity.count({ where: { applicationId } }),
+    ]);
+
+    return buildPaginatedResponse(
+      data,
+      total,
+      query.page ?? 1,
+      query.limit ?? 20,
+    );
+  }
+
+  // ── Loan Servicing: Stage 6 — Needs Review ─────────────────────────────────
+  // Manually raised only — no automatic threshold (e.g. "N missed
+  // installments") was specified, so none is guessed here.
+  async flagNeedsReview(
+    userId: string,
+    applicationId: string,
+    dto: FlagNeedsReviewDto,
+  ) {
+    const loanAccount = await this.prisma.loanAccount.findUnique({
+      where: { applicationId },
+    });
+    if (!loanAccount) throw new NotFoundException('Loan account not found');
+    if (loanAccount.status === 'CLEARED') {
+      throw new BadRequestException('This loan is already cleared');
+    }
+
+    const updated = await this.prisma.loanAccount.update({
+      where: { applicationId },
+      data: {
+        status: 'NEEDS_REVIEW',
+        reviewReason: dto.reason,
+        reviewRequestedByUserId: userId,
+        reviewRequestedAt: new Date(),
+        reviewResolvedByUserId: null,
+        reviewResolvedAt: null,
+      },
+    });
+
+    await this.audit.log(
+      userId,
+      AuditAction.LOAN_NEEDS_REVIEW,
+      { reason: dto.reason },
+      applicationId,
+      AuditCategory.REPAYMENT,
+    );
+
+    return updated;
+  }
+
+  async resolveReview(
+    userId: string,
+    applicationId: string,
+    dto: ResolveReviewDto,
+  ) {
+    const loanAccount = await this.prisma.loanAccount.findUnique({
+      where: { applicationId },
+    });
+    if (!loanAccount) throw new NotFoundException('Loan account not found');
+    if (loanAccount.status !== 'NEEDS_REVIEW') {
+      throw new BadRequestException('This loan is not currently under review');
+    }
+
+    const updated = await this.prisma.loanAccount.update({
+      where: { applicationId },
+      data: {
+        status: 'ACTIVE',
+        reviewResolvedByUserId: userId,
+        reviewResolvedAt: new Date(),
+      },
+    });
+
+    await this.audit.log(
+      userId,
+      AuditAction.LOAN_REVIEW_RESOLVED,
+      { resolutionNotes: dto.resolutionNotes },
+      applicationId,
+      AuditCategory.REPAYMENT,
+    );
+
+    return updated;
   }
 
   async getSchedule(applicationId: string, query: PaginationDto) {
@@ -312,7 +653,7 @@ export class DashboardRepaymentService {
       if (remaining === 0) {
         const loanAccount = await this.prisma.loanAccount.updateMany({
           where: { applicationId: entry.applicationId, status: 'ACTIVE' },
-          data: { status: 'CLEARED' },
+          data: { status: 'CLEARED', clearedAt: new Date() },
         });
         if (loanAccount.count > 0) {
           await this.audit.log(
@@ -396,6 +737,7 @@ export class DashboardRepaymentService {
         application: {
           select: {
             id: true,
+            userId: true,
             fullName: true,
             email: true,
             phoneNumber: true,

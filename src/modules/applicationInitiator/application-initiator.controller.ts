@@ -25,7 +25,14 @@ import { JwtPayload } from '../../common/interfaces/jwt-payload.interface';
 @ApiTags('Application Initiator')
 @ApiBearerAuth('JWT')
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(UserRole.INITIATOR,UserRole.ADMIN,UserRole.SUPPORTER,UserRole.CHECKER,UserRole.APPROVER)
+@Roles(
+  UserRole.INITIATOR,
+  UserRole.ADMIN,
+  UserRole.SUPPORTER,
+  UserRole.CHECKER,
+  UserRole.APPROVER,
+  UserRole.CREDIT_MANAGER,
+)
 @Controller('applications/:applicationId/initiator')
 export class ApplicationInitiatorController {
   constructor(

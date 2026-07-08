@@ -8,6 +8,13 @@ import {
   NotificationChannel,
   NotificationDeliveryStatus,
 } from '../../common/enums';
+import { RepaymentFrequency } from '@prisma/client';
+
+const FREQUENCY_LABEL: Record<RepaymentFrequency, string> = {
+  MONTHLY: 'Monthly',
+  QUARTERLY: 'Quarterly',
+  YEARLY: 'Yearly',
+};
 
 @Injectable()
 export class NotificationsService {
@@ -108,6 +115,75 @@ export class NotificationsService {
       parentLink,
       collegeLink,
     );
+  }
+
+  // ── Loan servicing finalized (student + parent) ─────────────────────────────
+  // Composes one message from the Credit Manager's finalized configuration and
+  // fans it out across whichever channels are actually available. Parents have
+  // no User account (ParentVerification has no userId/email), so their copy can
+  // only ever be delivered live via SMS/WhatsApp — never persisted as a
+  // Notification row, which is why parentNotified/parentChannel are returned
+  // separately rather than assumed.
+  async notifyLoanFinalized(params: {
+    userId?: string | null;
+    applicationId: string;
+    fullName?: string | null;
+    email?: string | null;
+    phoneNumber?: string | null;
+    parentPhone?: string | null;
+    approvedAmount: number;
+    disbursementAmount: number;
+    interestRate: number;
+    emiAmount: number;
+    tenureMonths: number;
+    repaymentFrequency: RepaymentFrequency;
+    gracePeriodMonths: number;
+    firstDueDate: Date;
+    totalRepayable: number;
+  }): Promise<{
+    studentNotified: boolean;
+    parentNotified: boolean;
+    parentChannel: 'SMS' | 'WHATSAPP' | null;
+  }> {
+    const title = 'Your loan has been finalized';
+    const frequencyLabel = FREQUENCY_LABEL[params.repaymentFrequency];
+    const message =
+      `Dear ${params.fullName ?? 'borrower'}, your loan has been finalized by our Credit Management team. ` +
+      `Approved Loan Amount: ${params.approvedAmount}. Disbursement Amount: ${params.disbursementAmount}. Interest Rate: ${params.interestRate}%. ` +
+      `EMI Amount: ${params.emiAmount}. EMI Timeline: ${frequencyLabel}. Tenure: ${params.tenureMonths} month(s). ` +
+      `Grace Period: ${params.gracePeriodMonths} month(s). First EMI Due Date: ${params.firstDueDate.toDateString()}. ` +
+      `Total Repayable Amount: ${params.totalRepayable}. Please pay each installment on or before its due date to avoid penal interest charges.`;
+
+    let studentNotified = false;
+    if (params.userId) {
+      await this.createDatabaseNotification(
+        params.userId,
+        title,
+        message,
+        params.applicationId,
+        NotificationChannel.APP,
+        NotificationDeliveryStatus.SENT,
+      );
+      studentNotified = true;
+    }
+    if (params.email) {
+      await this.sendEmail(params.email, title, `<p>${message}</p>`);
+    }
+    if (params.phoneNumber) {
+      await this.sendSms(params.phoneNumber, message);
+    }
+
+    let parentNotified = false;
+    let parentChannel: 'SMS' | 'WHATSAPP' | null = null;
+    if (params.parentPhone) {
+      const parentMessage = `Dear Parent/Guardian, ${message}`;
+      const smsSent = await this.sendSms(params.parentPhone, parentMessage);
+      const waSent = await this.sendWhatsapp(params.parentPhone, parentMessage);
+      parentNotified = smsSent || waSent;
+      parentChannel = smsSent ? 'SMS' : waSent ? 'WHATSAPP' : null;
+    }
+
+    return { studentNotified, parentNotified, parentChannel };
   }
 
   // ── Email helpers ──────────────────────────────────────────────────────────

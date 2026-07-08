@@ -40,4 +40,13 @@ export class DashboardOverviewController {
   getAlerts(@Query() query: PaginationDto) {
     return this.dashboardOverviewService.getAlerts(query);
   }
+
+  @Get('pipeline-stats-month')
+  @ApiOperation({
+    summary:
+      'This calendar month’s workflow throughput — applications that transitioned into Initiated/Supported/Checked/Approved this month, approval rate, and average processing time',
+  })
+  getPipelineStatsThisMonth() {
+    return this.dashboardOverviewService.getPipelineStatsThisMonth();
+  }
 }

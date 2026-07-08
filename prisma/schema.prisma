@@ -43,6 +43,26 @@ enum ApplicationStage {
 enum LoanAccountStatus {
   ACTIVE
   CLEARED
+  NEEDS_REVIEW
+}
+
+// Drives both the interest compounding period and the installment period —
+// a mismatched compounding/payment frequency isn't a requirement anywhere in
+// this system, so one field governs both rather than two independent ones.
+enum RepaymentFrequency {
+  MONTHLY
+  QUARTERLY
+  YEARLY
+}
+
+enum CollectionActivityType {
+  CALL
+  SMS
+  EMAIL
+  WHATSAPP
+  VISIT
+  NOTE
+  OTHER
 }
 
 enum StudyType {
@@ -112,6 +132,11 @@ enum AuditAction {
   APPLICATION_SENT_BACK
   LOAN_ACCOUNT_CREATED
   LOAN_CLEARED
+  LOAN_SERVICING_CONFIGURED
+  LOAN_SERVICING_NOTIFIED
+  COLLECTION_ACTIVITY_RECORDED
+  LOAN_NEEDS_REVIEW
+  LOAN_REVIEW_RESOLVED
   PEP_SCREENING_RECORDED
   COLLEGE_FORM_SUBMITTED
   PARENT_FORM_SUBMITTED
@@ -418,6 +443,7 @@ model LoanApplication {
   disbursement              Disbursement?
   loanAccount               LoanAccount?
   emiSchedule               EmiScheduleEntry[]
+  collectionActivities      CollectionActivity[]
   generatedAgreements       GeneratedAgreement[]
   insurancePolicies         InsurancePolicy[]
   commissionEntries         CommissionEntry[]
@@ -951,12 +977,56 @@ model LoanAccount {
   loanAccountNumber String            @unique
   status            LoanAccountStatus @default(ACTIVE)
 
+  // Loan servicing configuration (Credit Manager, post-approval). The
+  // approved principal (LoanApplication.creditLimit) is never overridden
+  // here — only rate/tenure/grace/start-date are Credit-Manager-adjustable.
+  // Omitted fields fall back to the application's originally approved
+  // values when the schedule is (re)generated.
+  finalInterestRate  Decimal?  @db.Decimal(5, 2)
+  finalTenureMonths  Int?
+  repaymentFrequency RepaymentFrequency @default(MONTHLY)
+  gracePeriodMonths  Int       @default(0)
+  emiStartDate       DateTime?
+  firstDueDate       DateTime?
+  configuredByUserId String?
+  configuredAt       DateTime?
+  borrowerNotifiedAt DateTime?
+
+  clearedAt DateTime?
+
+  // Needs Review (Stage 6) — manually raised by the Credit Manager, not
+  // auto-triggered by any threshold, since no such threshold was specified.
+  reviewReason            String?
+  reviewRequestedByUserId String?
+  reviewRequestedAt       DateTime?
+  reviewResolvedByUserId  String?
+  reviewResolvedAt        DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   application LoanApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
 
   @@map("loan_accounts")
+}
+
+// Collection & follow-up history (Stage 4) — manual outreach records logged
+// by the Credit Manager, distinct from the automated EMI reminder log (which
+// lives in the existing Notification table via the daily cron).
+model CollectionActivity {
+  id              String                 @id @default(uuid())
+  applicationId   String
+  createdByUserId String
+  activityType    CollectionActivityType
+  notes           String
+  contactedPerson String?
+
+  createdAt DateTime @default(now())
+
+  application LoanApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@index([applicationId])
+  @@map("collection_activities")
 }
 
 model Disbursement {

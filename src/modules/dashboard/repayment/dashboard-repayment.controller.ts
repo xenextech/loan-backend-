@@ -11,12 +11,20 @@ import {
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { DashboardRepaymentService } from './dashboard-repayment.service';
 import { OverdueQueryDto, MarkEmiPaidDto } from '../dto/repayment.dto';
+import {
+  ConfigureLoanServicingDto,
+  RecordCollectionActivityDto,
+  CollectionActivityQueryDto,
+  FlagNeedsReviewDto,
+  ResolveReviewDto,
+} from '../dto/loan-servicing.dto';
 import { PaginationDto } from '../../../common/dto/pagination.dto';
 import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../../common/guards/roles.guard';
 import { Roles } from '../../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import { JwtPayload } from '../../../common/interfaces/jwt-payload.interface';
+import { UserRole } from '../../../common/enums';
 import { DASHBOARD_STAFF_ROLES } from '../dashboard-roles.constant';
 
 @ApiTags('Dashboard: Repayment')
@@ -86,5 +94,102 @@ export class DashboardRepaymentController {
   @ApiOperation({ summary: 'Static EMI notification trigger schedule' })
   getNotificationTriggers() {
     return this.dashboardRepaymentService.getNotificationTriggers();
+  }
+
+  // ── Loan Servicing (Credit Manager only) ───────────────────────────────────
+
+  @Post(':applicationId/servicing/configure')
+  @Roles(UserRole.CREDIT_MANAGER)
+  @ApiOperation({
+    summary:
+      'Stage 1 — Configure final rate/tenure/grace-period/start-date for an approved loan and regenerate its EMI schedule',
+  })
+  configureServicing(
+    @CurrentUser() user: JwtPayload,
+    @Param('applicationId') applicationId: string,
+    @Body() dto: ConfigureLoanServicingDto,
+  ) {
+    return this.dashboardRepaymentService.configureServicing(
+      user.sub,
+      applicationId,
+      dto,
+    );
+  }
+
+  @Post(':applicationId/servicing/notify-borrower')
+  @Roles(UserRole.CREDIT_MANAGER)
+  @ApiOperation({
+    summary:
+      'Stage 2 — Notify the student and parent of the finalized loan terms',
+  })
+  notifyBorrower(
+    @CurrentUser() user: JwtPayload,
+    @Param('applicationId') applicationId: string,
+  ) {
+    return this.dashboardRepaymentService.notifyBorrower(
+      user.sub,
+      applicationId,
+    );
+  }
+
+  @Post(':applicationId/collection-activity')
+  @Roles(UserRole.CREDIT_MANAGER)
+  @ApiOperation({ summary: 'Stage 4 — Record a collection/follow-up activity' })
+  recordCollectionActivity(
+    @CurrentUser() user: JwtPayload,
+    @Param('applicationId') applicationId: string,
+    @Body() dto: RecordCollectionActivityDto,
+  ) {
+    return this.dashboardRepaymentService.recordCollectionActivity(
+      user.sub,
+      applicationId,
+      dto,
+    );
+  }
+
+  @Get(':applicationId/collection-activity')
+  @ApiOperation({
+    summary: 'Stage 4 — List collection/follow-up activity for an application',
+  })
+  listCollectionActivity(
+    @Param('applicationId') applicationId: string,
+    @Query() query: CollectionActivityQueryDto,
+  ) {
+    return this.dashboardRepaymentService.listCollectionActivity(
+      applicationId,
+      query,
+    );
+  }
+
+  @Patch(':applicationId/needs-review')
+  @Roles(UserRole.CREDIT_MANAGER)
+  @ApiOperation({
+    summary: 'Stage 6 — Move a loan to Needs Review with a mandatory reason',
+  })
+  flagNeedsReview(
+    @CurrentUser() user: JwtPayload,
+    @Param('applicationId') applicationId: string,
+    @Body() dto: FlagNeedsReviewDto,
+  ) {
+    return this.dashboardRepaymentService.flagNeedsReview(
+      user.sub,
+      applicationId,
+      dto,
+    );
+  }
+
+  @Patch(':applicationId/resolve-review')
+  @Roles(UserRole.CREDIT_MANAGER)
+  @ApiOperation({ summary: 'Stage 6 — Resolve a loan out of Needs Review' })
+  resolveReview(
+    @CurrentUser() user: JwtPayload,
+    @Param('applicationId') applicationId: string,
+    @Body() dto: ResolveReviewDto,
+  ) {
+    return this.dashboardRepaymentService.resolveReview(
+      user.sub,
+      applicationId,
+      dto,
+    );
   }
 }
