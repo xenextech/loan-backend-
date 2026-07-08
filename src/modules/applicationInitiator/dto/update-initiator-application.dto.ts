@@ -1,12 +1,15 @@
 import {
   IsArray,
   IsBoolean,
+  IsDateString,
+  IsEnum,
   IsISO8601,
   IsInt,
   IsOptional,
   IsString,
   Max,
   Min,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
@@ -15,6 +18,7 @@ import {
   IsMoneyAmount,
   IsPercentage,
 } from '../../../common/decorators/numeric-range.decorators';
+import { BlacklistStatus } from '../../../common/enums';
 
 export class FamilyMemberDto {
   @ApiPropertyOptional({
@@ -328,6 +332,51 @@ export class UpdateInitiatorApplicationDto {
   @IsOptional()
   @IsBoolean()
   isBlacklisted?: boolean;
+
+  @ApiPropertyOptional({
+    enum: BlacklistStatus,
+    description:
+      'Blacklist status. When NOT_BLACKLISTED, blacklistReason/blacklistDate/' +
+      'blacklistReferenceNumber must all be empty or absent. When BLACKLISTED, ' +
+      'all three become required (checked against the merged stored + incoming ' +
+      'state, not just this request — see ApplicationInitiatorService).',
+  })
+  @IsOptional()
+  @IsEnum(BlacklistStatus)
+  blacklistStatus?: BlacklistStatus;
+
+  @ApiPropertyOptional({
+    description:
+      'Reason for blacklisting. Required when blacklistStatus is BLACKLISTED; ' +
+      'must be empty/absent when NOT_BLACKLISTED. Send an empty string to ' +
+      'clear a previously-set value.',
+    example: 'Fraud',
+  })
+  @IsOptional()
+  @IsString()
+  blacklistReason?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Date the customer was blacklisted (YYYY-MM-DD). Required when ' +
+      'blacklistStatus is BLACKLISTED; must be empty/absent when ' +
+      'NOT_BLACKLISTED. Send an empty string to clear a previously-set value.',
+    example: '2026-07-08',
+  })
+  @ValidateIf((o: UpdateInitiatorApplicationDto) => !!o.blacklistDate)
+  @IsDateString()
+  blacklistDate?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Reference number for the blacklist record. Required when ' +
+      'blacklistStatus is BLACKLISTED; must be empty/absent when ' +
+      'NOT_BLACKLISTED. Send an empty string to clear a previously-set value.',
+    example: 'BL-001',
+  })
+  @IsOptional()
+  @IsString()
+  blacklistReferenceNumber?: string;
 
   // =========================
   // 2. NRB Reporting

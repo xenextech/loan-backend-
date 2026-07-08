@@ -580,6 +580,11 @@ enum PeriodUnit {
   MONTH
 }
 
+enum BlacklistStatus {
+  BLACKLISTED
+  NOT_BLACKLISTED
+}
+
 model PersonalGuarantee {
   id String @id @default(cuid())
 

@@ -1,11 +1,16 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
-import { AuditAction, ApplicationStatus } from '../../common/enums';
+import {
+  AuditAction,
+  ApplicationStatus,
+  BlacklistStatus,
+} from '../../common/enums';
 import {
   paginate,
   buildPaginatedResponse,
@@ -28,6 +33,86 @@ export class ApplicationInitiatorService {
     });
     if (!application) throw new NotFoundException('Application not found');
     return application;
+  }
+
+  // Validates the blacklist section against the *merged* state (existing DB
+  // row + this request's changes), not just the incoming payload — so a
+  // partial update in a later step can't leave the record inconsistent even
+  // if it doesn't repeat blacklistStatus. Reusable shape for any future
+  // "status gates a group of dependent fields" rule: resolve the effective
+  // value of every field in the group, then validate the merged result once.
+  private resolveBlacklistUpdate(
+    existing: {
+      blacklistStatus: BlacklistStatus | null;
+      blacklistReason: string | null;
+      blacklistDate: Date | null;
+      blacklistReferenceNumber: string | null;
+    },
+    dto: {
+      blacklistStatus?: BlacklistStatus;
+      blacklistReason?: string;
+      blacklistDate?: string;
+      blacklistReferenceNumber?: string;
+    },
+  ) {
+    const hasStatus = dto.blacklistStatus !== undefined;
+    const hasReason = dto.blacklistReason !== undefined;
+    const hasDate = dto.blacklistDate !== undefined;
+    const hasReferenceNumber = dto.blacklistReferenceNumber !== undefined;
+
+    // Nothing blacklist-related in this request — leave the section untouched
+    // and skip re-validating rows this request doesn't concern itself with.
+    if (!hasStatus && !hasReason && !hasDate && !hasReferenceNumber) {
+      return {};
+    }
+
+    const effectiveStatus = hasStatus
+      ? dto.blacklistStatus
+      : existing.blacklistStatus;
+    const effectiveReason = hasReason
+      ? (dto.blacklistReason ?? '') || null
+      : existing.blacklistReason;
+    const effectiveDate = hasDate
+      ? dto.blacklistDate
+        ? new Date(dto.blacklistDate)
+        : null
+      : existing.blacklistDate;
+    const effectiveReferenceNumber = hasReferenceNumber
+      ? (dto.blacklistReferenceNumber ?? '') || null
+      : existing.blacklistReferenceNumber;
+
+    if (effectiveStatus === BlacklistStatus.NOT_BLACKLISTED) {
+      if (effectiveReason || effectiveDate || effectiveReferenceNumber) {
+        throw new BadRequestException(
+          'Blacklist details cannot be provided when blacklist status is NOT_BLACKLISTED.',
+        );
+      }
+    } else if (effectiveStatus === BlacklistStatus.BLACKLISTED) {
+      if (!effectiveReason) {
+        throw new BadRequestException(
+          'Blacklist reason is required when blacklist status is BLACKLISTED.',
+        );
+      }
+      if (!effectiveDate) {
+        throw new BadRequestException(
+          'Blacklist date is required when blacklist status is BLACKLISTED.',
+        );
+      }
+      if (!effectiveReferenceNumber) {
+        throw new BadRequestException(
+          'Blacklist reference number is required when blacklist status is BLACKLISTED.',
+        );
+      }
+    }
+
+    return {
+      ...(hasStatus && { blacklistStatus: dto.blacklistStatus }),
+      ...(hasReason && { blacklistReason: effectiveReason }),
+      ...(hasDate && { blacklistDate: effectiveDate }),
+      ...(hasReferenceNumber && {
+        blacklistReferenceNumber: effectiveReferenceNumber,
+      }),
+    };
   }
 
   // ── Combined initiator sections, merged directly onto LoanApplication ──────
@@ -223,7 +308,7 @@ export class ApplicationInitiatorService {
     userId: string,
     dto: UpdateInitiatorApplicationDto,
   ) {
-    await this.assertApplicationExists(applicationId);
+    const application = await this.assertApplicationExists(applicationId);
 
     const {
       familyMembers,
@@ -234,6 +319,10 @@ export class ApplicationInitiatorService {
       insuranceCoverage,
       insuranceRemarks,
       repaymentCapacity,
+      blacklistStatus,
+      blacklistReason,
+      blacklistDate,
+      blacklistReferenceNumber,
       ...rest
     } = dto;
 
@@ -248,11 +337,19 @@ export class ApplicationInitiatorService {
       (value) => value !== undefined,
     );
 
+    const blacklistUpdate = this.resolveBlacklistUpdate(application, {
+      blacklistStatus,
+      blacklistReason,
+      blacklistDate,
+      blacklistReferenceNumber,
+    });
+
     const updated = await this.prisma.loanApplication.update({
       where: { id: applicationId },
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       data: {
         ...rest,
+        ...blacklistUpdate,
         ...(familyMembers && {
           familyMember: {
             deleteMany: {},
