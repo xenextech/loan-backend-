@@ -4,7 +4,7 @@ Guidance for AI coding agents working in this repository.
 
 ## What this is
 
-`edu-loan-backend` (Swagger title: "Unnati Loan API") is a NestJS 11 + TypeScript REST API for an education loan application platform ("Cliq Edu Loan"). It handles student loan applications, parent/college verification workflows, document uploads, offer letters/agreements/enrollment certificates, notifications, and an admin dashboard.
+`edu-loan-backend` (Swagger title: "Unnati Loan API") is a NestJS 11 + TypeScript REST API for an education loan application platform ("Unnati Loan"). It handles student loan applications, parent/college verification workflows, document uploads, offer letters/agreements/enrollment certificates, notifications, and an admin dashboard.
 
 - Runtime: Node.js, NestJS 11, TypeScript 5
 - Database: PostgreSQL (Neon), accessed via Prisma 7 (`@prisma/client` + `@prisma/adapter-pg`)
