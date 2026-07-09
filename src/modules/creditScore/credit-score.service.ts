@@ -53,21 +53,25 @@ export class CreditScoreService {
   }
 
   calculate(request: {
-    totalWeight: number;
+    // maxPossibleScore = Σ(weight × maxPoint) — mirrors the spreadsheet's
+    // implicit constant 30 (= sum(weight_i * max points in parameter_i)).
+    // This is the CORRECT denominator, matching Risk Rating!D9 = E20/30.
+    // DO NOT use totalWeight (= Σweight = 10) here — that gives a wrong result.
+    maxPossibleScore: number;
     totalWeightScore: number;
   }): CreditScoreResponseDto {
     const percentage =
-      request.totalWeight === 0
+      request.maxPossibleScore === 0
         ? 0
         : Number(
-            ((request.totalWeightScore / request.totalWeight) * 100).toFixed(2),
+            ((request.totalWeightScore / request.maxPossibleScore) * 100).toFixed(2),
           );
     const { grade, riskCategory } = this.resolveGrade(percentage);
 
     return {
       overall: {
         score: request.totalWeightScore,
-        weight: request.totalWeight,
+        weight: request.maxPossibleScore,
         percentage,
         grade,
         riskCategory,
@@ -146,10 +150,10 @@ export class CreditScoreService {
   }
 
   private buildScoreRequest(request: ScoreDto): {
-    totalWeight: number;
+    maxPossibleScore: number;
     totalWeightScore: number;
   } {
-    let totalWeight = 0;
+    let maxPossibleScore = 0;
     let totalWeightScore = 0;
 
     for (const [key, value] of Object.entries(request)) {
@@ -160,11 +164,17 @@ export class CreditScoreService {
       const score = this.getScore(rules as readonly ScoreRule[], value as ScoreInput);
       if (!score) continue;
 
-      totalWeight += score.weight;
+      // maxPossibleScore accumulates weight × maxPoint (not just weight) so
+      // the denominator matches Σ(weight_i * max_points_i) = 30, mirroring
+      // the spreadsheet's D9 = E20/30 formula.
+      const maxPoint = Math.max(
+        ...(rules as readonly ScoreRule[]).map((r) => r.point),
+      );
+      maxPossibleScore += score.weight * maxPoint;
       totalWeightScore += score.weightScore;
     }
 
-    return { totalWeight, totalWeightScore };
+    return { maxPossibleScore, totalWeightScore };
   }
 
   // Mirrors the source spreadsheet's Risk Rating!D10/D11 — grade and risk
