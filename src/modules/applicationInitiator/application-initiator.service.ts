@@ -10,6 +10,7 @@ import { ApplicationsService } from '../applications/applications.service';
 import {
   AuditAction,
   ApplicationSource,
+  ApplicationStatus,
   BlacklistStatus,
 } from '../../common/enums';
 import {
@@ -284,6 +285,8 @@ export class ApplicationInitiatorService {
           phoneNumber: true,
           createdAt: true,
           user: { select: { id: true, email: true, role: true } },
+          studyInformation: { select: { courseName: true, studyType: true } },
+          loanInformation: { select: { loanAmount: true } },
           collegeVerification: true,
         },
       }),
@@ -343,6 +346,21 @@ export class ApplicationInitiatorService {
     });
     if (!actor) throw new NotFoundException('User not found');
 
+    // Student-sourced applications already carry status: SUBMITTED by the
+    // time they reach here — the student's own Step 4 submit() sets it,
+    // long before Parent/College/Initiator ever touch the record. An
+    // Initiator-created application never passes through that endpoint (it
+    // has no student owner to submit it), so without this it stays at
+    // status: DRAFT forever and never satisfies the SUBMITTED-only default
+    // filter every staff dashboard query (Supporter/Checker/Approver/Credit
+    // Manager, via DashboardApplicationsService.buildFilterWhere()) uses to
+    // list applications. This is therefore the Initiator-created flow's
+    // equivalent of the student's submit() call — the one-time completion of
+    // the Initiator's own section is what makes a bank-created application
+    // "approved" and ready to enter the same pipeline everyone else uses.
+    const isInitiatorSourced =
+      application.source === ApplicationSource.INITIATOR;
+
     const updated = await this.prisma.loanApplication.update({
       where: { id: applicationId },
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
@@ -351,6 +369,10 @@ export class ApplicationInitiatorService {
         initiatorUserId: actor.id,
         initiatorName: actor.fullName ?? actor.email,
         initiatorDate: new Date(),
+        ...(isInitiatorSourced && {
+          status: ApplicationStatus.SUBMITTED,
+          submittedAt: new Date(),
+        }),
       },
     });
 

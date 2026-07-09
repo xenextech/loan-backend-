@@ -39,7 +39,7 @@ export class DocumentsController {
   constructor(private readonly documentsService: DocumentsService) {}
 
   @Post(':documentType')
-  @Roles(UserRole.STUDENT)
+  @Roles(UserRole.STUDENT, UserRole.INITIATOR)
   @ApiOperation({
     summary: 'Upload a document for an application',
     description:
@@ -47,7 +47,8 @@ export class DocumentsController {
       'For identity documents: IDENTITY_FRONT/IDENTITY_BACK are image-only and must be uploaded as a pair ' +
       '(Citizenship only). IDENTITY_DOCUMENT is a single file — image or PDF for Passport/Driving ' +
       'License/National ID/PAN Number, but PDF-only when identityType is Citizenship. ' +
-      'IDENTITY_DOCUMENT cannot be combined with IDENTITY_FRONT/IDENTITY_BACK on the same application.',
+      'IDENTITY_DOCUMENT cannot be combined with IDENTITY_FRONT/IDENTITY_BACK on the same application. ' +
+      'Initiators may only upload to INITIATOR-sourced applications they created.',
   })
   @ApiParam({ name: 'documentType', enum: DocumentType })
   @ApiConsumes('multipart/form-data')
@@ -80,6 +81,7 @@ export class DocumentsController {
     return this.documentsService.uploadDocument(
       applicationId,
       user.sub,
+      user.role,
       documentType,
       file,
     );
@@ -100,12 +102,16 @@ export class DocumentsController {
 
   @Delete(':documentId')
   @HttpCode(HttpStatus.OK)
-  @Roles(UserRole.STUDENT)
+  @Roles(UserRole.STUDENT, UserRole.INITIATOR)
   @ApiOperation({ summary: 'Delete a document' })
   deleteDocument(
     @CurrentUser() user: JwtPayload,
     @Param('documentId') documentId: string,
   ) {
-    return this.documentsService.deleteDocument(documentId, user.sub);
+    return this.documentsService.deleteDocument(
+      documentId,
+      user.sub,
+      user.role,
+    );
   }
 }

@@ -16,7 +16,6 @@ import { LoginDto } from './dto/login.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { JwtPayload } from '../../common/interfaces/jwt-payload.interface';
-import { UserRole } from '../../common/enums';
 
 @Injectable()
 export class AuthService {
@@ -80,7 +79,12 @@ export class AuthService {
 
     return {
       accessToken,
-      user: { id: user.id, email: user.email, role: user.role },
+      user: {
+        id: user.id,
+        email: user.email,
+        role: user.role,
+        fullName: user.fullName,
+      },
     };
   }
 
@@ -167,6 +171,7 @@ export class AuthService {
       select: {
         id: true,
         email: true,
+        fullName: true,
         role: true,
         isEmailVerified: true,
         createdAt: true,

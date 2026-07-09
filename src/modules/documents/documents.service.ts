@@ -6,7 +6,12 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
-import { DocumentType, ApplicationStatus } from '../../common/enums';
+import {
+  DocumentType,
+  ApplicationStatus,
+  ApplicationSource,
+  UserRole,
+} from '../../common/enums';
 import {
   DOCUMENT_BUCKET,
   ALLOWED_IMAGE_TYPES,
@@ -31,6 +36,9 @@ const DOCUMENT_CONFIG: Record<
     allowedTypes: ALLOWED_IMAGE_TYPES,
     maxSize: MAX_IMAGE_SIZE,
   },
+  // Front/Back are the "image mode" pair for Citizenship — PDF goes through
+  // IDENTITY_DOCUMENT instead (see identity-document.util.ts), so these two
+  // stay image-only to keep the two upload modes from mixing.
   [DocumentType.IDENTITY_FRONT]: {
     bucket: DOCUMENT_BUCKET,
     allowedTypes: ALLOWED_IMAGE_TYPES,
@@ -80,13 +88,34 @@ export class DocumentsService {
     private readonly storage: StorageService,
   ) {}
 
-  private async assertApplicationAccess(applicationId: string, userId: string) {
+  // Initiator-created applications have no owning student (userId is null) —
+  // an Initiator acting on their own INITIATOR-sourced application is let
+  // through in place of the usual student-ownership check.
+  private isInitiatorOwnApplication(
+    application: { source: ApplicationSource },
+    role: UserRole,
+  ) {
+    return (
+      role === UserRole.INITIATOR &&
+      application.source === ApplicationSource.INITIATOR
+    );
+  }
+
+  private async assertApplicationAccess(
+    applicationId: string,
+    userId: string,
+    role: UserRole,
+  ) {
     const application = await this.prisma.loanApplication.findUnique({
       where: { id: applicationId },
     });
     if (!application) throw new NotFoundException('Application not found');
-    if (application.userId !== userId)
+    if (
+      application.userId !== userId &&
+      !this.isInitiatorOwnApplication(application, role)
+    ) {
       throw new ForbiddenException('Access denied');
+    }
     if (application.status !== ApplicationStatus.DRAFT) {
       throw new BadRequestException(
         'Cannot upload documents to a submitted application',
@@ -98,12 +127,14 @@ export class DocumentsService {
   async uploadDocument(
     applicationId: string,
     userId: string,
+    role: UserRole,
     documentType: DocumentType,
     file: Express.Multer.File,
   ) {
     const application = await this.assertApplicationAccess(
       applicationId,
       userId,
+      role,
     );
 
     const config = DOCUMENT_CONFIG[documentType];
@@ -149,25 +180,32 @@ export class DocumentsService {
     });
   }
 
-  async getDocuments(applicationId: string, userId: string, role: string) {
+  async getDocuments(applicationId: string, userId: string, role: UserRole) {
     const application = await this.prisma.loanApplication.findUnique({
       where: { id: applicationId },
     });
     if (!application) throw new NotFoundException('Application not found');
-    if (role !== 'ADMIN' && application.userId !== userId) {
+    if (
+      role !== UserRole.ADMIN &&
+      application.userId !== userId &&
+      !this.isInitiatorOwnApplication(application, role)
+    ) {
       throw new ForbiddenException('Access denied');
     }
 
     return this.prisma.document.findMany({ where: { applicationId } });
   }
 
-  async deleteDocument(documentId: string, userId: string) {
+  async deleteDocument(documentId: string, userId: string, role: UserRole) {
     const document = await this.prisma.document.findUnique({
       where: { id: documentId },
       include: { application: true },
     });
     if (!document) throw new NotFoundException('Document not found');
-    if (document.application.userId !== userId)
+    if (
+      document.application.userId !== userId &&
+      !this.isInitiatorOwnApplication(document.application, role)
+    )
       throw new ForbiddenException('Access denied');
     if (document.application.status !== ApplicationStatus.DRAFT) {
       throw new BadRequestException(
