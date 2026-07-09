@@ -317,7 +317,21 @@ export class ApplicationInitiatorService {
     dto: CreateInitiatorApplicationDto,
   ) {
     const application = await this.assertApplicationExists(applicationId);
-    if (application.relationshipStartDate) {
+    // Existence is judged by `initiatorUserId`, not a business field like
+    // `relationshipStartDate` — that field is optional here (an Initiator can
+    // legitimately leave it blank) and, critically, is also writable through
+    // `updateInitiatorApplication()` (PATCH), which has no create-vs-update
+    // gate of its own. If a PATCH ever lands on this application before its
+    // first POST (e.g. an autosaved field, or a UI tab saved out of order),
+    // a `relationshipStartDate`-based check would see that stray value and
+    // wrongly conflict on the Initiator's actual first submission — which is
+    // exactly what happened for freshly Initiator-created applications.
+    // `initiatorUserId` has no such ambiguity: it is stamped only right here,
+    // exactly once, and `UpdateInitiatorApplicationDto` doesn't expose it, so
+    // PATCH can never set it. It is therefore a true "has POST ever
+    // succeeded for this application" flag for both the Student→Parent→
+    // College→Initiator flow and the Initiator-created flow alike.
+    if (application.initiatorUserId) {
       throw new ConflictException(
         'Initiator information already exists for this application. Use PATCH to update it.',
       );
