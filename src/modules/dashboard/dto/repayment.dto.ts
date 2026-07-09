@@ -21,9 +21,9 @@ export class OverdueQueryDto extends PaginationDto {
 export class MarkEmiPaidDto {
   @ApiProperty({ example: 10439 })
   @IsNumber()
-  paidAmount: number;
+  paidAmount!: number;
 
   @ApiProperty({ example: '2026-07-25T00:00:00.000Z' })
   @IsISO8601()
-  paidDate: string;
+  paidDate!: string;
 }

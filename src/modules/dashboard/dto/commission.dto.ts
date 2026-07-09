@@ -17,19 +17,19 @@ import {
 export class CreateCommissionPartnerDto {
   @ApiProperty({ enum: CommissionPartnerType })
   @IsEnum(CommissionPartnerType)
-  partnerType: CommissionPartnerType;
+  partnerType!: CommissionPartnerType;
 
   @ApiProperty({ example: 'Best Finance Co. (BFCL)' })
   @IsString()
-  name: string;
+  name!: string;
 
   @ApiProperty({ enum: CommissionRateType })
   @IsEnum(CommissionRateType)
-  rateType: CommissionRateType;
+  rateType!: CommissionRateType;
 
   @ApiProperty({ example: 0.1 })
   @IsNumber()
-  rateValue: number;
+  rateValue!: number;
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -61,15 +61,15 @@ export class CreateCommissionEntryDto {
 
   @ApiProperty()
   @IsString()
-  partnerId: string;
+  partnerId!: string;
 
   @ApiProperty({ example: 710 })
   @IsNumber()
-  amount: number;
+  amount!: number;
 
   @ApiProperty({ example: '2026-06-01T00:00:00.000Z' })
   @IsISO8601()
-  month: string;
+  month!: string;
 
   @ApiPropertyOptional()
   @IsOptional()

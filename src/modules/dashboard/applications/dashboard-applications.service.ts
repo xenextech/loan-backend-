@@ -10,10 +10,12 @@ import {
 } from '../../../common/dto/pagination.dto';
 import { DashboardApplicationsQueryDto } from '../dto/dashboard-applications-query.dto';
 
-// "My queue" depends on which stage each role acts on next.
+// "My queue" depends on which stage each role acts on next. CREDIT_MANAGER is
+// deliberately absent here — its queue isn't stage-based (it acts after
+// APPROVED, on loans not yet servicing-configured), so it's special-cased in
+// buildFilterWhere() below rather than forced into this stage map.
 const MY_QUEUE_STAGE_FOR_ROLE: Partial<Record<UserRole, ApplicationStage>> = {
   [UserRole.SUPPORTER]: ApplicationStage.INITIATED,
-  [UserRole.CREDIT_MANAGER]: ApplicationStage.SUPPORTED,
   [UserRole.CHECKER]: ApplicationStage.SUPPORTED,
   [UserRole.APPROVER]: ApplicationStage.CHECKING,
 };
@@ -31,6 +33,16 @@ export class DashboardApplicationsService {
   ): Prisma.LoanApplicationWhereInput {
     switch (filter) {
       case 'my-queue': {
+        // Credit Manager's queue is approved loans still awaiting servicing
+        // configuration (interest/tenure/frequency/grace-period) — not a
+        // pipeline stage, since it acts after the Approver, not alongside
+        // the Checker.
+        if (role === UserRole.CREDIT_MANAGER) {
+          return {
+            stage: ApplicationStage.APPROVED,
+            loanAccount: { configuredAt: null },
+          };
+        }
         const stage = role ? MY_QUEUE_STAGE_FOR_ROLE[role] : undefined;
         return stage ? { stage } : { stage: { in: [] } };
       }

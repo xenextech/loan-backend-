@@ -69,7 +69,12 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     } else if (exception instanceof Prisma.PrismaClientValidationError) {
       status = HttpStatus.BAD_REQUEST;
       error = 'BadRequest';
-      message = 'Invalid data provided';
+      // In dev, expose the raw Prisma error so callers can diagnose the issue.
+      // Remove this before going to production.
+      message =
+        process.env['NODE_ENV'] !== 'production'
+          ? exception.message
+          : 'Invalid data provided';
       this.logger.error(`Prisma validation error: ${exception.message}`);
     } else if (exception instanceof Error) {
       // Full details go to the server log only — never echo raw internal

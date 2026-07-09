@@ -160,10 +160,11 @@ Query params: `page`, `limit`, `search` (matches name/ref no/citizenship no/phon
 `filter` narrows the list by stage instead of the default `status: SUBMITTED`
 restriction (so it also surfaces bank-created applications, which never get
 `status: SUBMITTED` today — see the status/stage gap noted above): `my-queue`
-(depends on your role — `SUPPORTER` sees `INITIATED`, `CREDIT_MANAGER`/`CHECKER` sees
-`SUPPORTED`, `APPROVER` sees `CHECKING`), `pending` (`INITIATED`/`SUPPORTED`/
-`CHECKING`), `approval` (`CHECKING`, i.e. awaiting the approver), `disbursement`
-(`APPROVED`), `rejected`, `sent-back`.
+(depends on your role — `SUPPORTER` sees `INITIATED`, `CHECKER` sees `SUPPORTED`,
+`APPROVER` sees `CHECKING`, `CREDIT_MANAGER` sees `APPROVED` loans not yet
+servicing-configured — see the role split note in §3), `pending`
+(`INITIATED`/`SUPPORTED`/`CHECKING`), `approval` (`CHECKING`, i.e. awaiting the
+approver), `disbursement` (`APPROVED`), `rejected`, `sent-back`.
 
 Row shape: `id, refNo, date, borrower, branch, type, amount, grade, status, stage,
 dsgir, ltv, daysOpen`. `status` is the raw `DRAFT`/`SUBMITTED` student-facing status;
@@ -215,11 +216,13 @@ need a follow-up PATCH if the UI collects them), writes an audit log entry, and
 | Method | Path                                               | Role(s)                                           | Effect                                                                                                                                                                                     |
 | ------ | -------------------------------------------------- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | POST   | `/dashboard/approval/:applicationId/support`       | `SUPPORTER`                                       | stage → `SUPPORTED` (valid from `null`/`INITIATED`/`SENT_BACK`)                                                                                                                            |
-| POST   | `/dashboard/approval/:applicationId/check`         | `CREDIT_MANAGER` (or `CHECKER`)                   | stage → `CHECKING` (valid from `SUPPORTED`/`SENT_BACK`)                                                                                                                                    |
+| POST   | `/dashboard/approval/:applicationId/check`         | `CHECKER`                                         | stage → `CHECKING` (valid from `SUPPORTED`/`SENT_BACK`). No longer shared with `CREDIT_MANAGER` — see the role split note below                                                          |
 | POST   | `/dashboard/approval/:applicationId/approve`       | `APPROVER`                                        | stage → `APPROVED` (valid from `CHECKING` only). Sets `approverDate` and auto-creates the `LoanAccount` credit ledger (see §4)                                                             |
 | POST   | `/dashboard/approval/:applicationId/reject`        | `CREDIT_MANAGER`/`CHECKER`/`APPROVER`             | stage → `REJECTED` from any stage. Body: `{ reason }`. Now also notifies the applicant (email + SMS if a phone number is on file)                                                          |
 | POST   | `/dashboard/approval/:applicationId/send-back`     | `SUPPORTER`/`CREDIT_MANAGER`/`CHECKER`/`APPROVER` | stage → `SENT_BACK` from any stage. Body: `{ reason, toStage? }` (`toStage` defaults to `INITIATED`) — re-entering the pipeline (e.g. calling `support` again) is allowed from `SENT_BACK` |
-| POST   | `/dashboard/approval/:applicationId/pep-screening` | `CREDIT_MANAGER`/`CHECKER`                        | Records the applicant's PEP (Politically Exposed Person) check. Body: `{ status: boolean, remarks? }` — `status: true` means the applicant _is_ a PEP                                      |
+| POST   | `/dashboard/approval/:applicationId/pep-screening` | `CHECKER`                                         | Records the applicant's PEP (Politically Exposed Person) check. Body: `{ status: boolean, remarks? }` — `status: true` means the applicant _is_ a PEP. No longer shared with `CREDIT_MANAGER` |
+
+**Role split (updated)**: `CREDIT_MANAGER` and `CHECKER` used to be fully interchangeable (`CREDIT_MANAGER` was originally just a rename of `CHECKER`). They're now split by responsibility: `CHECKER` does pre-approval verification (`check`, `pep-screening` — document/eligibility/compliance review); `CREDIT_MANAGER` is post-approval only — configuring the approved loan's financial terms (§5 Loan Servicing) and portfolio management (collection activity, needs-review). `reject`/`send-back` remain available to both as a shared workflow escape hatch, not a role-specific duty. If your staff accounts were assigned `CREDIT_MANAGER` under the old "same as Checker" model, make sure whoever should still perform pre-approval checking also holds (or is switched to) `CHECKER`.
 
 These endpoints are new and manually verified end-to-end (create → support → check →
 approve, and separately reject / send-back-then-resupport / pep-screening), but don't
@@ -287,6 +290,20 @@ Viewing/generating a loan's amortization schedule and tracking overdue collectio
 | GET    | `/dashboard/repayment/overview`                         | Not paginated, the stat tiles                         |
 | PATCH  | `/dashboard/repayment/schedule/:entryId/mark-paid`      | Body: `{ paidAmount, paidDate }`                      |
 | GET    | `/dashboard/repayment/notification-triggers`            | Static config list, no params                         |
+| GET    | `/dashboard/repayment/:applicationId/status`            | Consolidated monitoring view — on-time/overdue, days overdue, paid/upcoming/overdue counts, balances, next due date |
+
+**Loan Servicing (Credit Manager)** — configuring an approved, disbursed loan's
+final terms, then following it through to clearance or review:
+
+| Method | Path                                                      | Role(s)                                               | Notes |
+| ------ | ---------------------------------------------------------- | ------------------------------------------------------ | ----- |
+| POST   | `/dashboard/repayment/:applicationId/servicing/configure` | `CREDIT_MANAGER`                                        | Sets rate/tenure/frequency/grace-period/principal-override, regenerates the schedule, **and auto-sends the finalized-terms notification** (student + parent, full schedule table in the student's email) |
+| POST   | `/dashboard/repayment/:applicationId/servicing/notify-borrower` | `CREDIT_MANAGER`                                  | Re-send that same notification manually if needed |
+| POST   | `/dashboard/repayment/:applicationId/collection-activity` | `CREDIT_MANAGER`                                        | Log a follow-up/collection contact |
+| PATCH  | `/dashboard/repayment/:applicationId/needs-review`        | `CREDIT_MANAGER`                                        | Body: `{ reason, assignedRole? }` — `assignedRole` is one of `INITIATOR`/`SUPPORTER`/`CHECKER`/`APPROVER`, the Credit Manager's choice of who reviews it. Omit to review it themselves. Assigned users get an in-app notification. |
+| GET    | `/dashboard/repayment/needs-review`                       | any dashboard staff                                     | "My review queue" — `CREDIT_MANAGER`/`ADMIN` see every Needs-Review loan; everyone else sees only loans assigned to their own role |
+| PATCH  | `/dashboard/repayment/:applicationId/resolve-review`      | `CREDIT_MANAGER` or the assigned role                   | 403s if the caller is neither the Credit Manager nor the specific role this loan was assigned to |
+| POST   | `/dashboard/repayment/:applicationId/complete-clearance`  | `CREDIT_MANAGER`                                        | Explicit closure confirmation once every installment is `PAID` — 400s if any are still unpaid. Notifies the student + parent. (Full payment already auto-flips `LoanAccount.status` to `CLEARED` via `mark-paid`; this is the formal Credit-Manager-confirmed close-out on top of that.) |
 
 Sequencing matters here: a schedule only exists after `generate-schedule` gets
 called, which is expected to happen once a disbursement is confirmed (screen 4), not

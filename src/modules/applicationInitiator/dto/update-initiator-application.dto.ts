@@ -19,6 +19,10 @@ import {
   IsPercentage,
 } from '../../../common/decorators/numeric-range.decorators';
 import { BlacklistStatus } from '../../../common/enums';
+import {
+  ParentsBorrowingsWithBFIs,
+  SourceOfIncome,
+} from '../../creditScore/enum/credit-score.enum';
 
 export class FamilyMemberDto {
   @ApiPropertyOptional({
@@ -545,12 +549,21 @@ export class UpdateInitiatorApplicationDto {
   bankingRelationshipScore?: number;
 
   @ApiPropertyOptional({
-    description: 'Total borrowings of parents/subsidiaries with other BFIs',
-    example: 1200000,
+    enum: ParentsBorrowingsWithBFIs,
+    description:
+      "Whether the parents' existing BFI borrowings are with us or elsewhere — a scoring input, not a loan amount",
   })
   @IsOptional()
-  @IsString()
-  parentsBorrowingsWithBFIs?: string;
+  @IsEnum(ParentsBorrowingsWithBFIs)
+  parentsBorrowingsWithBFIs?: ParentsBorrowingsWithBFIs;
+
+  @ApiPropertyOptional({
+    enum: SourceOfIncome,
+    description: 'Category of the source of income — a scoring input',
+  })
+  @IsOptional()
+  @IsEnum(SourceOfIncome)
+  sourceOfIncome?: SourceOfIncome;
 
   @ApiPropertyOptional({
     description: 'Assessed score for stability of income source',

@@ -5,13 +5,13 @@ import { DisbursementConditionStatus } from '../../../common/enums';
 export class CreateDisbursementConditionDto {
   @ApiProperty({ example: 'Property registration deed executed and submitted' })
   @IsString()
-  label: string;
+  label!: string;
 }
 
 export class UpdateDisbursementConditionDto {
   @ApiProperty({ enum: DisbursementConditionStatus })
   @IsEnum(DisbursementConditionStatus)
-  status: DisbursementConditionStatus;
+  status!: DisbursementConditionStatus;
 
   @ApiPropertyOptional()
   @IsOptional()

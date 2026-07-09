@@ -79,9 +79,10 @@ export class DashboardApprovalController {
   }
 
   @Post('check')
-  @Roles(UserRole.CREDIT_MANAGER, UserRole.CHECKER)
+  @Roles(UserRole.CHECKER)
   @ApiOperation({
-    summary: 'Check the application — advances stage to CHECKING',
+    summary:
+      'Check the application — verification/eligibility/compliance review, advances stage to CHECKING. Credit Manager no longer shares this action — see pep-screening below for the same split.',
   })
   check(
     @CurrentUser() user: JwtPayload,
@@ -130,10 +131,10 @@ export class DashboardApprovalController {
   }
 
   @Post('pep-screening')
-  @Roles(UserRole.CREDIT_MANAGER, UserRole.CHECKER)
+  @Roles(UserRole.CHECKER)
   @ApiOperation({
     summary:
-      'Record the applicant PEP (Politically Exposed Person) screening result',
+      'Record the applicant PEP (Politically Exposed Person) screening result — part of the Checker verification/compliance duties',
   })
   recordPepScreening(
     @CurrentUser() user: JwtPayload,

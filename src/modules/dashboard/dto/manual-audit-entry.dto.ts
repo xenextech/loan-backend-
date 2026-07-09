@@ -5,11 +5,11 @@ import { AuditAction, AuditCategory } from '../../../common/enums';
 export class ManualAuditEntryDto {
   @ApiProperty({ enum: AuditAction, default: AuditAction.MANUAL_AUDIT_ENTRY })
   @IsEnum(AuditAction)
-  action: AuditAction;
+  action!: AuditAction;
 
   @ApiProperty({ enum: AuditCategory })
   @IsEnum(AuditCategory)
-  category: AuditCategory;
+  category!: AuditCategory;
 
   @ApiPropertyOptional()
   @IsOptional()

@@ -1,7 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-argument */
-
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
 import { Injectable, NotFoundException } from '@nestjs/common';
 import {
   CreateCreditScoringDto,
@@ -11,30 +7,30 @@ import {
 } from './dto/credit-score.dto';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
+  ParentsBorrowingsWithBFIs,
+  SourceOfIncome,
+} from './enum/credit-score.enum';
+import {
   RiskCategory,
   CreditGrade,
   LOW_RISK_THRESHOLD,
   MODERATE_RISK_THRESHOLD,
   MEDIUM_RISK_THRESHOLD,
   MEDIUM_HIGH_RISK_THRESHOLD,
-  HIGH_RISK_THRESHOLD,
-} from '../creditScore/constant/credit-parameters.constant';
-import { CREDIT_PARAMETERS } from './constant/credit-parameters.constant';
+  CREDIT_PARAMETERS,
+} from './constant/credit-parameters.constant';
+
+type ScoreInput = number | string | null | undefined;
 
 @Injectable()
 export class CreditScoreService {
   constructor(private readonly prisma: PrismaService) {}
 
-  private readonly creditParameters = CREDIT_PARAMETERS;
-  private getSelectedParameters(parameter: ScoreDto): string[] {
-    return Object?.entries(parameter).map(([key, value]) => `${key}.${value}`);
-  }
-
   // Returns null (rather than throwing) when input is null/undefined or an
   // unrecognized value — several ScoreDto fields (e.g. parentsBorrowingsWithBFIs)
   // are optional on LoanApplication and are frequently unset, so "no matching
   // rule" is an expected case, not an error.
-  private getScore<T extends ScoreRule>(rules: readonly T[], input: any) {
+  private getScore<T extends ScoreRule>(rules: readonly T[], input: ScoreInput) {
     if (input === null || input === undefined) return null;
 
     const rule = rules.find((r) => {
@@ -55,6 +51,7 @@ export class CreditScoreService {
       weightScore: rule.weight * rule.point,
     };
   }
+
   calculate(request: {
     totalWeight: number;
     totalWeightScore: number;
@@ -65,55 +62,56 @@ export class CreditScoreService {
         : Number(
             ((request.totalWeightScore / request.totalWeight) * 100).toFixed(2),
           );
+    const { grade, riskCategory } = this.resolveGrade(percentage);
 
     return {
       overall: {
         score: request.totalWeightScore,
         weight: request.totalWeight,
         percentage,
-        grade: this.getGrade(percentage),
-        riskCategory: this.getRiskRating(percentage).riskCategory,
+        grade,
+        riskCategory,
       },
     };
   }
+
+  // Pure read/preview — computes live from the application's current
+  // scoring inputs, never persists. See saveCreditScoreParameterByApplicationId
+  // below for the path that writes riskGrade/totalScore/totalPercentage/
+  // creditRiskScoring back to the application.
   async calculateByApplicationId(
     applicationId: string,
   ): Promise<CreditScoreResponseDto> {
-    const application: any = await this.prisma.loanApplication.findUnique({
+    const application = await this.prisma.loanApplication.findUnique({
       where: { id: applicationId },
     });
-
     if (!application) {
       throw new NotFoundException('Application not found');
     }
-    console.log('Selected parameters:', application);
-    const loanApplication = await this.prisma.loanApplication.findFirst({
-      where: { id: application.id },
+
+    const request = this.buildScoreRequest({
+      // Prisma returns Decimal columns as Decimal.js instances, not plain
+      // numbers — converted here so getScore()'s numeric-rule matching
+      // actually runs instead of silently falling through to a value-equality
+      // check that no creditLimit rule defines.
+      creditLimit: application.creditLimit ? Number(application.creditLimit) : null,
+      dsgir: application.dsgir,
+      operationOfInstitution: application.operationOfInstitution,
+      satisfactoryPerformance: application.satisfactoryPerformance,
+      parentsBorrowingsWithBFIs: application.parentsBorrowingsWithBFIs as ParentsBorrowingsWithBFIs | null,
+      sourceOfIncome: application.sourceOfIncome as SourceOfIncome | null,
     });
-
-    if (!loanApplication) {
-      throw new NotFoundException(
-        'Credit score not found for this application',
-      );
-    }
-    const scoreParameters: ScoreDto = {
-      creditLimit: loanApplication.creditLimit,
-
-      dsgir: loanApplication.dsgir,
-
-      operationOfInstitution: loanApplication.operationOfInstitution,
-
-      satisfactoryPerformance: loanApplication.satisfactoryPerformance,
-
-      parentsBorrowingsWithBFIs: loanApplication.parentsBorrowingsWithBFIs,
-
-      sourceOfIncome: loanApplication.sourceOfIncome,
-    };
-    const request = this.buildScoreRequest(scoreParameters);
 
     return this.calculate(request);
   }
 
+  // The one write path for scoring inputs — persists the six raw parameters
+  // plus the computed grade/score/percentage/riskCategory into
+  // riskGrade/totalScore/totalPercentage/creditRiskScoring in the same
+  // update, so those columns (read directly by the approval summary,
+  // applications list, and checker queue) always reflect the last time this
+  // engine actually ran, instead of standing values an Initiator typed by
+  // hand.
   async saveCreditScoreParameterByApplicationId(
     data: CreateCreditScoringDto,
     applicationId: string,
@@ -121,18 +119,15 @@ export class CreditScoreService {
     const application = await this.prisma.loanApplication.findUnique({
       where: { id: applicationId },
     });
-
     if (!application) {
       throw new NotFoundException('Application not found');
     }
-    console.log(
-      `Saving credit score parameters for application ${applicationId}:`,
-      data,
-    );
+
+    const request = this.buildScoreRequest(data.score);
+    const result = this.calculate(request);
+
     await this.prisma.loanApplication.update({
-      where: {
-        id: applicationId,
-      },
+      where: { id: applicationId },
       data: {
         creditLimit: data.score.creditLimit,
         dsgir: data.score.dsgir,
@@ -140,235 +135,15 @@ export class CreditScoreService {
         satisfactoryPerformance: data.score.satisfactoryPerformance,
         parentsBorrowingsWithBFIs: data.score.parentsBorrowingsWithBFIs,
         sourceOfIncome: data.score.sourceOfIncome,
+        riskGrade: result.overall.grade,
+        totalScore: result.overall.score,
+        totalPercentage: result.overall.percentage,
+        creditRiskScoring: result.overall.riskCategory,
       },
     });
-    const request = this.buildScoreRequest(data.score);
 
-    return this.calculate(request);
+    return result;
   }
-
-  /**
-   * Convert your application data into CreditScoreRequest
-   */
-  //   private buildScoreRequest(
-  //     application: Prisma.LoanApplicationGetPayload<{
-  //       include: {
-  //         user: true;
-  //         studyInformation: true;
-  //         loanInformation: true;
-  //         documents: true;
-  //       };
-  //     }>,
-  //   ): CreditScoreRequest {
-  //     // const documents = application?.documents;
-  //     // const hasCitizenship =
-  //     //   documents?.some((d) => d.documentType === 'IDENTITY_FRONT') &&
-  //     //   documents?.some((d) => d.documentType === 'IDENTITY_BACK');
-  //     // const hasAcademicRecord = documents?.some(
-  //     //   (d) => d.documentType === 'ACADEMIC_RECORD',
-  //     // );
-  //     // const hasFeeStructure = documents?.some(
-  //     //   (d) => d.documentType === 'FEE_STRUCTURE',
-  //     // );
-  //     // const hasApplicantPhoto = documents?.some(
-  //     //   (d) => d.documentType === 'APPLICANT_PHOTO',
-  //     // );
-  //     // const scoreLoanAmount = (salary: number) => {
-  //     //   if (salary >= 100000) return 10;
-  //     //   if (salary >= 50000) return 8;
-  //     //   if (salary >= 30000) return 5;
-  //     //   return 0;
-  //     // };
-  //     // const scoreExpectedSalary = (salary: number) => {
-  //     //   if (salary >= 100000) return 10;
-  //     //   if (salary >= 50000) return 8;
-  //     //   if (salary >= 30000) return 5;
-  //     //   return 0;
-  //     // };
-  //     // const scoreEducationType = (studyType: string | undefined | null) => {
-  //     //   if (studyType === 'UG') return 10;
-  //     //   if (studyType === 'PG') return 8;
-  //     //   return 0;
-  //     // };
-  //     // const scoreEducationBoard = (studyBoard: string | null) => {
-  //     //   if (studyBoard === 'UG') return 10;
-  //     //   if (studyBoard === 'PG') return 8;
-  //     //   return 0;
-  //     // };
-  //     // const scoreEducationDuration = (studyDuration: string | null) => {
-  //     //   if (studyDuration === 'UG') return 10;
-  //     //   if (studyDuration === 'PG') return 8;
-  //     //   return 0;
-  //     // };
-  //     // const scoreGender = (gender: string | null) => {
-  //     //   if (gender === 'MALE') return 10;
-  //     //   if (gender === 'FEMALE') return 8;
-  //     //   if (gender === 'OTHER') return 8;
-  //     //   return 0;
-  //     // };
-  //     // const weightLoanAmount = (salary: number) => {
-  //     //   if (salary >= 100000) return 10;
-  //     //   if (salary >= 50000) return 8;
-  //     //   if (salary >= 30000) return 5;
-  //     //   return 0;
-  //     // };
-  //     // const weightExpectedSalary = (salary: number) => {
-  //     //   if (salary >= 100000) return 10;
-  //     //   if (salary >= 50000) return 8;
-  //     //   if (salary >= 30000) return 5;
-  //     //   return 0;
-  //     // };
-  //     // const weightEducationType = (studyType: string | undefined | null) => {
-  //     //   if (studyType === 'UG') return 10;
-  //     //   if (studyType === 'PG') return 8;
-  //     //   return 0;
-  //     // };
-  //     // const weightEducationBoard = (studyBoard: string | null) => {
-  //     //   if (studyBoard === 'UG') return 10;
-  //     //   if (studyBoard === 'PG') return 8;
-  //     //   return 0;
-  //     // };
-  //     // const weightEducationDuration = (studyDuration: string | null) => {
-  //     //   if (studyDuration === 'UG') return 10;
-  //     //   if (studyDuration === 'PG') return 8;
-  //     //   return 0;
-  //     // };
-  //     // const weightGender = (gender: string | null) => {
-  //     //   if (gender === 'MALE') return 10;
-  //     //   if (gender === 'FEMALE') return 8;
-  //     //   if (gender === 'OTHER') return 8;
-  //     //   return 0;
-  //     // };
-  //     // return {
-  //     //   student: {
-  //     //     fullName: {
-  //     //       value: application.fullName,
-  //     //       score: application.fullName ? 5 : 0,
-  //     //       weight: 5,
-  //     //     },
-  //     //     email: {
-  //     //       value: application.email,
-  //     //       score: application.email ? 5 : 0,
-  //     //       weight: 5,
-  //     //     },
-  //     //     phoneNumber: {
-  //     //       value: application.phoneNumber,
-  //     //       score: application.phoneNumber ? 5 : 0,
-  //     //       weight: 5,
-  //     //     },
-  //     //     citizenship: {
-  //     //       value: hasCitizenship,
-  //     //       score: hasCitizenship ? 10 : 0,
-  //     //       weight: 10,
-  //     //     },
-  //     //     academicRecord: {
-  //     //       value: hasAcademicRecord,
-  //     //       score: hasAcademicRecord ? 10 : 0,
-  //     //       weight: 10,
-  //     //     },
-  //     //     loanAmount: {
-  //     //       value: application.loanInformation?.loanAmount,
-  //     //       score: scoreLoanAmount(
-  //     //         Number(application.loanInformation?.loanAmount ?? 0),
-  //     //       ),
-  //     //       weight: weightLoanAmount(
-  //     //         Number(application.loanInformation?.loanAmount ?? 0),
-  //     //       ),
-  //     //     },
-  //     //     expectedSalary: {
-  //     //       value: application.loanInformation?.expectedSalary,
-  //     //       score: scoreExpectedSalary(
-  //     //         Number(application.loanInformation?.expectedSalary ?? 0),
-  //     //       ),
-  //     //       weight: weightExpectedSalary(
-  //     //         Number(application.loanInformation?.expectedSalary ?? 0),
-  //     //       ),
-  //     //     },
-  //     //     educationType: {
-  //     //       value: application.studyInformation?.studyType,
-  //     //       score: scoreEducationType(application?.studyInformation?.studyType),
-  //     //       weight: weightEducationType(application?.studyInformation?.studyType),
-  //     //     },
-  //     //     educationBoard: {
-  //     //       value: scoreEducationBoard(
-  //     //         application.studyInformation?.boardUniversity || null,
-  //     //       ),
-  //     //       score: scoreEducationDuration(
-  //     //         application.studyInformation?.boardUniversity || null,
-  //     //       ),
-  //     //       weight: weightEducationBoard(
-  //     //         application.studyInformation?.boardUniversity || null,
-  //     //       ),
-  //     //     },
-  //     //     educationDuration: {
-  //     //       value: scoreEducationDuration(
-  //     //         application.studyInformation?.courseDuration || null,
-  //     //       ),
-  //     //       score: scoreEducationDuration(
-  //     //         application.studyInformation?.courseDuration || null,
-  //     //       ),
-  //     //       weight: weightEducationDuration(
-  //     //         application.studyInformation?.courseDuration || null,
-  //     //       ),
-  //     //     },
-  //     //     feeStructure: {
-  //     //       value: hasFeeStructure,
-  //     //       score: hasFeeStructure ? 5 : 0,
-  //     //       weight: 5,
-  //     //     },
-  //     //     gender: {
-  //     //       value: application.gender,
-  //     //       score: scoreGender(application.gender),
-  //     //       weight: weightGender(application.gender),
-  //     //     },
-  //     //     applicantPhoto: {
-  //     //       value: hasApplicantPhoto,
-  //     //       score: hasApplicantPhoto ? 5 : 0,
-  //     //       weight: 5,
-  //     //     },
-  //     //   },
-  //     //   parent: {
-  //     //     fatherName: {
-  //     //       value: application.fatherName,
-  //     //       score: application.fatherName ? 5 : 0,
-  //     //       weight: 5,
-  //     //     },
-  //     //     motherName: {
-  //     //       value: application.motherName,
-  //     //       score: application.motherName ? 5 : 0,
-  //     //       weight: 5,
-  //     //     },
-  //     //     grandFatherName: {
-  //     //       value: application.grandfatherName,
-  //     //       score: application.grandfatherName ? 5 : 0,
-  //     //       weight: 5,
-  //     //     },
-  //     //     spouseName: {
-  //     //       value: application.spouseName,
-  //     //       score: application.spouseName ? 5 : 0,
-  //     //       weight: application.spouseName ? 5 : 0,
-  //     //     },
-  //     //   },
-  //     //   college: {
-  //     //     university: {
-  //     //       value: application.studyInformation?.boardUniversity,
-  //     //       score: application.studyInformation?.boardUniversity ? 10 : 0,
-  //     //       weight: 10,
-  //     //     },
-  //     //     courseName: {
-  //     //       value: application.studyInformation?.courseName,
-  //     //       score: application.studyInformation?.courseName ? 10 : 0,
-  //     //       weight: 10,
-  //     //     },
-  //     //     duration: {
-  //     //       value: application.studyInformation?.courseDuration,
-  //     //       score: application.studyInformation?.courseDuration ? 5 : 0,
-  //     //       weight: 5,
-  //     //     },
-  //     //   },
-  //     // };
-
-  //   }
 
   private buildScoreRequest(request: ScoreDto): {
     totalWeight: number;
@@ -378,70 +153,42 @@ export class CreditScoreService {
     let totalWeightScore = 0;
 
     for (const [key, value] of Object.entries(request)) {
-      const rules = CREDIT_PARAMETERS[key];
+      const rules = CREDIT_PARAMETERS[key as keyof typeof CREDIT_PARAMETERS];
+      if (!rules) continue;
 
-      if (!rules) {
-        continue;
-      }
-
-      const score = this.getScore(rules, value);
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+      const score = this.getScore(rules as readonly ScoreRule[], value as ScoreInput);
       if (!score) continue;
 
       totalWeight += score.weight;
       totalWeightScore += score.weightScore;
     }
 
-    return {
-      totalWeight,
-      totalWeightScore,
-    };
+    return { totalWeight, totalWeightScore };
   }
 
-  /**
-   * NRB Grade
-   */
-  private getGrade(percentage: number): string {
-    if (percentage <= LOW_RISK_THRESHOLD) return CreditGrade.A1;
-    if (percentage <= MODERATE_RISK_THRESHOLD) return CreditGrade.A2;
-    if (percentage <= MEDIUM_RISK_THRESHOLD) return CreditGrade.A3;
-    if (percentage <= MEDIUM_HIGH_RISK_THRESHOLD) return CreditGrade.A4;
-
-    return CreditGrade.B;
-  }
-  private getRiskRating(percentage: number): {
-    riskCategory: string;
+  // Mirrors the source spreadsheet's Risk Rating!D10/D11 — grade and risk
+  // category are always derived from the exact same band, so they're
+  // resolved together rather than via separately-thresholded functions.
+  // percentage >= MEDIUM_HIGH_RISK_THRESHOLD (80%) is explicitly ungraded
+  // (CreditGrade.NA / RiskCategory.UNGRADED), matching Excel's blank D10/D11
+  // for that range rather than inventing a new top grade.
+  private resolveGrade(percentage: number): {
+    grade: CreditGrade;
+    riskCategory: RiskCategory;
   } {
-    if (percentage <= LOW_RISK_THRESHOLD) {
-      return {
-        riskCategory: RiskCategory.LOW,
-      };
+    if (percentage < LOW_RISK_THRESHOLD) {
+      return { grade: CreditGrade.A1, riskCategory: RiskCategory.LOW };
     }
-
-    if (percentage <= MODERATE_RISK_THRESHOLD) {
-      return {
-        riskCategory: RiskCategory.MODERATE,
-      };
+    if (percentage < MODERATE_RISK_THRESHOLD) {
+      return { grade: CreditGrade.A2, riskCategory: RiskCategory.MODERATE };
     }
-
-    if (percentage <= MEDIUM_RISK_THRESHOLD) {
-      return {
-        riskCategory: RiskCategory.MEDIUM,
-      };
+    if (percentage < MEDIUM_RISK_THRESHOLD) {
+      return { grade: CreditGrade.A3, riskCategory: RiskCategory.MEDIUM };
     }
-
-    if (percentage <= MEDIUM_HIGH_RISK_THRESHOLD) {
-      return {
-        riskCategory: RiskCategory.MEDIUM_HIGH,
-      };
+    if (percentage < MEDIUM_HIGH_RISK_THRESHOLD) {
+      return { grade: CreditGrade.A4, riskCategory: RiskCategory.MEDIUM_HIGH };
     }
-    if (percentage <= HIGH_RISK_THRESHOLD) {
-      return {
-        riskCategory: RiskCategory.HIGH,
-      };
-    }
-
-    return {
-      riskCategory: RiskCategory.HIGH,
-    };
+    return { grade: CreditGrade.NA, riskCategory: RiskCategory.UNGRADED };
   }
 }

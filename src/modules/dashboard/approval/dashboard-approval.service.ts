@@ -64,14 +64,40 @@ export class DashboardApprovalService {
     }
   }
 
+  // Resolves the acting approver's identity from the authenticated user's DB
+  // row (never from request input) so every approval stage can stamp who
+  // actually performed it alongside when.
+  private async resolveActingUser(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, fullName: true, email: true },
+    });
+    if (!user) throw new NotFoundException('User not found');
+    return { id: user.id, name: user.fullName ?? user.email };
+  }
+
+  // Shapes a stage's stored user/name/date columns into the
+  // { id, name, approvedAt } | null contract returned by getSummary().
+  private stageApprovalInfo(
+    userId: string | null,
+    name: string | null,
+    approvedAt: Date | null,
+  ) {
+    if (!approvedAt) return null;
+    return { id: userId, name, approvedAt };
+  }
+
   async support(userId: string, applicationId: string) {
     const application = await this.getApplicationOrThrow(applicationId);
     this.assertTransitionAllowed('support', application.stage);
+    const actor = await this.resolveActingUser(userId);
 
     const updated = await this.prisma.loanApplication.update({
       where: { id: applicationId },
       data: {
         stage: ApplicationStage.SUPPORTED,
+        supporterUserId: actor.id,
+        supporterName: actor.name,
         supporterDate: new Date(),
       },
     });
@@ -89,11 +115,14 @@ export class DashboardApprovalService {
   async check(userId: string, applicationId: string) {
     const application = await this.getApplicationOrThrow(applicationId);
     this.assertTransitionAllowed('check', application.stage);
+    const actor = await this.resolveActingUser(userId);
 
     const updated = await this.prisma.loanApplication.update({
       where: { id: applicationId },
       data: {
         stage: ApplicationStage.CHECKING,
+        checkerUserId: actor.id,
+        checkerName: actor.name,
         checkerDate: new Date(),
       },
     });
@@ -111,12 +140,15 @@ export class DashboardApprovalService {
   async approve(userId: string, applicationId: string) {
     const application = await this.getApplicationOrThrow(applicationId);
     this.assertTransitionAllowed('approve', application.stage);
+    const actor = await this.resolveActingUser(userId);
 
     const [updated, loanAccount] = await this.prisma.$transaction([
       this.prisma.loanApplication.update({
         where: { id: applicationId },
         data: {
           stage: ApplicationStage.APPROVED,
+          approverUserId: actor.id,
+          approverName: actor.name,
           approverDate: new Date(),
         },
       }),
@@ -249,6 +281,37 @@ export class DashboardApprovalService {
       riskGrade: application.riskGrade,
       collateralText: application.securityDetails,
       insuranceAttached: Boolean(application.insurance),
+      // Who approved each stage, and when — null for stages not yet completed.
+      // creditManager mirrors checker: CREDIT_MANAGER is the current name for
+      // the CHECKER role in this system (same person, same "check" action —
+      // see dashboard/README.md), so it's derived rather than duplicated.
+      approvals: {
+        initiator: this.stageApprovalInfo(
+          application.initiatorUserId,
+          application.initiatorName,
+          application.initiatorDate,
+        ),
+        supporter: this.stageApprovalInfo(
+          application.supporterUserId,
+          application.supporterName,
+          application.supporterDate,
+        ),
+        checker: this.stageApprovalInfo(
+          application.checkerUserId,
+          application.checkerName,
+          application.checkerDate,
+        ),
+        approver: this.stageApprovalInfo(
+          application.approverUserId,
+          application.approverName,
+          application.approverDate,
+        ),
+        creditManager: this.stageApprovalInfo(
+          application.checkerUserId,
+          application.checkerName,
+          application.checkerDate,
+        ),
+      },
     };
   }
 

@@ -4,19 +4,19 @@ import { IsISO8601, IsNumber, IsOptional, IsString } from 'class-validator';
 export class CreateInsurancePolicyDto {
   @ApiProperty({ description: 'Loan application this policy is tied to' })
   @IsString()
-  applicationId: string;
+  applicationId!: string;
 
   @ApiProperty({ example: 'Applicant Name' })
   @IsString()
-  applicantName: string;
+  applicantName!: string;
 
   @ApiProperty({ example: 'IMG-PROP-2080-092' })
   @IsString()
-  policyNumber: string;
+  policyNumber!: string;
 
   @ApiProperty({ example: 'IME General Insurance' })
   @IsString()
-  insurer: string;
+  insurer!: string;
 
   @ApiPropertyOptional({ example: 'Property insurance' })
   @IsOptional()
@@ -25,7 +25,7 @@ export class CreateInsurancePolicyDto {
 
   @ApiProperty({ example: 1200000 })
   @IsNumber()
-  sumInsured: number;
+  sumInsured!: number;
 
   @ApiPropertyOptional({ example: 8500 })
   @IsOptional()
@@ -39,5 +39,5 @@ export class CreateInsurancePolicyDto {
 
   @ApiProperty({ example: '2027-01-01T00:00:00.000Z' })
   @IsISO8601()
-  expiryDate: string;
+  expiryDate!: string;
 }

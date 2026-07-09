@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsEnum,
+  IsIn,
   IsISO8601,
   IsNumber,
   IsOptional,
@@ -10,6 +11,20 @@ import {
 } from 'class-validator';
 import { CollectionActivityType, RepaymentFrequency } from '@prisma/client';
 import { PaginationDto } from '../../../common/dto/pagination.dto';
+import { IsPercentage } from '../../../common/decorators/numeric-range.decorators';
+import { UserRole } from '../../../common/enums';
+
+// Who a Credit Manager may hand a Needs-Review loan off to — a deliberate
+// subset of UserRole, not the whole enum (Credit Manager reviews it
+// themselves if left unassigned; Student/Parent/College/Admin aren't part of
+// the internal review chain).
+export const REVIEW_ASSIGNABLE_ROLES = [
+  UserRole.INITIATOR,
+  UserRole.SUPPORTER,
+  UserRole.CHECKER,
+  UserRole.APPROVER,
+] as const;
+export type ReviewAssignableRole = (typeof REVIEW_ASSIGNABLE_ROLES)[number];
 
 // EMI amount is deliberately absent — it's a computed output of principal +
 // rate + tenure, not an independently settable input.
@@ -17,11 +32,10 @@ export class ConfigureLoanServicingDto {
   @ApiPropertyOptional({
     example: 12.5,
     description:
-      'Final interest rate (%). Defaults to the approved rate if omitted.',
+      'Final interest rate (%, 0-100). Defaults to the approved rate if omitted.',
   })
   @IsOptional()
-  @IsNumber()
-  @Min(0)
+  @IsPercentage({ message: 'finalInterestRate must be between 0 and 100' })
   finalInterestRate?: number;
 
   @ApiPropertyOptional({
@@ -83,12 +97,12 @@ export class ConfigureLoanServicingDto {
 export class RecordCollectionActivityDto {
   @ApiProperty({ enum: CollectionActivityType })
   @IsEnum(CollectionActivityType)
-  activityType: CollectionActivityType;
+  activityType!: CollectionActivityType;
 
   @ApiProperty({ example: 'Called borrower, promised payment by Friday.' })
   @IsString()
   @MinLength(1)
-  notes: string;
+  notes!: string;
 
   @ApiPropertyOptional({ example: 'student' })
   @IsOptional()
@@ -102,7 +116,19 @@ export class FlagNeedsReviewDto {
   @ApiProperty({ example: 'Three consecutive missed installments.' })
   @IsString()
   @MinLength(1)
-  reason: string;
+  reason!: string;
+
+  @ApiPropertyOptional({
+    enum: REVIEW_ASSIGNABLE_ROLES,
+    example: UserRole.APPROVER,
+    description:
+      "Which role should review this loan (Initiator/Supporter/Checker/Approver) — the Credit Manager's choice. Omit to keep reviewing it themselves.",
+  })
+  @IsOptional()
+  @IsIn(REVIEW_ASSIGNABLE_ROLES, {
+    message: `assignedRole must be one of: ${REVIEW_ASSIGNABLE_ROLES.join(', ')}`,
+  })
+  assignedRole?: ReviewAssignableRole;
 }
 
 export class ResolveReviewDto {
@@ -112,4 +138,13 @@ export class ResolveReviewDto {
   @IsOptional()
   @IsString()
   resolutionNotes?: string;
+}
+
+export class CompleteClearanceDto {
+  @ApiPropertyOptional({
+    example: 'All installments settled on schedule, no arrears.',
+  })
+  @IsOptional()
+  @IsString()
+  remarks?: string;
 }

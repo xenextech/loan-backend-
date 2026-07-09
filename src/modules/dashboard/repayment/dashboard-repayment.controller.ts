@@ -17,6 +17,8 @@ import {
   CollectionActivityQueryDto,
   FlagNeedsReviewDto,
   ResolveReviewDto,
+  CompleteClearanceDto,
+  REVIEW_ASSIGNABLE_ROLES,
 } from '../dto/loan-servicing.dto';
 import { PaginationDto } from '../../../common/dto/pagination.dto';
 import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
@@ -50,6 +52,15 @@ export class DashboardRepaymentController {
       user.sub,
       applicationId,
     );
+  }
+
+  @Get(':applicationId/status')
+  @ApiOperation({
+    summary:
+      'Repayment monitoring status for one application — on-time/overdue, days overdue, paid/upcoming/overdue installment counts, total paid vs repayable, next due date',
+  })
+  getRepaymentStatus(@Param('applicationId') applicationId: string) {
+    return this.dashboardRepaymentService.getRepaymentStatus(applicationId);
   }
 
   @Get(':applicationId/schedule')
@@ -164,7 +175,8 @@ export class DashboardRepaymentController {
   @Patch(':applicationId/needs-review')
   @Roles(UserRole.CREDIT_MANAGER)
   @ApiOperation({
-    summary: 'Stage 6 — Move a loan to Needs Review with a mandatory reason',
+    summary:
+      "Stage 6 — Move a loan to Needs Review with a mandatory reason. Optionally hand the review to a specific earlier-pipeline role (Initiator/Supporter/Checker/Approver) via assignedRole — the Credit Manager's call; omit to review it themselves.",
   })
   flagNeedsReview(
     @CurrentUser() user: JwtPayload,
@@ -178,15 +190,49 @@ export class DashboardRepaymentController {
     );
   }
 
+  @Get('needs-review')
+  @ApiOperation({
+    summary:
+      'My review queue — Credit Manager/Admin see every Needs-Review loan; Initiator/Supporter/Checker/Approver see only the ones the Credit Manager assigned to their role',
+  })
+  listNeedsReview(
+    @CurrentUser() user: JwtPayload,
+    @Query() query: PaginationDto,
+  ) {
+    return this.dashboardRepaymentService.listNeedsReview(user.role, query);
+  }
+
   @Patch(':applicationId/resolve-review')
-  @Roles(UserRole.CREDIT_MANAGER)
-  @ApiOperation({ summary: 'Stage 6 — Resolve a loan out of Needs Review' })
+  @Roles(UserRole.CREDIT_MANAGER, ...REVIEW_ASSIGNABLE_ROLES)
+  @ApiOperation({
+    summary:
+      'Stage 6 — Resolve a loan out of Needs Review. Callable by the Credit Manager, or by whichever role the review was assigned to (enforced against the specific loan, not just role membership).',
+  })
   resolveReview(
     @CurrentUser() user: JwtPayload,
     @Param('applicationId') applicationId: string,
     @Body() dto: ResolveReviewDto,
   ) {
     return this.dashboardRepaymentService.resolveReview(
+      user.sub,
+      user.role,
+      applicationId,
+      dto,
+    );
+  }
+
+  @Post(':applicationId/complete-clearance')
+  @Roles(UserRole.CREDIT_MANAGER)
+  @ApiOperation({
+    summary:
+      'Stage 7 — Confirm and close out a fully-paid loan (all installments PAID). Notifies the student and parent that the loan is cleared. 400s if any installment is still unpaid.',
+  })
+  completeClearance(
+    @CurrentUser() user: JwtPayload,
+    @Param('applicationId') applicationId: string,
+    @Body() dto: CompleteClearanceDto,
+  ) {
+    return this.dashboardRepaymentService.completeClearance(
       user.sub,
       applicationId,
       dto,

@@ -63,6 +63,13 @@ describe('DashboardApprovalService', () => {
         riskGrade: 'A2',
         collateralText: 'Land at Ward 3',
         insuranceAttached: true,
+        approvals: {
+          initiator: null,
+          supporter: null,
+          checker: null,
+          approver: null,
+          creditManager: null,
+        },
       });
     });
 
@@ -82,6 +89,34 @@ describe('DashboardApprovalService', () => {
       findUniqueMock.mockResolvedValueOnce(null);
       await expect(service.getSummary('missing')).rejects.toThrow(
         NotFoundException,
+      );
+    });
+
+    it('returns approver id/name/approvedAt per completed stage, and mirrors checker onto creditManager', async () => {
+      findUniqueMock.mockResolvedValueOnce({
+        ...baseApplication,
+        supporterUserId: 'user-supporter',
+        supporterName: 'Jane Smith',
+        supporterDate: new Date('2026-01-02'),
+        checkerUserId: 'user-checker',
+        checkerName: 'Alex Rai',
+        checkerDate: new Date('2026-01-03'),
+      });
+      const summary = await service.getSummary('app-1');
+
+      expect(summary.approvals.initiator).toBeNull();
+      expect(summary.approvals.supporter).toEqual({
+        id: 'user-supporter',
+        name: 'Jane Smith',
+        approvedAt: new Date('2026-01-02'),
+      });
+      expect(summary.approvals.checker).toEqual({
+        id: 'user-checker',
+        name: 'Alex Rai',
+        approvedAt: new Date('2026-01-03'),
+      });
+      expect(summary.approvals.creditManager).toEqual(
+        summary.approvals.checker,
       );
     });
   });

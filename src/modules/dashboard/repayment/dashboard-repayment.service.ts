@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -12,6 +13,7 @@ import {
   AuditAction,
   AuditCategory,
   NrbLoanClassification,
+  UserRole,
 } from '../../../common/enums';
 import {
   paginate,
@@ -28,8 +30,16 @@ import {
   RecordCollectionActivityDto,
   FlagNeedsReviewDto,
   ResolveReviewDto,
+  CompleteClearanceDto,
 } from '../dto/loan-servicing.dto';
 import { EMI_NOTIFICATION_TRIGGERS } from './emi-notification-triggers.constant';
+
+// Roles that can always act on a Needs-Review loan regardless of who it was
+// assigned to — the Credit Manager owns the review workflow.
+const REVIEW_OVERRIDE_ROLES: UserRole[] = [
+  UserRole.CREDIT_MANAGER,
+  UserRole.ADMIN,
+];
 
 // NRB-aligned aging buckets (days overdue).
 const BUCKET_RANGES: Record<OverdueBucket, [number, number]> = {
@@ -271,6 +281,14 @@ export class DashboardRepaymentService {
       AuditCategory.REPAYMENT,
     );
 
+    // Configuration is complete at this point, so the student and parent are
+    // notified immediately — reuses notifyBorrower() (Stage 2) rather than
+    // duplicating its message/schedule assembly. That endpoint stays
+    // independently callable too, for re-sending if a channel failed. Run
+    // before the final loanAccount read-back so the response reflects the
+    // resulting borrowerNotifiedAt.
+    const notification = await this.notifyBorrower(userId, applicationId);
+
     const updatedLoanAccount = await this.prisma.loanAccount.findUnique({
       where: { applicationId },
     });
@@ -288,6 +306,7 @@ export class DashboardRepaymentService {
       // only differs from it when finalPrincipalAmount overrides it.
       disbursedAmount,
       principalAmount,
+      notification,
     };
   }
 
@@ -348,6 +367,13 @@ export class DashboardRepaymentService {
       gracePeriodMonths: loanAccount.gracePeriodMonths,
       firstDueDate: scheduleEntries[0].dueDate,
       totalRepayable,
+      schedule: scheduleEntries.map((e) => ({
+        installmentNumber: e.installmentNumber,
+        dueDate: e.dueDate,
+        emiAmount: Number(e.emiAmount),
+        principalComponent: Number(e.principalComponent),
+        interestComponent: Number(e.interestComponent),
+      })),
     });
 
     await this.prisma.loanAccount.update({
@@ -422,7 +448,10 @@ export class DashboardRepaymentService {
 
   // ── Loan Servicing: Stage 6 — Needs Review ─────────────────────────────────
   // Manually raised only — no automatic threshold (e.g. "N missed
-  // installments") was specified, so none is guessed here.
+  // installments") was specified, so none is guessed here. The Credit
+  // Manager decides both *that* a loan needs review and, optionally, *who*
+  // should do it — one of the earlier pipeline roles (dto.assignedRole).
+  // Leaving it unset means the Credit Manager reviews it themselves.
   async flagNeedsReview(
     userId: string,
     applicationId: string,
@@ -441,6 +470,7 @@ export class DashboardRepaymentService {
       data: {
         status: 'NEEDS_REVIEW',
         reviewReason: dto.reason,
+        reviewAssignedRole: dto.assignedRole ?? null,
         reviewRequestedByUserId: userId,
         reviewRequestedAt: new Date(),
         reviewResolvedByUserId: null,
@@ -451,16 +481,36 @@ export class DashboardRepaymentService {
     await this.audit.log(
       userId,
       AuditAction.LOAN_NEEDS_REVIEW,
-      { reason: dto.reason },
+      { reason: dto.reason, assignedRole: dto.assignedRole ?? null },
       applicationId,
       AuditCategory.REPAYMENT,
     );
 
+    if (dto.assignedRole) {
+      const reviewers = await this.prisma.user.findMany({
+        where: { role: dto.assignedRole },
+        select: { id: true },
+      });
+      for (const reviewer of reviewers) {
+        await this.notifications.createDatabaseNotification(
+          reviewer.id,
+          'Loan needs your review',
+          `Application ${applicationId} has been assigned to you for review by the Credit Manager: ${dto.reason}`,
+          applicationId,
+        );
+      }
+    }
+
     return updated;
   }
 
+  // Resolvable by the Credit Manager (who owns the workflow) or, if the
+  // Credit Manager handed it off, by whichever role it was assigned to —
+  // enforced here since @Roles() on the controller can only check role
+  // membership, not who a specific loan was assigned to.
   async resolveReview(
     userId: string,
+    userRole: UserRole,
     applicationId: string,
     dto: ResolveReviewDto,
   ) {
@@ -470,6 +520,17 @@ export class DashboardRepaymentService {
     if (!loanAccount) throw new NotFoundException('Loan account not found');
     if (loanAccount.status !== 'NEEDS_REVIEW') {
       throw new BadRequestException('This loan is not currently under review');
+    }
+
+    const isAssignedReviewer =
+      loanAccount.reviewAssignedRole !== null &&
+      loanAccount.reviewAssignedRole === userRole;
+    if (!REVIEW_OVERRIDE_ROLES.includes(userRole) && !isAssignedReviewer) {
+      throw new ForbiddenException(
+        loanAccount.reviewAssignedRole
+          ? `Only the Credit Manager or the assigned reviewer (${loanAccount.reviewAssignedRole}) can resolve this review`
+          : 'Only the Credit Manager can resolve this review',
+      );
     }
 
     const updated = await this.prisma.loanAccount.update({
@@ -490,6 +551,192 @@ export class DashboardRepaymentService {
     );
 
     return updated;
+  }
+
+  // "My review queue" — Credit Manager/Admin see every Needs-Review loan;
+  // everyone else sees only the ones assigned to their own role.
+  async listNeedsReview(role: UserRole, query: PaginationDto) {
+    const { take, skip } = paginate(query.page, query.limit);
+    const where: {
+      status: 'NEEDS_REVIEW';
+      reviewAssignedRole?: UserRole;
+    } = { status: 'NEEDS_REVIEW' };
+    if (!REVIEW_OVERRIDE_ROLES.includes(role)) {
+      where.reviewAssignedRole = role;
+    }
+
+    const [data, total] = await Promise.all([
+      this.prisma.loanAccount.findMany({
+        where,
+        take,
+        skip,
+        orderBy: { reviewRequestedAt: 'desc' },
+        include: {
+          application: {
+            select: { id: true, applicationNumber: true, fullName: true },
+          },
+        },
+      }),
+      this.prisma.loanAccount.count({ where }),
+    ]);
+
+    return buildPaginatedResponse(
+      data,
+      total,
+      query.page ?? 1,
+      query.limit ?? 20,
+    );
+  }
+
+  // ── Loan Servicing: Stage 7 — Complete Clearance ───────────────────────────
+  // The explicit Credit Manager confirmation once every installment is PAID
+  // (markPaid() already auto-flips status to CLEARED the moment the last one
+  // is settled — this is for a formal closure notice/audit trail on top of
+  // that, and the only path to CLEARED when there's nothing left to pay but
+  // the account wasn't auto-cleared for some reason, e.g. entries adjusted
+  // manually).
+  async completeClearance(
+    userId: string,
+    applicationId: string,
+    dto: CompleteClearanceDto,
+  ) {
+    const loanAccount = await this.prisma.loanAccount.findUnique({
+      where: { applicationId },
+    });
+    if (!loanAccount) throw new NotFoundException('Loan account not found');
+    if (loanAccount.status === 'CLEARED') {
+      throw new BadRequestException('This loan is already cleared');
+    }
+
+    const unpaidCount = await this.prisma.emiScheduleEntry.count({
+      where: { applicationId, status: { not: 'PAID' } },
+    });
+    if (unpaidCount > 0) {
+      throw new BadRequestException(
+        `This loan still has ${unpaidCount} unpaid installment(s) — it cannot be cleared yet. ` +
+          'Use needs-review if the borrower is unable to pay.',
+      );
+    }
+
+    const updated = await this.prisma.loanAccount.update({
+      where: { applicationId },
+      data: {
+        status: 'CLEARED',
+        clearedAt: new Date(),
+        clearedByUserId: userId,
+      },
+    });
+
+    await this.audit.log(
+      userId,
+      AuditAction.LOAN_CLEARED,
+      { remarks: dto.remarks },
+      applicationId,
+      AuditCategory.REPAYMENT,
+    );
+
+    const application = await this.prisma.loanApplication.findUnique({
+      where: { id: applicationId },
+      include: { parentVerification: true },
+    });
+    const notification = application
+      ? await this.notifications.notifyLoanCleared({
+          userId: application.userId,
+          applicationId,
+          fullName: application.fullName,
+          email: application.email,
+          phoneNumber: application.phoneNumber,
+          parentPhone:
+            application.parentVerification?.phone ??
+            application.parentVerification?.contact ??
+            null,
+          remarks: dto.remarks,
+        })
+      : null;
+
+    return { ...updated, notification };
+  }
+
+  // Consolidated per-application repayment monitoring view — whether the
+  // student is on time or how far overdue they are, without the caller
+  // having to derive it from the raw schedule themselves. Purely a read/
+  // aggregation over data the daily cron (markOverdueEntries,
+  // accruePenalInterest) already maintains; no new tracking state.
+  async getRepaymentStatus(applicationId: string) {
+    const application = await this.prisma.loanApplication.findUnique({
+      where: { id: applicationId },
+      select: { id: true, applicationNumber: true, fullName: true },
+    });
+    if (!application) throw new NotFoundException('Application not found');
+
+    const [loanAccount, entries] = await Promise.all([
+      this.prisma.loanAccount.findUnique({ where: { applicationId } }),
+      this.prisma.emiScheduleEntry.findMany({
+        where: { applicationId },
+        orderBy: { installmentNumber: 'asc' },
+      }),
+    ]);
+
+    const paid = entries.filter((e) => e.status === 'PAID');
+    const overdue = entries.filter((e) => e.status === 'OVERDUE');
+    const partial = entries.filter((e) => e.status === 'PARTIAL');
+    const upcoming = entries.filter((e) => e.status === 'UPCOMING');
+
+    const totalPaid = entries.reduce(
+      (sum, e) => sum + Number(e.paidAmount ?? 0),
+      0,
+    );
+    const totalRepayable = entries.reduce(
+      (sum, e) => sum + Number(e.emiAmount),
+      0,
+    );
+
+    const nextDue = [...upcoming, ...partial].sort(
+      (a, b) => a.dueDate.getTime() - b.dueDate.getTime(),
+    )[0];
+    const oldestOverdue = [...overdue].sort(
+      (a, b) => a.dueDate.getTime() - b.dueDate.getTime(),
+    )[0];
+    const daysOverdue = oldestOverdue
+      ? Math.floor(
+          (Date.now() - oldestOverdue.dueDate.getTime()) /
+            (24 * 60 * 60 * 1000),
+        )
+      : 0;
+
+    const repaymentStatus = !loanAccount
+      ? 'NOT_CONFIGURED'
+      : loanAccount.status === 'CLEARED'
+        ? 'CLEARED'
+        : loanAccount.status === 'NEEDS_REVIEW'
+          ? 'NEEDS_REVIEW'
+          : overdue.length > 0
+            ? 'OVERDUE'
+            : 'ON_TRACK';
+
+    return {
+      applicationId: application.id,
+      applicationNumber: application.applicationNumber,
+      borrowerName: application.fullName,
+      loanAccountStatus: loanAccount?.status ?? null,
+      repaymentStatus,
+      totalInstallments: entries.length,
+      paidInstallments: paid.length,
+      upcomingInstallments: upcoming.length,
+      overdueInstallments: overdue.length,
+      partialInstallments: partial.length,
+      totalPaid,
+      totalRepayable,
+      outstandingBalance: Math.max(totalRepayable - totalPaid, 0),
+      nextDueDate: nextDue?.dueDate ?? null,
+      nextDueAmount: nextDue ? Number(nextDue.emiAmount) : null,
+      oldestOverdueDueDate: oldestOverdue?.dueDate ?? null,
+      daysOverdue,
+      penalInterestAccrued: overdue.reduce(
+        (sum, e) => sum + Number(e.penalInterestAccrued),
+        0,
+      ),
+    };
   }
 
   async getSchedule(applicationId: string, query: PaginationDto) {

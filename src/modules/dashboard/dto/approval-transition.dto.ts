@@ -5,7 +5,7 @@ import { ApplicationStage } from '../../../common/enums';
 export class RejectApplicationDto {
   @ApiProperty({ example: 'CICL bureau hit — adverse entry at 3 BFIs' })
   @IsString()
-  reason: string;
+  reason!: string;
 }
 
 export class SendBackApplicationDto {
@@ -13,7 +13,7 @@ export class SendBackApplicationDto {
     example: 'Trace map missing for Plot 781. Re-upload and resubmit.',
   })
   @IsString()
-  reason: string;
+  reason!: string;
 
   @ApiPropertyOptional({
     enum: ApplicationStage,
@@ -31,7 +31,7 @@ export class PepScreeningDto {
     example: false,
   })
   @IsBoolean()
-  status: boolean;
+  status!: boolean;
 
   @ApiPropertyOptional({ example: 'Cross-checked against NRB Rokka list' })
   @IsOptional()

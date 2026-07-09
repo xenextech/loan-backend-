@@ -271,6 +271,10 @@ enum CommissionEntryStatus {
 model User {
   id                  String    @id @default(uuid())
   email               String    @unique
+  // Staff display name (Initiator/Supporter/Checker/Approver/Credit Manager) —
+  // denormalized onto LoanApplication's approval fields at the moment each
+  // person acts, so approval history reads correctly even if this changes later.
+  fullName            String?
   passwordHash        String
   role                UserRole  @default(STUDENT)
   isEmailVerified     Boolean   @default(false)
@@ -411,22 +415,31 @@ model LoanApplication {
   utilizationOfFund           String?
   conclusionAndRecommendation String?
 
-  // Approval Section
+  // Approval Section — *UserId columns identify who acted (set from the
+  // authenticated user, never client input); *Name is that user's fullName
+  // denormalized at approval time. CREDIT_MANAGER is the same role/stage as
+  // CHECKER in this system (see dashboard/README.md), so it reuses these
+  // checker* fields rather than duplicating storage — see
+  // DashboardApprovalService.getSummary().
+  initiatorUserId    String?
   initiatorName      String?
   initiatorPost      String?
   initiatorDate      DateTime?
   initiatorSignature String?
 
+  supporterUserId    String?
   supporterName      String?
   supporterPost      String?
   supporterDate      DateTime?
   supporterSignature String?
 
+  checkerUserId    String?
   checkerName      String?
   checkerPost      String?
   checkerDate      DateTime?
   checkerSignature String?
 
+  approverUserId    String?
   approverName      String?
   approverPost      String?
   approverDate      DateTime?
@@ -1075,13 +1088,22 @@ model LoanAccount {
   configuredAt       DateTime?
   borrowerNotifiedAt DateTime?
 
-  clearedAt DateTime?
+  clearedAt        DateTime?
+  // Who confirmed clearance via the explicit complete-clearance action —
+  // null when a loan auto-cleared purely because markPaid() saw the last
+  // installment paid off (no separate manual confirmation happened).
+  clearedByUserId  String?
 
   // Needs Review (Stage 6) — manually raised by the Credit Manager, not
   // auto-triggered by any threshold, since no such threshold was specified.
   reviewReason            String?
   reviewRequestedByUserId String?
   reviewRequestedAt       DateTime?
+  // Which role the Credit Manager handed this review to (Initiator/Supporter/
+  // Checker/Approver) — null means the Credit Manager is reviewing it
+  // themselves. Reuses UserRole rather than a dedicated enum since the only
+  // valid values are a subset of existing roles.
+  reviewAssignedRole      UserRole?
   reviewResolvedByUserId  String?
   reviewResolvedAt        DateTime?
 

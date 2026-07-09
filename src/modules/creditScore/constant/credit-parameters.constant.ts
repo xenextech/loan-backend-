@@ -121,25 +121,27 @@ export enum CreditGrade {
   C = 'C',
   D = 'D',
   E = 'E',
+  // Aggregate score >= MEDIUM_HIGH_RISK_THRESHOLD (80%) — mirrors the source
+  // spreadsheet's blank D10/D11 cells for that range: deliberately left
+  // ungraded rather than bucketed into a named grade, per the documented
+  // scorecard design (see creditScore/ReadMe.md).
   NA = 'NA',
 }
 
-export const LOW_RISK_THRESHOLD = 50;
-export const MODERATE_RISK_THRESHOLD = 60;
-export const MEDIUM_RISK_THRESHOLD = 70;
+// Exact spreadsheet cutoffs (Risk Rating!D10: <0.51/<0.61/<0.71/<0.8), applied
+// to the 0-100 percentage scale this service works in. Strict "<" — a
+// percentage exactly equal to a threshold falls into the *next* band, not
+// this one (e.g. 61% is A3, not A2).
+export const LOW_RISK_THRESHOLD = 51;
+export const MODERATE_RISK_THRESHOLD = 61;
+export const MEDIUM_RISK_THRESHOLD = 71;
 export const MEDIUM_HIGH_RISK_THRESHOLD = 80;
-export const HIGH_RISK_THRESHOLD = 90;
-export const VERY_HIGH_RISK_THRESHOLD = 95;
-export const VERY_VERY_HIGH_RISK_THRESHOLD = 98;
-export const EXTREMELY_HIGH_RISK_THRESHOLD = 100;
 
 export enum RiskCategory {
   LOW = 'LOW_RISK',
   MODERATE = 'MODERATE_RISK',
   MEDIUM = 'MEDIUM_RISK',
   MEDIUM_HIGH = 'MEDIUM_HIGH_RISK',
-  HIGH = 'HIGH_RISK',
-  VERY_HIGH = 'VERY_HIGH_RISK',
-  VERY_VERY_HIGH = 'VERY_VERY_HIGH_RISK',
-  EXTREMELY_HIGH = 'EXTREMELY_HIGH_RISK',
+  // Paired with CreditGrade.NA — aggregate score >= 80%, explicitly ungraded.
+  UNGRADED = 'UNGRADED',
 }

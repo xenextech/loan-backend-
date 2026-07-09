@@ -4,11 +4,11 @@ import { IsISO8601, IsNumber, IsOptional, IsString } from 'class-validator';
 export class ConfirmDisbursementDto {
   @ApiProperty({ example: 1 })
   @IsNumber()
-  trancheNumber: number;
+  trancheNumber!: number;
 
   @ApiProperty({ example: 710000 })
   @IsNumber()
-  amount: number;
+  amount!: number;
 
   @ApiPropertyOptional({ example: 'College A/C' })
   @IsOptional()

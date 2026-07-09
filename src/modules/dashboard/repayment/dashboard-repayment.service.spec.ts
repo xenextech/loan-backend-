@@ -1,10 +1,11 @@
+import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { DashboardRepaymentService } from './dashboard-repayment.service';
 import { EmiCalculatorService } from '../../utils/emi-calculator.service';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { AuditService } from '../../audit/audit.service';
 import { NotificationsService } from '../../notifications/notifications.service';
 import { CollectionActivityType } from '@prisma/client';
-import { AuditAction, AuditCategory } from '../../../common/enums';
+import { AuditAction, AuditCategory, UserRole } from '../../../common/enums';
 import { toEquivalentNominalRate } from '../../../common/utils/interest-rate.util';
 import { EMI_NOTIFICATION_TRIGGERS } from './emi-notification-triggers.constant';
 
@@ -59,12 +60,17 @@ describe('DashboardRepaymentService', () => {
   let appUpdateManyMock: jest.Mock<unknown, [AppUpdateManyCallArgs]>;
   let appUpdateMock: jest.Mock<unknown, [AppUpdateCallArgs]>;
   let loanAccountFindUniqueMock: jest.Mock;
+  let loanAccountFindManyMock: jest.Mock;
+  let loanAccountCountMock: jest.Mock;
   let loanAccountUpdateMock: jest.Mock;
   let loanAccountUpdateManyMock: jest.Mock;
   let collectionActivityCreateMock: jest.Mock;
   let collectionActivityFindManyMock: jest.Mock;
   let collectionActivityCountMock: jest.Mock;
   let notifyLoanFinalizedMock: jest.Mock;
+  let notifyLoanClearedMock: jest.Mock;
+  let createDatabaseNotificationMock: jest.Mock;
+  let userFindManyMock: jest.Mock;
   let service: DashboardRepaymentService;
 
   function buildService() {
@@ -84,6 +90,8 @@ describe('DashboardRepaymentService', () => {
       .mockResolvedValue({ count: 0 });
     appUpdateMock = jest.fn<unknown, [AppUpdateCallArgs]>();
     loanAccountFindUniqueMock = jest.fn().mockResolvedValue(null);
+    loanAccountFindManyMock = jest.fn().mockResolvedValue([]);
+    loanAccountCountMock = jest.fn().mockResolvedValue(0);
     loanAccountUpdateMock = jest.fn();
     loanAccountUpdateManyMock = jest.fn().mockResolvedValue({ count: 0 });
     collectionActivityCreateMock = jest.fn();
@@ -94,6 +102,13 @@ describe('DashboardRepaymentService', () => {
       parentNotified: false,
       parentChannel: null,
     });
+    notifyLoanClearedMock = jest.fn().mockResolvedValue({
+      studentNotified: true,
+      parentNotified: false,
+      parentChannel: null,
+    });
+    createDatabaseNotificationMock = jest.fn().mockResolvedValue(undefined);
+    userFindManyMock = jest.fn().mockResolvedValue([]);
 
     const prisma = {
       loanApplication: {
@@ -103,8 +118,13 @@ describe('DashboardRepaymentService', () => {
       },
       loanAccount: {
         findUnique: loanAccountFindUniqueMock,
+        findMany: loanAccountFindManyMock,
+        count: loanAccountCountMock,
         update: loanAccountUpdateMock,
         updateMany: loanAccountUpdateManyMock,
+      },
+      user: {
+        findMany: userFindManyMock,
       },
       collectionActivity: {
         create: collectionActivityCreateMock,
@@ -133,6 +153,8 @@ describe('DashboardRepaymentService', () => {
     const emiCalculator = new EmiCalculatorService();
     const notifications = {
       notifyLoanFinalized: notifyLoanFinalizedMock,
+      notifyLoanCleared: notifyLoanClearedMock,
+      createDatabaseNotification: createDatabaseNotificationMock,
     } as unknown as NotificationsService;
 
     return new DashboardRepaymentService(
@@ -263,6 +285,78 @@ describe('DashboardRepaymentService', () => {
         }),
       );
       expect(result.meta.total).toBe(24);
+    });
+  });
+
+  describe('getRepaymentStatus', () => {
+    it('throws NotFoundException when the application does not exist', async () => {
+      findUniqueMock.mockResolvedValueOnce(null);
+      await expect(service.getRepaymentStatus('missing')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('summarizes paid/upcoming/overdue counts, balances, and days overdue', async () => {
+      findUniqueMock.mockResolvedValueOnce({
+        id: applicationId,
+        applicationNumber: 'Unnati-2026-00001',
+        fullName: 'Jane Student',
+      });
+      loanAccountFindUniqueMock.mockResolvedValueOnce({ status: 'ACTIVE' });
+      const now = Date.now();
+      findManyMock.mockResolvedValueOnce([
+        {
+          installmentNumber: 1,
+          dueDate: new Date(now - 40 * 24 * 60 * 60 * 1000),
+          emiAmount: 10000,
+          paidAmount: 10000,
+          status: 'PAID',
+          penalInterestAccrued: 0,
+        },
+        {
+          installmentNumber: 2,
+          dueDate: new Date(now - 10 * 24 * 60 * 60 * 1000),
+          emiAmount: 10000,
+          paidAmount: 0,
+          status: 'OVERDUE',
+          penalInterestAccrued: 150,
+        },
+        {
+          installmentNumber: 3,
+          dueDate: new Date(now + 20 * 24 * 60 * 60 * 1000),
+          emiAmount: 10000,
+          paidAmount: 0,
+          status: 'UPCOMING',
+          penalInterestAccrued: 0,
+        },
+      ]);
+
+      const status = await service.getRepaymentStatus(applicationId);
+
+      expect(status.repaymentStatus).toBe('OVERDUE');
+      expect(status.paidInstallments).toBe(1);
+      expect(status.overdueInstallments).toBe(1);
+      expect(status.upcomingInstallments).toBe(1);
+      expect(status.totalPaid).toBe(10000);
+      expect(status.totalRepayable).toBe(30000);
+      expect(status.outstandingBalance).toBe(20000);
+      expect(status.daysOverdue).toBe(10);
+      expect(status.penalInterestAccrued).toBe(150);
+    });
+
+    it('reports NOT_CONFIGURED when there is no loan account yet', async () => {
+      findUniqueMock.mockResolvedValueOnce({
+        id: applicationId,
+        applicationNumber: 'Unnati-2026-00002',
+        fullName: 'John Student',
+      });
+      loanAccountFindUniqueMock.mockResolvedValueOnce(null);
+      findManyMock.mockResolvedValueOnce([]);
+
+      const status = await service.getRepaymentStatus(applicationId);
+      expect(status.repaymentStatus).toBe('NOT_CONFIGURED');
+      expect(status.daysOverdue).toBe(0);
+      expect(status.nextDueDate).toBeNull();
     });
   });
 
@@ -517,16 +611,20 @@ describe('DashboardRepaymentService', () => {
     });
 
     it('updates the loan account config and regenerates the schedule', async () => {
+      const configuredLoanAccount = {
+        applicationId,
+        status: 'ACTIVE',
+        configuredAt: new Date(),
+        finalInterestRate: 11,
+        finalTenureMonths: 24,
+        gracePeriodMonths: 2,
+        repaymentFrequency: 'MONTHLY',
+      };
       loanAccountFindUniqueMock
         .mockResolvedValueOnce({ applicationId, status: 'ACTIVE' }) // pre-check
         .mockResolvedValueOnce({ applicationId, status: 'ACTIVE' }) // read inside generateSchedule
-        .mockResolvedValueOnce({
-          applicationId,
-          status: 'ACTIVE',
-          finalInterestRate: 11,
-          finalTenureMonths: 24,
-          gracePeriodMonths: 2,
-        }); // final read-back
+        .mockResolvedValueOnce(configuredLoanAccount) // read inside the auto-fired notifyBorrower
+        .mockResolvedValueOnce(configuredLoanAccount); // final read-back
       findUniqueMock.mockResolvedValue({
         ...application,
         disbursement: { totalDisbursedAmount: 500000 },
@@ -561,7 +659,55 @@ describe('DashboardRepaymentService', () => {
       );
     });
 
+    it('auto-notifies the student and parent (with the full schedule) as soon as configuration completes', async () => {
+      const configuredLoanAccount = {
+        applicationId,
+        status: 'ACTIVE',
+        configuredAt: new Date(),
+        finalInterestRate: 11,
+        finalTenureMonths: 24,
+        gracePeriodMonths: 2,
+        repaymentFrequency: 'MONTHLY',
+      };
+      loanAccountFindUniqueMock
+        .mockResolvedValueOnce({ applicationId, status: 'ACTIVE' })
+        .mockResolvedValueOnce({ applicationId, status: 'ACTIVE' })
+        .mockResolvedValueOnce(configuredLoanAccount)
+        .mockResolvedValueOnce(configuredLoanAccount);
+      findUniqueMock.mockResolvedValue({
+        ...application,
+        disbursement: { totalDisbursedAmount: 500000 },
+      });
+
+      const result = await service.configureServicing('cm-1', applicationId, {
+        finalInterestRate: 11,
+        finalTenureMonths: 24,
+        gracePeriodMonths: 2,
+      });
+
+      expect(notifyLoanFinalizedMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          schedule: expect.arrayContaining([
+            expect.objectContaining({ installmentNumber: 1 }),
+          ]) as unknown,
+        }),
+      );
+      expect(result.notification).toEqual({
+        studentNotified: true,
+        parentNotified: false,
+        parentChannel: null,
+      });
+    });
+
     it('passes interestFrequency and a finalPrincipalAmount override through to the loan account, and reports both amounts', async () => {
+      const configuredLoanAccount = {
+        applicationId,
+        status: 'ACTIVE',
+        configuredAt: new Date(),
+        finalPrincipalAmount: 480000,
+        repaymentFrequency: 'MONTHLY',
+        interestFrequency: 'YEARLY',
+      };
       loanAccountFindUniqueMock
         .mockResolvedValueOnce({ applicationId, status: 'ACTIVE' }) // pre-check
         .mockResolvedValueOnce({
@@ -569,13 +715,8 @@ describe('DashboardRepaymentService', () => {
           repaymentFrequency: 'MONTHLY',
           interestFrequency: 'YEARLY',
         }) // read inside generateSchedule
-        .mockResolvedValueOnce({
-          applicationId,
-          status: 'ACTIVE',
-          finalPrincipalAmount: 480000,
-          repaymentFrequency: 'MONTHLY',
-          interestFrequency: 'YEARLY',
-        }); // final read-back
+        .mockResolvedValueOnce(configuredLoanAccount) // read inside the auto-fired notifyBorrower
+        .mockResolvedValueOnce(configuredLoanAccount); // final read-back
       findUniqueMock.mockResolvedValue({
         ...application,
         disbursement: { totalDisbursedAmount: 500000 },
@@ -750,6 +891,7 @@ describe('DashboardRepaymentService', () => {
         data: {
           status: 'NEEDS_REVIEW',
           reviewReason: 'Repeated missed installments',
+          reviewAssignedRole: null,
           reviewRequestedByUserId: 'cm-1',
           reviewRequestedAt: expect.any(Date) as Date,
           reviewResolvedByUserId: null,
@@ -759,7 +901,7 @@ describe('DashboardRepaymentService', () => {
       expect(auditLogMock).toHaveBeenCalledWith(
         'cm-1',
         AuditAction.LOAN_NEEDS_REVIEW,
-        { reason: 'Repeated missed installments' },
+        { reason: 'Repeated missed installments', assignedRole: null },
         applicationId,
         AuditCategory.REPAYMENT,
       );
@@ -775,19 +917,57 @@ describe('DashboardRepaymentService', () => {
       ).rejects.toThrow();
     });
 
-    it('resolves a loan back to ACTIVE from NEEDS_REVIEW', async () => {
+    it('assigns the review to a specific role and notifies its holders', async () => {
+      loanAccountFindUniqueMock.mockResolvedValueOnce({
+        applicationId,
+        status: 'ACTIVE',
+      });
+      loanAccountUpdateMock.mockResolvedValueOnce({
+        applicationId,
+        status: 'NEEDS_REVIEW',
+      });
+      userFindManyMock.mockResolvedValueOnce([{ id: 'approver-1' }]);
+
+      await service.flagNeedsReview('cm-1', applicationId, {
+        reason: 'Needs a second opinion on eligibility',
+        assignedRole: UserRole.APPROVER,
+      });
+
+      expect(loanAccountUpdateMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            reviewAssignedRole: UserRole.APPROVER,
+          }) as unknown,
+        }),
+      );
+      expect(userFindManyMock).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { role: UserRole.APPROVER } }),
+      );
+      expect(createDatabaseNotificationMock).toHaveBeenCalledWith(
+        'approver-1',
+        'Loan needs your review',
+        expect.any(String) as string,
+        applicationId,
+      );
+    });
+
+    it('resolves a loan back to ACTIVE from NEEDS_REVIEW when called by the Credit Manager', async () => {
       loanAccountFindUniqueMock.mockResolvedValueOnce({
         applicationId,
         status: 'NEEDS_REVIEW',
+        reviewAssignedRole: null,
       });
       loanAccountUpdateMock.mockResolvedValueOnce({
         applicationId,
         status: 'ACTIVE',
       });
 
-      await service.resolveReview('cm-1', applicationId, {
-        resolutionNotes: 'Arrears cleared',
-      });
+      await service.resolveReview(
+        'cm-1',
+        UserRole.CREDIT_MANAGER,
+        applicationId,
+        { resolutionNotes: 'Arrears cleared' },
+      );
 
       expect(loanAccountUpdateMock).toHaveBeenCalledWith({
         where: { applicationId },
@@ -799,14 +979,147 @@ describe('DashboardRepaymentService', () => {
       });
     });
 
+    it('allows the assigned reviewer role to resolve the review', async () => {
+      loanAccountFindUniqueMock.mockResolvedValueOnce({
+        applicationId,
+        status: 'NEEDS_REVIEW',
+        reviewAssignedRole: UserRole.APPROVER,
+      });
+      loanAccountUpdateMock.mockResolvedValueOnce({
+        applicationId,
+        status: 'ACTIVE',
+      });
+
+      await expect(
+        service.resolveReview(
+          'approver-1',
+          UserRole.APPROVER,
+          applicationId,
+          {},
+        ),
+      ).resolves.toBeDefined();
+    });
+
+    it('forbids a role other than the Credit Manager or the assigned reviewer', async () => {
+      loanAccountFindUniqueMock.mockResolvedValueOnce({
+        applicationId,
+        status: 'NEEDS_REVIEW',
+        reviewAssignedRole: UserRole.APPROVER,
+      });
+
+      await expect(
+        service.resolveReview('checker-1', UserRole.CHECKER, applicationId, {}),
+      ).rejects.toThrow(ForbiddenException);
+      expect(loanAccountUpdateMock).not.toHaveBeenCalled();
+    });
+
     it('throws when the loan is not currently under review', async () => {
       loanAccountFindUniqueMock.mockResolvedValueOnce({
         applicationId,
         status: 'ACTIVE',
       });
       await expect(
-        service.resolveReview('cm-1', applicationId, {}),
+        service.resolveReview(
+          'cm-1',
+          UserRole.CREDIT_MANAGER,
+          applicationId,
+          {},
+        ),
       ).rejects.toThrow();
+    });
+  });
+
+  describe('completeClearance', () => {
+    it('throws NotFoundException when there is no loan account', async () => {
+      loanAccountFindUniqueMock.mockResolvedValueOnce(null);
+      await expect(
+        service.completeClearance('cm-1', applicationId, {}),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('throws when the loan is already cleared', async () => {
+      loanAccountFindUniqueMock.mockResolvedValueOnce({
+        applicationId,
+        status: 'CLEARED',
+      });
+      await expect(
+        service.completeClearance('cm-1', applicationId, {}),
+      ).rejects.toThrow('This loan is already cleared');
+    });
+
+    it('throws when installments are still unpaid', async () => {
+      loanAccountFindUniqueMock.mockResolvedValueOnce({
+        applicationId,
+        status: 'ACTIVE',
+      });
+      countMock.mockResolvedValueOnce(2);
+      await expect(
+        service.completeClearance('cm-1', applicationId, {}),
+      ).rejects.toThrow(
+        'This loan still has 2 unpaid installment(s) — it cannot be cleared yet. Use needs-review if the borrower is unable to pay.',
+      );
+      expect(loanAccountUpdateMock).not.toHaveBeenCalled();
+    });
+
+    it('clears the loan and notifies the borrower once every installment is paid', async () => {
+      loanAccountFindUniqueMock.mockResolvedValueOnce({
+        applicationId,
+        status: 'ACTIVE',
+      });
+      countMock.mockResolvedValueOnce(0);
+      loanAccountUpdateMock.mockResolvedValueOnce({
+        applicationId,
+        status: 'CLEARED',
+      });
+      findUniqueMock.mockResolvedValueOnce({
+        ...application,
+        parentVerification: null,
+      });
+
+      const result = await service.completeClearance('cm-1', applicationId, {
+        remarks: 'Closed on schedule',
+      });
+
+      expect(loanAccountUpdateMock).toHaveBeenCalledWith({
+        where: { applicationId },
+        data: {
+          status: 'CLEARED',
+          clearedAt: expect.any(Date) as Date,
+          clearedByUserId: 'cm-1',
+        },
+      });
+      expect(notifyLoanClearedMock).toHaveBeenCalledWith(
+        expect.objectContaining({ remarks: 'Closed on schedule' }),
+      );
+      expect(result.notification).toEqual({
+        studentNotified: true,
+        parentNotified: false,
+        parentChannel: null,
+      });
+    });
+  });
+
+  describe('listNeedsReview', () => {
+    it('scopes to the caller role for non-Credit-Manager roles', async () => {
+      await service.listNeedsReview(UserRole.APPROVER, { page: 1, limit: 20 });
+      expect(loanAccountFindManyMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            status: 'NEEDS_REVIEW',
+            reviewAssignedRole: UserRole.APPROVER,
+          },
+        }),
+      );
+    });
+
+    it('sees every Needs-Review loan for the Credit Manager, unscoped by role', async () => {
+      await service.listNeedsReview(UserRole.CREDIT_MANAGER, {
+        page: 1,
+        limit: 20,
+      });
+      expect(loanAccountFindManyMock).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { status: 'NEEDS_REVIEW' } }),
+      );
     });
   });
 });

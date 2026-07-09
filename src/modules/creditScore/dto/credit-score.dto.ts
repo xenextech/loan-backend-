@@ -1,20 +1,48 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { Decimal } from '@prisma/client/runtime/client';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { ValidateNested } from 'class-validator';
+import { IsEnum, IsInt, IsOptional, ValidateNested } from 'class-validator';
+import { IsMoneyAmount } from '../../../common/decorators/numeric-range.decorators';
+import {
+  ParentsBorrowingsWithBFIs,
+  SourceOfIncome,
+} from '../enum/credit-score.enum';
 
 export class ScoreDto {
-  creditLimit!: Decimal | null;
+  @ApiPropertyOptional({ example: 1200000 })
+  @IsOptional()
+  @IsMoneyAmount()
+  creditLimit?: number | null;
 
-  dsgir!: number | null;
+  @ApiPropertyOptional({ example: 42, description: 'DSGIR, as a percentage' })
+  @IsOptional()
+  @IsInt()
+  dsgir?: number | null;
 
-  operationOfInstitution!: number | null;
+  @ApiPropertyOptional({
+    example: 8,
+    description: "Institution's years of operation",
+  })
+  @IsOptional()
+  @IsInt()
+  operationOfInstitution?: number | null;
 
-  satisfactoryPerformance!: number | null;
+  @ApiPropertyOptional({
+    example: 2,
+    description: "Years of the customer's satisfactory performance",
+  })
+  @IsOptional()
+  @IsInt()
+  satisfactoryPerformance?: number | null;
 
-  parentsBorrowingsWithBFIs!: string | null;
+  @ApiPropertyOptional({ enum: ParentsBorrowingsWithBFIs })
+  @IsOptional()
+  @IsEnum(ParentsBorrowingsWithBFIs)
+  parentsBorrowingsWithBFIs?: ParentsBorrowingsWithBFIs | null;
 
-  sourceOfIncome!: string | null;
+  @ApiPropertyOptional({ enum: SourceOfIncome })
+  @IsOptional()
+  @IsEnum(SourceOfIncome)
+  sourceOfIncome?: SourceOfIncome | null;
 }
 
 export class CreateCreditScoringDto {

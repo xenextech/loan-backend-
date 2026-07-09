@@ -140,6 +140,16 @@ export class NotificationsService {
     gracePeriodMonths: number;
     firstDueDate: Date;
     totalRepayable: number;
+    // Full installment breakdown — rendered as a table in the email only
+    // (SMS/WhatsApp/app copies stay a summary; a full schedule doesn't fit
+    // those channels).
+    schedule?: {
+      installmentNumber: number;
+      dueDate: Date;
+      emiAmount: number;
+      principalComponent: number;
+      interestComponent: number;
+    }[];
   }): Promise<{
     studentNotified: boolean;
     parentNotified: boolean;
@@ -152,7 +162,69 @@ export class NotificationsService {
       `Approved Loan Amount: ${params.approvedAmount}. Disbursement Amount: ${params.disbursementAmount}. Interest Rate: ${params.interestRate}%. ` +
       `EMI Amount: ${params.emiAmount}. EMI Timeline: ${frequencyLabel}. Tenure: ${params.tenureMonths} month(s). ` +
       `Grace Period: ${params.gracePeriodMonths} month(s). First EMI Due Date: ${params.firstDueDate.toDateString()}. ` +
-      `Total Repayable Amount: ${params.totalRepayable}. Please pay each installment on or before its due date to avoid penal interest charges.`;
+      `Total Repayable Amount: ${params.totalRepayable}. Please pay each installment on or before its due date to avoid penal interest charges.` +
+      (params.schedule?.length
+        ? ' Your full installment-by-installment repayment schedule is attached in the email sent to you.'
+        : '');
+
+    let studentNotified = false;
+    if (params.userId) {
+      await this.createDatabaseNotification(
+        params.userId,
+        title,
+        message,
+        params.applicationId,
+        NotificationChannel.APP,
+        NotificationDeliveryStatus.SENT,
+      );
+      studentNotified = true;
+    }
+    if (params.email) {
+      const scheduleHtml = params.schedule?.length
+        ? this.buildEmiScheduleTableHtml(params.schedule)
+        : '';
+      await this.sendEmail(
+        params.email,
+        title,
+        `<p>${message}</p>${scheduleHtml}`,
+      );
+    }
+    if (params.phoneNumber) {
+      await this.sendSms(params.phoneNumber, message);
+    }
+
+    let parentNotified = false;
+    let parentChannel: 'SMS' | 'WHATSAPP' | null = null;
+    if (params.parentPhone) {
+      const parentMessage = `Dear Parent/Guardian, ${message}`;
+      const smsSent = await this.sendSms(params.parentPhone, parentMessage);
+      const waSent = await this.sendWhatsapp(params.parentPhone, parentMessage);
+      parentNotified = smsSent || waSent;
+      parentChannel = smsSent ? 'SMS' : waSent ? 'WHATSAPP' : null;
+    }
+
+    return { studentNotified, parentNotified, parentChannel };
+  }
+
+  // ── Loan cleared (student + parent) ─────────────────────────────────────
+  async notifyLoanCleared(params: {
+    userId?: string | null;
+    applicationId: string;
+    fullName?: string | null;
+    email?: string | null;
+    phoneNumber?: string | null;
+    parentPhone?: string | null;
+    remarks?: string;
+  }): Promise<{
+    studentNotified: boolean;
+    parentNotified: boolean;
+    parentChannel: 'SMS' | 'WHATSAPP' | null;
+  }> {
+    const title = 'Your loan has been fully cleared';
+    const message =
+      `Dear ${params.fullName ?? 'borrower'}, congratulations — your education loan has been fully repaid and is now closed. ` +
+      `No further installments are due.` +
+      (params.remarks ? ` Note: ${params.remarks}` : '');
 
     let studentNotified = false;
     if (params.userId) {
@@ -184,6 +256,45 @@ export class NotificationsService {
     }
 
     return { studentNotified, parentNotified, parentChannel };
+  }
+
+  private buildEmiScheduleTableHtml(
+    schedule: {
+      installmentNumber: number;
+      dueDate: Date;
+      emiAmount: number;
+      principalComponent: number;
+      interestComponent: number;
+    }[],
+  ) {
+    const rows = schedule
+      .map(
+        (e) => `
+        <tr>
+          <td style="padding:6px 10px;border:1px solid #E5E7EB;">${e.installmentNumber}</td>
+          <td style="padding:6px 10px;border:1px solid #E5E7EB;">${e.dueDate.toDateString()}</td>
+          <td style="padding:6px 10px;border:1px solid #E5E7EB;">${e.emiAmount}</td>
+          <td style="padding:6px 10px;border:1px solid #E5E7EB;">${e.principalComponent}</td>
+          <td style="padding:6px 10px;border:1px solid #E5E7EB;">${e.interestComponent}</td>
+        </tr>`,
+      )
+      .join('');
+
+    return `
+      <h3>Full Repayment Schedule</h3>
+      <table style="border-collapse:collapse;font-size:13px;">
+        <thead>
+          <tr>
+            <th style="padding:6px 10px;border:1px solid #E5E7EB;text-align:left;">#</th>
+            <th style="padding:6px 10px;border:1px solid #E5E7EB;text-align:left;">Due Date</th>
+            <th style="padding:6px 10px;border:1px solid #E5E7EB;text-align:left;">EMI Amount</th>
+            <th style="padding:6px 10px;border:1px solid #E5E7EB;text-align:left;">Principal</th>
+            <th style="padding:6px 10px;border:1px solid #E5E7EB;text-align:left;">Interest</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    `;
   }
 
   // ── Email helpers ──────────────────────────────────────────────────────────

@@ -112,13 +112,13 @@ export class ApplicationsService {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       data: {
         ...personalFields,
-        userId: ownerUserId,
+        ...(ownerUserId !== undefined && { userId: ownerUserId }),
         applicationNumber: generateApplicationNumber(),
         status: ApplicationStatus.DRAFT,
         source,
         dateOfBirth: resolvedDob.dateOfBirth,
         dobBs: resolvedDob.dobBs,
-        issuedDate: issuedDate ? new Date(issuedDate) : undefined,
+        ...(issuedDate && { issuedDate: new Date(issuedDate) }),
         studyInformation: {
           create: { studyType, courseName, boardUniversity, courseDuration },
         },

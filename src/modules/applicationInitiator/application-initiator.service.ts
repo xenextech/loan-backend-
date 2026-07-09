@@ -306,7 +306,11 @@ export class ApplicationInitiatorService {
   }
 
   // Sets initiator information on an application that already exists (e.g.
-  // one created by a student, or via `createNewApplication` below).
+  // one created by a student, or via `createNewApplication` below). This is
+  // the Initiator's one-time finalization of their section, so it also
+  // stamps who did it and when — from the authenticated user, never the
+  // request body — for the approval-history trail (see
+  // DashboardApprovalService.getSummary()).
   async createInitiatorApplication(
     applicationId: string,
     userId: string,
@@ -319,10 +323,21 @@ export class ApplicationInitiatorService {
       );
     }
 
+    const actor = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, fullName: true, email: true },
+    });
+    if (!actor) throw new NotFoundException('User not found');
+
     const updated = await this.prisma.loanApplication.update({
       where: { id: applicationId },
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-      data: dto as any,
+      data: {
+        ...(dto as any),
+        initiatorUserId: actor.id,
+        initiatorName: actor.fullName ?? actor.email,
+        initiatorDate: new Date(),
+      },
     });
 
     await this.audit.log(

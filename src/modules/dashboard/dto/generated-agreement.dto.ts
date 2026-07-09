@@ -6,11 +6,11 @@ import { GeneratedAgreementType } from '../../../common/enums';
 export class CreateGeneratedAgreementDto {
   @ApiProperty()
   @IsString()
-  applicationId: string;
+  applicationId!: string;
 
   @ApiProperty({ enum: GeneratedAgreementType })
   @IsEnum(GeneratedAgreementType)
-  agreementType: GeneratedAgreementType;
+  agreementType!: GeneratedAgreementType;
 }
 
 export class GeneratedAgreementQueryDto extends PaginationDto {

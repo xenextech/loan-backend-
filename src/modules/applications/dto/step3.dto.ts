@@ -6,6 +6,7 @@ import {
   IsNumber,
   Min,
   IsUrl,
+  ValidateIf,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { MaritalStatus, FeeStructureMethod } from '../../../common/enums';
@@ -54,10 +55,12 @@ export class Step3Dto {
   feeStructureMethod?: FeeStructureMethod;
 
   @ApiPropertyOptional({
-    description: 'URL of fee structure (if method is LINK)',
+    description:
+      'URL of fee structure (if method is LINK). Send an empty string or omit if not using LINK.',
   })
+  @ValidateIf((o: Step3Dto) => !!o.feeStructureUrl)
+  @IsUrl({ require_tld: false })
   @IsOptional()
-  @IsUrl()
   feeStructureUrl?: string;
 
   @ApiPropertyOptional({
