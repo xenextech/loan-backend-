@@ -64,6 +64,57 @@ export class NotificationsService {
     });
   }
 
+  // ── College document generated (offer letter / agreement / enrollment cert) ─
+  // Fans out a DB notification to every distinct participant of the linked
+  // LoanApplication (student + initiator/supporter/checker/approver staff).
+  // Recipients come solely from the application record — never a role-wide
+  // broadcast. Never throws: a notification failure must not block document
+  // generation, so each send is isolated via Promise.allSettled and any
+  // failure is only logged.
+  async notifyCollegeDocumentGenerated(params: {
+    application: {
+      id: string;
+      applicationNumber: string | null;
+      userId: string | null;
+      initiatorUserId: string | null;
+      supporterUserId: string | null;
+      checkerUserId: string | null;
+      approverUserId: string | null;
+    };
+    documentLabel: string;
+    collegeName: string;
+  }) {
+    const { application, documentLabel, collegeName } = params;
+    const recipients = [
+      ...new Set(
+        [
+          application.userId,
+          application.initiatorUserId,
+          application.supporterUserId,
+          application.checkerUserId,
+          application.approverUserId,
+        ].filter((id): id is string => !!id),
+      ),
+    ];
+    if (recipients.length === 0) return;
+
+    const title = `${documentLabel} generated`;
+    const message = `${collegeName} generated the ${documentLabel} for application ${application.applicationNumber ?? application.id}.`;
+
+    const results = await Promise.allSettled(
+      recipients.map((userId) =>
+        this.createDatabaseNotification(userId, title, message, application.id),
+      ),
+    );
+    results.forEach((result, i) => {
+      if (result.status === 'rejected') {
+        this.logger.warn(
+          `Failed to notify user ${recipients[i]} about ${documentLabel} for application ${application.id}: ${String(result.reason)}`,
+        );
+      }
+    });
+  }
+
   // ── Application rejected ───────────────────────────────────────────────────
   async notifyApplicationRejected(applicationId: string) {
     const application = await this.prisma.loanApplication.findUnique({

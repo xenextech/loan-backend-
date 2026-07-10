@@ -4,6 +4,7 @@ import {
   IsNotEmpty,
   IsBoolean,
   IsNumber,
+  IsUUID,
   ValidateNested,
   MaxLength,
   Min,
@@ -165,6 +166,15 @@ export class AgreementQrDto {
 }
 
 export class CreateAgreementDto {
+  @ApiPropertyOptional({
+    description:
+      "Optional Loan Application UUID to link this agreement to. When set, the linked application's student and staff participants (initiator/supporter/checker/approver) are notified and the document becomes visible in the student's Document Vault.",
+    example: 'b3e1c2a4-1234-4a5b-9c8d-abcdef123456',
+  })
+  @IsUUID()
+  @IsOptional()
+  applicationId?: string;
+
   @ApiProperty({ type: AgreementCollegeDto })
   @ValidateNested()
   @Type(() => AgreementCollegeDto)

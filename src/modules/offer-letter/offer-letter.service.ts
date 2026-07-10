@@ -5,15 +5,31 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { serializeDecimals } from '../../common/utils/serialize-decimals.util';
 import { CreateOfferLetterDto } from './dto/create-offer-letter.dto';
 import { UpdateOfferLetterDto } from './dto/update-offer-letter.dto';
 
+const LINKED_APPLICATION_SELECT = {
+  id: true,
+  applicationNumber: true,
+  userId: true,
+  initiatorUserId: true,
+  supporterUserId: true,
+  checkerUserId: true,
+  approverUserId: true,
+} as const;
+
 @Injectable()
 export class OfferLetterService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notifications: NotificationsService,
+  ) {}
 
   async create(dto: CreateOfferLetterDto, email: string) {
     const {
+      applicationId,
       college,
       document,
       student,
@@ -24,9 +40,20 @@ export class OfferLetterService {
       qr,
     } = dto;
 
-    return this.prisma.offerLetter.create({
+    const application = applicationId
+      ? await this.prisma.loanApplication.findUnique({
+          where: { id: applicationId },
+          select: LINKED_APPLICATION_SELECT,
+        })
+      : null;
+    if (applicationId && !application) {
+      throw new NotFoundException('Linked application not found');
+    }
+
+    const record = await this.prisma.offerLetter.create({
       select: {
         id: true,
+        applicationId: true,
         refNo: true,
         collegeName: true,
         studentFullName: true,
@@ -39,6 +66,7 @@ export class OfferLetterService {
       },
       data: {
         createdByEmail: email,
+        applicationId: application?.id,
         // College
         collegeName: college.collegeName,
         collegeAddress: college.collegeAddress,
@@ -87,6 +115,20 @@ export class OfferLetterService {
         qrVerifyUrl: qr?.qrVerifyUrl,
       },
     });
+
+    if (application) {
+      try {
+        await this.notifications.notifyCollegeDocumentGenerated({
+          application,
+          documentLabel: 'Offer Letter',
+          collegeName: college.collegeName,
+        });
+      } catch {
+        // Notification failures must never fail document generation.
+      }
+    }
+
+    return record;
   }
 
   async findAll(email: string) {
@@ -112,7 +154,7 @@ export class OfferLetterService {
     const record = await this.prisma.offerLetter.findUnique({ where: { id } });
     if (!record) throw new NotFoundException('Offer letter not found');
     if (record.createdByEmail !== email) throw new ForbiddenException();
-    return record;
+    return serializeDecimals(record);
   }
 
   async update(id: string, dto: UpdateOfferLetterDto, email: string) {

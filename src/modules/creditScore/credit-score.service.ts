@@ -30,10 +30,7 @@ export class CreditScoreService {
   // unrecognized value — several ScoreDto fields (e.g. parentsBorrowingsWithBFIs)
   // are optional on LoanApplication and are frequently unset, so "no matching
   // rule" is an expected case, not an error.
-  private getScore<T extends ScoreRule>(
-    rules: readonly T[],
-    input: ScoreInput,
-  ) {
+  private getScore(rules: readonly ScoreRule[], input: ScoreInput) {
     if (input === null || input === undefined) return null;
 
     const rule = rules.find((r) => {
@@ -169,11 +166,7 @@ export class CreditScoreService {
       const rules = CREDIT_PARAMETERS[key as keyof typeof CREDIT_PARAMETERS];
       if (!rules) continue;
 
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-      const score = this.getScore(
-        rules as readonly ScoreRule[],
-        value as ScoreInput,
-      );
+      const score = this.getScore(rules, value as ScoreInput);
       if (!score) continue;
 
       // maxPossibleScore accumulates weight × maxPoint (not just weight) so

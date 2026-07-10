@@ -21,6 +21,7 @@ import { ParentPublicModule } from './modules/parent-public/parent-public.module
 import { OfferLetterModule } from './modules/offer-letter/offer-letter.module';
 import { AgreementModule } from './modules/agreement/agreement.module';
 import { EnrollmentCertificateModule } from './modules/enrollment-certificate/enrollment-certificate.module';
+import { DocumentVaultModule } from './modules/document-vault/document-vault.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { DashboardJobsModule } from './modules/dashboard/jobs/dashboard-jobs.module';
 
@@ -47,6 +48,7 @@ import { DashboardJobsModule } from './modules/dashboard/jobs/dashboard-jobs.mod
     OfferLetterModule,
     AgreementModule,
     EnrollmentCertificateModule,
+    DocumentVaultModule,
     DashboardModule,
     DashboardJobsModule,
   ],

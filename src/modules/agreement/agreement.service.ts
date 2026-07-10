@@ -4,19 +4,46 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { serializeDecimals } from '../../common/utils/serialize-decimals.util';
 import { CreateAgreementDto } from './dto/create-agreement.dto';
 import { UpdateAgreementDto } from './dto/update-agreement.dto';
 
+const LINKED_APPLICATION_SELECT = {
+  id: true,
+  applicationNumber: true,
+  userId: true,
+  initiatorUserId: true,
+  supporterUserId: true,
+  checkerUserId: true,
+  approverUserId: true,
+} as const;
+
 @Injectable()
 export class AgreementService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notifications: NotificationsService,
+  ) {}
 
   async create(dto: CreateAgreementDto, email: string) {
-    const { college, document, student, certifications, qr } = dto;
+    const { applicationId, college, document, student, certifications, qr } =
+      dto;
 
-    return this.prisma.agreement.create({
+    const application = applicationId
+      ? await this.prisma.loanApplication.findUnique({
+          where: { id: applicationId },
+          select: LINKED_APPLICATION_SELECT,
+        })
+      : null;
+    if (applicationId && !application) {
+      throw new NotFoundException('Linked application not found');
+    }
+
+    const record = await this.prisma.agreement.create({
       select: {
         id: true,
+        applicationId: true,
         refNo: true,
         collegeName: true,
         studentFullName: true,
@@ -30,6 +57,7 @@ export class AgreementService {
       },
       data: {
         createdByEmail: email,
+        applicationId: application?.id,
         // College
         collegeName: college.collegeName,
         collegeAddress: college.collegeAddress,
@@ -62,6 +90,20 @@ export class AgreementService {
         qrVerifyUrl: qr?.qrVerifyUrl,
       },
     });
+
+    if (application) {
+      try {
+        await this.notifications.notifyCollegeDocumentGenerated({
+          application,
+          documentLabel: 'Bonafide Agreement',
+          collegeName: college.collegeName,
+        });
+      } catch {
+        // Notification failures must never fail document generation.
+      }
+    }
+
+    return record;
   }
 
   async findAll(email: string) {
@@ -88,7 +130,7 @@ export class AgreementService {
     const record = await this.prisma.agreement.findUnique({ where: { id } });
     if (!record) throw new NotFoundException('Agreement not found');
     if (record.createdByEmail !== email) throw new ForbiddenException();
-    return record;
+    return serializeDecimals(record);
   }
 
   async update(id: string, dto: UpdateAgreementDto, email: string) {

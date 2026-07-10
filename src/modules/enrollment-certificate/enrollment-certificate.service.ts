@@ -4,19 +4,46 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { serializeDecimals } from '../../common/utils/serialize-decimals.util';
 import { CreateEnrollmentCertificateDto } from './dto/create-enrollment-certificate.dto';
 import { UpdateEnrollmentCertificateDto } from './dto/update-enrollment-certificate.dto';
 
+const LINKED_APPLICATION_SELECT = {
+  id: true,
+  applicationNumber: true,
+  userId: true,
+  initiatorUserId: true,
+  supporterUserId: true,
+  checkerUserId: true,
+  approverUserId: true,
+} as const;
+
 @Injectable()
 export class EnrollmentCertificateService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notifications: NotificationsService,
+  ) {}
 
   async create(dto: CreateEnrollmentCertificateDto, email: string) {
-    const { college, document, student, certifications, qr } = dto;
+    const { applicationId, college, document, student, certifications, qr } =
+      dto;
 
-    return this.prisma.enrollmentCertificate.create({
+    const application = applicationId
+      ? await this.prisma.loanApplication.findUnique({
+          where: { id: applicationId },
+          select: LINKED_APPLICATION_SELECT,
+        })
+      : null;
+    if (applicationId && !application) {
+      throw new NotFoundException('Linked application not found');
+    }
+
+    const record = await this.prisma.enrollmentCertificate.create({
       select: {
         id: true,
+        applicationId: true,
         refNo: true,
         collegeName: true,
         studentFullName: true,
@@ -30,6 +57,7 @@ export class EnrollmentCertificateService {
       },
       data: {
         createdByEmail: email,
+        applicationId: application?.id,
         // College
         collegeName: college.collegeName,
         collegeCode: college.collegeCode,
@@ -63,6 +91,20 @@ export class EnrollmentCertificateService {
         qrVerifyUrl: qr?.qrVerifyUrl,
       },
     });
+
+    if (application) {
+      try {
+        await this.notifications.notifyCollegeDocumentGenerated({
+          application,
+          documentLabel: 'Enrollment Certificate',
+          collegeName: college.collegeName,
+        });
+      } catch {
+        // Notification failures must never fail document generation.
+      }
+    }
+
+    return record;
   }
 
   async findAll(email: string) {
@@ -94,7 +136,7 @@ export class EnrollmentCertificateService {
     if (!record)
       throw new NotFoundException('Enrollment certificate not found');
     if (record.createdByEmail !== email) throw new ForbiddenException();
-    return record;
+    return serializeDecimals(record);
   }
 
   async update(id: string, dto: UpdateEnrollmentCertificateDto, email: string) {

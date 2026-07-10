@@ -469,6 +469,12 @@ model LoanApplication {
   applicationLinks    ApplicationLink[]
   collegeVerification CollegeVerification?
   parentVerification  ParentVerification?
+
+  // College-generated document templates, optionally linked from their side
+  // (applicationId is nullable there) — see OfferLetter/Agreement/EnrollmentCertificate.
+  offerLetters           OfferLetter[]
+  agreements             Agreement[]
+  enrollmentCertificates EnrollmentCertificate[]
   // security
   securityDetails     String?
 
@@ -871,8 +877,9 @@ model ParentDocument {
 // ─── College Document Templates ───────────────────────────────────────────────
 
 model OfferLetter {
-  id             String @id @default(uuid())
+  id             String  @id @default(uuid())
   createdByEmail String
+  applicationId  String?
 
   // College / Institution
   collegeName        String
@@ -930,13 +937,17 @@ model OfferLetter {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  application LoanApplication? @relation(fields: [applicationId], references: [id], onDelete: SetNull)
+
   @@index([createdByEmail])
+  @@index([applicationId])
   @@map("offer_letters")
 }
 
 model Agreement {
-  id             String @id @default(uuid())
+  id             String  @id @default(uuid())
   createdByEmail String
+  applicationId  String?
 
   // College / Institution
   collegeName        String
@@ -976,13 +987,17 @@ model Agreement {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  application LoanApplication? @relation(fields: [applicationId], references: [id], onDelete: SetNull)
+
   @@index([createdByEmail])
+  @@index([applicationId])
   @@map("agreements")
 }
 
 model EnrollmentCertificate {
-  id             String @id @default(uuid())
+  id             String  @id @default(uuid())
   createdByEmail String
+  applicationId  String?
 
   // College / Institution
   collegeName        String
@@ -1023,7 +1038,10 @@ model EnrollmentCertificate {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  application LoanApplication? @relation(fields: [applicationId], references: [id], onDelete: SetNull)
+
   @@index([createdByEmail])
+  @@index([applicationId])
   @@map("enrollment_certificates")
 }
 
