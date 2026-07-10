@@ -71,6 +71,7 @@ describe('DashboardRepaymentService', () => {
   let notifyLoanClearedMock: jest.Mock;
   let createDatabaseNotificationMock: jest.Mock;
   let userFindManyMock: jest.Mock;
+  let userFindUniqueMock: jest.Mock;
   let service: DashboardRepaymentService;
 
   function buildService() {
@@ -109,6 +110,10 @@ describe('DashboardRepaymentService', () => {
     });
     createDatabaseNotificationMock = jest.fn().mockResolvedValue(undefined);
     userFindManyMock = jest.fn().mockResolvedValue([]);
+    userFindUniqueMock = jest.fn().mockResolvedValue({
+      fullName: 'Credit Manager One',
+      email: 'cm@example.com',
+    });
 
     const prisma = {
       loanApplication: {
@@ -125,6 +130,7 @@ describe('DashboardRepaymentService', () => {
       },
       user: {
         findMany: userFindManyMock,
+        findUnique: userFindUniqueMock,
       },
       collectionActivity: {
         create: collectionActivityCreateMock,
@@ -736,6 +742,46 @@ describe('DashboardRepaymentService', () => {
       });
       expect(result.disbursedAmount).toBe(500000);
       expect(result.principalAmount).toBe(480000);
+      expect(result.approvedAmount).toBe(500000);
+      expect(result.amountOverridden).toBe(true);
+      expect(result.overriddenBy).toEqual({
+        id: 'cm-1',
+        name: 'Credit Manager One',
+      });
+      expect(auditLogMock).toHaveBeenCalledWith(
+        'cm-1',
+        AuditAction.LOAN_SERVICING_CONFIGURED,
+        expect.objectContaining({
+          approvedAmount: 500000,
+          disbursedAmount: 500000,
+          overriddenAmount: 480000,
+          amountOverridden: true,
+          overriddenByUserId: 'cm-1',
+          overriddenByName: 'Credit Manager One',
+        }),
+        applicationId,
+        AuditCategory.REPAYMENT,
+      );
+    });
+
+    it('rejects a finalPrincipalAmount override above the Approver-approved credit limit', async () => {
+      loanAccountFindUniqueMock.mockResolvedValueOnce({
+        applicationId,
+        status: 'ACTIVE',
+      });
+      findUniqueMock.mockResolvedValueOnce({
+        ...application, // creditLimit: 500000
+        disbursement: { totalDisbursedAmount: 500000 },
+      });
+
+      await expect(
+        service.configureServicing('cm-1', applicationId, {
+          finalPrincipalAmount: 600000,
+        }),
+      ).rejects.toThrow(
+        'Overridden disbursement amount (600000) cannot exceed the Approver-approved amount (500000)',
+      );
+      expect(loanAccountUpdateMock).not.toHaveBeenCalled();
     });
   });
 

@@ -43,18 +43,18 @@ export const CREDIT_PARAMETERS = {
   // input == boundary value (previously both min:10 and min:5,max:10 matched value=10).
   operationOfInstitution: [
     {
-      min: 11,              // > 10 years ("More than 10 years")
+      min: 11, // > 10 years ("More than 10 years")
       weight: 2,
       point: 1,
     },
     {
       min: 5,
-      max: 10,              // 5-10 years inclusive ("≥ 5 year ≤ 10 years")
+      max: 10, // 5-10 years inclusive ("≥ 5 year ≤ 10 years")
       weight: 2,
       point: 2,
     },
     {
-      max: 4,               // < 5 years ("Less than 5 years")
+      max: 4, // < 5 years ("Less than 5 years")
       weight: 2,
       point: 3,
     },
@@ -65,18 +65,18 @@ export const CREDIT_PARAMETERS = {
   // Uses exclusive integer boundaries to avoid ambiguity at exactly 3 or 1 year.
   satisfactoryPerformance: [
     {
-      min: 4,               // > 3 years ("Above 3 years")
+      min: 4, // > 3 years ("Above 3 years")
       weight: 1,
       point: 1,
     },
     {
       min: 1,
-      max: 3,               // 1-3 years inclusive ("> 1 year < 3 years")
+      max: 3, // 1-3 years inclusive ("> 1 year < 3 years")
       weight: 1,
       point: 2,
     },
     {
-      max: 0,               // < 1 year / new ("New / less than 1 year")
+      max: 0, // < 1 year / new ("New / less than 1 year")
       weight: 1,
       point: 3,
     },

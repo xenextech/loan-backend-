@@ -9,6 +9,7 @@ import { AuditService } from '../../audit/audit.service';
 import { EmiCalculatorService } from '../../utils/emi-calculator.service';
 import { NotificationsService } from '../../notifications/notifications.service';
 import { toEquivalentNominalRate } from '../../../common/utils/interest-rate.util';
+import { resolveFinalPrincipalAmount } from '../../../common/utils/loan-principal.util';
 import {
   AuditAction,
   AuditCategory,
@@ -90,13 +91,12 @@ export class DashboardRepaymentService {
     // credit limit — the two can differ once tranches are confirmed. Falls
     // back to the approved credit limit only when nothing has been
     // disbursed yet.
-    const loanAmount = Number(
-      loanAccount?.finalPrincipalAmount ??
-        application.disbursement?.totalDisbursedAmount ??
-        application.creditLimit ??
-        application.loanInformation?.loanAmount ??
-        0,
-    );
+    const loanAmount = resolveFinalPrincipalAmount({
+      finalPrincipalAmount: loanAccount?.finalPrincipalAmount,
+      totalDisbursedAmount: application.disbursement?.totalDisbursedAmount,
+      creditLimit: application.creditLimit,
+      loanAmount: application.loanInformation?.loanAmount,
+    });
     const interestRate = Number(
       loanAccount?.finalInterestRate ?? application.interestRate ?? 0,
     );
@@ -243,6 +243,24 @@ export class DashboardRepaymentService {
       );
     }
 
+    // The Approver's originally approved figure — the override below may
+    // only revise the principal *downward or to* this ceiling, never past
+    // it, so a Credit Manager can't reintroduce an amount the approval
+    // pipeline never signed off on.
+    const approvedAmount = Number(application?.creditLimit ?? 0);
+    if (
+      dto.finalPrincipalAmount !== undefined &&
+      approvedAmount > 0 &&
+      dto.finalPrincipalAmount > approvedAmount
+    ) {
+      throw new BadRequestException(
+        `Overridden disbursement amount (${dto.finalPrincipalAmount}) cannot exceed the Approver-approved amount (${approvedAmount})`,
+      );
+    }
+    const amountOverridden =
+      dto.finalPrincipalAmount !== undefined &&
+      dto.finalPrincipalAmount !== disbursedAmount;
+
     await this.prisma.loanAccount.update({
       where: { applicationId },
       data: {
@@ -265,6 +283,15 @@ export class DashboardRepaymentService {
       0,
     );
 
+    // Resolved for the audit trail and response only — never trusted from
+    // request input, mirroring DashboardApprovalService.resolveActingUser().
+    const creditManager = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { fullName: true, email: true },
+    });
+    const creditManagerName =
+      creditManager?.fullName ?? creditManager?.email ?? null;
+
     await this.audit.log(
       userId,
       AuditAction.LOAN_SERVICING_CONFIGURED,
@@ -276,6 +303,16 @@ export class DashboardRepaymentService {
         finalPrincipalAmount: dto.finalPrincipalAmount,
         gracePeriodMonths: dto.gracePeriodMonths,
         emiStartDate: dto.emiStartDate,
+        // Disbursement amount override audit trail — the Approver's approved
+        // amount and the actually-disbursed amount are recorded alongside
+        // whatever the Credit Manager finalized, so the original figures are
+        // never lost even after an override.
+        approvedAmount,
+        disbursedAmount,
+        overriddenAmount: dto.finalPrincipalAmount ?? disbursedAmount,
+        amountOverridden,
+        overriddenByUserId: userId,
+        overriddenByName: creditManagerName,
       },
       applicationId,
       AuditCategory.REPAYMENT,
@@ -301,11 +338,19 @@ export class DashboardRepaymentService {
       installmentAmount,
       totalRepayable,
       numberOfInstallments: schedule.length,
+      // The Approver's originally approved figure — preserved for audit even
+      // though it's no longer what the schedule above is computed from once
+      // overridden.
+      approvedAmount,
       // Actual amount confirmed through Disbursement, always visible —
       // principalAmount is what's actually used for the math above, which
       // only differs from it when finalPrincipalAmount overrides it.
       disbursedAmount,
       principalAmount,
+      amountOverridden,
+      overriddenBy: amountOverridden
+        ? { id: userId, name: creditManagerName }
+        : null,
       notification,
     };
   }

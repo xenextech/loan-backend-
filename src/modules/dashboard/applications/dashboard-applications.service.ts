@@ -9,6 +9,7 @@ import {
   PaginationDto,
 } from '../../../common/dto/pagination.dto';
 import { DashboardApplicationsQueryDto } from '../dto/dashboard-applications-query.dto';
+import { resolveFinalPrincipalAmount } from '../../../common/utils/loan-principal.util';
 
 // "My queue" depends on which stage each role acts on next. CREDIT_MANAGER is
 // deliberately absent here — its queue isn't stage-based (it acts after
@@ -245,6 +246,17 @@ export class DashboardApplicationsService {
       application,
       loanAccount: application.loanAccount,
       disbursement: application.disbursement,
+      // One authoritative amount for the whole loan-detail view — the Credit
+      // Manager's finalPrincipalAmount override if set, else the actual
+      // disbursed total, else the Approver-approved credit limit. Mirrors the
+      // exact precedence DashboardRepaymentService.generateSchedule() uses so
+      // this view never disagrees with the repayment schedule it describes.
+      finalDisbursementAmount: resolveFinalPrincipalAmount({
+        finalPrincipalAmount: application.loanAccount?.finalPrincipalAmount,
+        totalDisbursedAmount: application.disbursement?.totalDisbursedAmount,
+        creditLimit: application.creditLimit,
+        loanAmount: application.loanInformation?.loanAmount,
+      }),
       creditScore,
       activity: buildPaginatedResponse(
         activityData,

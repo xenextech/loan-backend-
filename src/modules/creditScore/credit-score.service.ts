@@ -30,7 +30,10 @@ export class CreditScoreService {
   // unrecognized value — several ScoreDto fields (e.g. parentsBorrowingsWithBFIs)
   // are optional on LoanApplication and are frequently unset, so "no matching
   // rule" is an expected case, not an error.
-  private getScore<T extends ScoreRule>(rules: readonly T[], input: ScoreInput) {
+  private getScore<T extends ScoreRule>(
+    rules: readonly T[],
+    input: ScoreInput,
+  ) {
     if (input === null || input === undefined) return null;
 
     const rule = rules.find((r) => {
@@ -64,7 +67,10 @@ export class CreditScoreService {
       request.maxPossibleScore === 0
         ? 0
         : Number(
-            ((request.totalWeightScore / request.maxPossibleScore) * 100).toFixed(2),
+            (
+              (request.totalWeightScore / request.maxPossibleScore) *
+              100
+            ).toFixed(2),
           );
     const { grade, riskCategory } = this.resolveGrade(percentage);
 
@@ -98,11 +104,14 @@ export class CreditScoreService {
       // numbers — converted here so getScore()'s numeric-rule matching
       // actually runs instead of silently falling through to a value-equality
       // check that no creditLimit rule defines.
-      creditLimit: application.creditLimit ? Number(application.creditLimit) : null,
+      creditLimit: application.creditLimit
+        ? Number(application.creditLimit)
+        : null,
       dsgir: application.dsgir,
       operationOfInstitution: application.operationOfInstitution,
       satisfactoryPerformance: application.satisfactoryPerformance,
-      parentsBorrowingsWithBFIs: application.parentsBorrowingsWithBFIs as ParentsBorrowingsWithBFIs | null,
+      parentsBorrowingsWithBFIs:
+        application.parentsBorrowingsWithBFIs as ParentsBorrowingsWithBFIs | null,
       sourceOfIncome: application.sourceOfIncome as SourceOfIncome | null,
     });
 
@@ -161,7 +170,10 @@ export class CreditScoreService {
       if (!rules) continue;
 
       // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-      const score = this.getScore(rules as readonly ScoreRule[], value as ScoreInput);
+      const score = this.getScore(
+        rules as readonly ScoreRule[],
+        value as ScoreInput,
+      );
       if (!score) continue;
 
       // maxPossibleScore accumulates weight × maxPoint (not just weight) so

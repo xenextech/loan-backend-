@@ -39,9 +39,9 @@ describe('CreditScoreService', () => {
   describe('calculateByApplicationId', () => {
     it('throws NotFoundException when the application does not exist', async () => {
       findUniqueMock.mockResolvedValueOnce(null);
-      await expect(
-        service.calculateByApplicationId('missing'),
-      ).rejects.toThrow(NotFoundException);
+      await expect(service.calculateByApplicationId('missing')).rejects.toThrow(
+        NotFoundException,
+      );
     });
 
     it('computes a weighted score when every scoring field is set, including a Decimal creditLimit', async () => {
@@ -51,8 +51,8 @@ describe('CreditScoreService', () => {
       // weightedScore: 6            + 3         + 2          + 1          + 1           + 1      = 14
       // maxPossibleScore: 2×3 + 3×3 + 2×3 + 1×3 + 1×3 + 1×3 = 6+9+6+3+3+3 = 30
       // percentage: 14/30 × 100 = 46.67%
-      expect(result.overall.weight).toBe(30);     // maxPossibleScore
-      expect(result.overall.score).toBe(14);      // totalWeightScore (= Σ weight×point)
+      expect(result.overall.weight).toBe(30); // maxPossibleScore
+      expect(result.overall.score).toBe(14); // totalWeightScore (= Σ weight×point)
       expect(result.overall.percentage).toBe(46.67);
     });
 
@@ -68,7 +68,7 @@ describe('CreditScoreService', () => {
       const result = await service.calculateByApplicationId('app-1');
       // Only creditLimit (above2.5M): weight 2, point 3, maxPoint 3
       // totalWeightScore = 2×3 = 6; maxPossibleScore = 2×3 = 6; percentage = 100%
-      expect(result.overall.weight).toBe(6);       // maxPossibleScore
+      expect(result.overall.weight).toBe(6); // maxPossibleScore
       expect(result.overall.score).toBe(6);
       expect(result.overall.percentage).toBe(100);
     });
@@ -85,7 +85,7 @@ describe('CreditScoreService', () => {
       // totalWeightScore = 6+3+2+1 = 12
       // maxPossibleScore = 2×3 + 3×3 + 2×3 + 1×3 = 6+9+6+3 = 24
       // percentage = 12/24 × 100 = 50%
-      expect(result.overall.weight).toBe(24);   // maxPossibleScore
+      expect(result.overall.weight).toBe(24); // maxPossibleScore
       expect(result.overall.score).toBe(12);
       expect(result.overall.percentage).toBe(50);
     });
@@ -101,7 +101,7 @@ describe('CreditScoreService', () => {
       // totalWeightScore = 6+3+2+1+1 = 13
       // maxPossibleScore = 2×3 + 3×3 + 2×3 + 1×3 + 1×3 = 6+9+6+3+3 = 27
       // percentage = 13/27 × 100 = 48.15%
-      expect(result.overall.weight).toBe(27);   // maxPossibleScore
+      expect(result.overall.weight).toBe(27); // maxPossibleScore
       expect(result.overall.score).toBe(13);
       expect(result.overall.percentage).toBe(48.15);
     });
@@ -128,35 +128,53 @@ describe('CreditScoreService', () => {
     // calculate() is exercised directly here to hit exact percentage
     // boundaries without reverse-engineering weight/point combinations.
     it('grades below 51% as A1 / Low Risk', () => {
-      const result = service.calculate({ maxPossibleScore: 100, totalWeightScore: 50 });
+      const result = service.calculate({
+        maxPossibleScore: 100,
+        totalWeightScore: 50,
+      });
       expect(result.overall.grade).toBe('A1');
       expect(result.overall.riskCategory).toBe('LOW_RISK');
     });
 
     it('treats exactly 51% as A2, not A1 (strict "<" boundary)', () => {
-      const result = service.calculate({ maxPossibleScore: 100, totalWeightScore: 51 });
+      const result = service.calculate({
+        maxPossibleScore: 100,
+        totalWeightScore: 51,
+      });
       expect(result.overall.grade).toBe('A2');
       expect(result.overall.riskCategory).toBe('MODERATE_RISK');
     });
 
     it('treats exactly 61% as A3, not A2', () => {
-      const result = service.calculate({ maxPossibleScore: 100, totalWeightScore: 61 });
+      const result = service.calculate({
+        maxPossibleScore: 100,
+        totalWeightScore: 61,
+      });
       expect(result.overall.grade).toBe('A3');
     });
 
     it('treats exactly 71% as A4, not A3', () => {
-      const result = service.calculate({ maxPossibleScore: 100, totalWeightScore: 71 });
+      const result = service.calculate({
+        maxPossibleScore: 100,
+        totalWeightScore: 71,
+      });
       expect(result.overall.grade).toBe('A4');
     });
 
     it('leaves >= 80% explicitly ungraded (NA / UNGRADED), not a fallback grade', () => {
-      const result = service.calculate({ maxPossibleScore: 100, totalWeightScore: 80 });
+      const result = service.calculate({
+        maxPossibleScore: 100,
+        totalWeightScore: 80,
+      });
       expect(result.overall.grade).toBe('NA');
       expect(result.overall.riskCategory).toBe('UNGRADED');
     });
 
     it('leaves a worst-case 100% score ungraded', () => {
-      const result = service.calculate({ maxPossibleScore: 30, totalWeightScore: 30 });
+      const result = service.calculate({
+        maxPossibleScore: 30,
+        totalWeightScore: 30,
+      });
       expect(result.overall.grade).toBe('NA');
     });
   });
@@ -207,7 +225,7 @@ describe('CreditScoreService', () => {
       // maxPossibleScore = 2×3 + 3×3 + 2×3 + 1×3 + 1×3 + 1×3 = 30
       // percentage = 14/30 × 100 = 46.67% → A1 (Low Risk, < 51%)
       expect(result.overall.score).toBe(14);
-      expect(result.overall.weight).toBe(30);     // maxPossibleScore
+      expect(result.overall.weight).toBe(30); // maxPossibleScore
       expect(result.overall.percentage).toBe(46.67);
       expect(result.overall.grade).toBe('A1');
       expect(result.overall.riskCategory).toBe('LOW_RISK');
