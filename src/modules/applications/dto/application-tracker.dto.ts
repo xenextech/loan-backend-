@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { RepaymentFrequency } from '@prisma/client';
 import { UserRole } from '../../../common/enums';
 
 // One entry per stage in the application lifecycle. New stages can be added
@@ -68,6 +69,121 @@ export class TrackerStageDto {
   reason: string | null;
 }
 
+// ── Repayment section — populated once the Credit Manager has configured
+// loan servicing and the EMI schedule exists (LoanAccount.configuredAt is
+// set). Sourced entirely from DashboardRepaymentService (getRepaymentStatus/
+// getSchedule) and the shared resolveEffectiveLoanTerms() util — no
+// repayment math is recomputed here, only reshaped for the student view.
+
+export class RepaymentLoanSummaryDto {
+  @ApiProperty({
+    example: 1000000,
+    description: 'The Approver-approved amount (loanApplication.creditLimit).',
+  })
+  approvedAmount: number;
+
+  @ApiProperty({
+    example: 950000,
+    description:
+      'The final principal the EMI schedule is computed from — the Credit ' +
+      "Manager's override if one was set, else the actual disbursed " +
+      'amount, else the approved amount.',
+  })
+  finalDisbursementAmount: number;
+
+  @ApiProperty({ example: 12.5 })
+  interestRate: number;
+
+  @ApiProperty({
+    enum: RepaymentFrequency,
+    description:
+      'Interest compounding cadence — the closest tracked concept to ' +
+      '"interest type" in this system. Amortization is always ' +
+      'reducing-balance; flat-rate is not a supported loan type.',
+  })
+  interestFrequency: RepaymentFrequency;
+
+  @ApiProperty({
+    enum: RepaymentFrequency,
+    description: 'EMI/installment payment cadence.',
+  })
+  repaymentFrequency: RepaymentFrequency;
+
+  @ApiProperty({ example: 36 })
+  tenureMonths: number;
+
+  @ApiProperty({ example: 3 })
+  gracePeriodMonths: number;
+
+  @ApiProperty({
+    example: 1080000,
+    description: 'Sum of every EMI amount across the full schedule.',
+  })
+  totalRepayable: number;
+}
+
+export class RepaymentNextPaymentDto {
+  @ApiPropertyOptional({ nullable: true, type: String, format: 'date-time' })
+  dueDate: Date | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  amount: number | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    example: 5,
+    description: 'Negative when the next unpaid installment is overdue.',
+  })
+  daysRemaining: number | null;
+
+  @ApiProperty({
+    example: 'ON_TRACK',
+    description:
+      'One of NOT_CONFIGURED / ON_TRACK / OVERDUE / NEEDS_REVIEW / CLEARED.',
+  })
+  status: string;
+}
+
+export class RepaymentScheduleEntryDto {
+  @ApiProperty() installmentNumber: number;
+  @ApiProperty({ type: String, format: 'date-time' }) dueDate: Date;
+  @ApiProperty() emiAmount: number;
+  @ApiProperty() principalComponent: number;
+  @ApiProperty() interestComponent: number;
+  @ApiProperty() outstandingBalance: number;
+  @ApiProperty({ example: 'UPCOMING' }) status: string;
+}
+
+export class RepaymentProgressDto {
+  @ApiProperty() totalInstallments: number;
+  @ApiProperty() paidInstallments: number;
+  @ApiProperty() remainingInstallments: number;
+  @ApiProperty() outstandingBalance: number;
+  @ApiProperty() totalPaid: number;
+
+  @ApiProperty({
+    description:
+      'Same figure as outstandingBalance (total repayable minus total ' +
+      'paid) — surfaced under both names since there is no separately ' +
+      'tracked "remaining principal" concept in this system.',
+  })
+  totalRemaining: number;
+}
+
+export class RepaymentTrackerDto {
+  @ApiProperty({ type: RepaymentLoanSummaryDto })
+  loanSummary: RepaymentLoanSummaryDto;
+
+  @ApiProperty({ type: RepaymentNextPaymentDto })
+  nextPayment: RepaymentNextPaymentDto;
+
+  @ApiProperty({ type: [RepaymentScheduleEntryDto] })
+  schedule: RepaymentScheduleEntryDto[];
+
+  @ApiProperty({ type: RepaymentProgressDto })
+  progress: RepaymentProgressDto;
+}
+
 export class ApplicationTrackerResponseDto {
   @ApiProperty()
   applicationId: string;
@@ -102,4 +218,13 @@ export class ApplicationTrackerResponseDto {
 
   @ApiProperty({ type: [TrackerStageDto] })
   timeline: TrackerStageDto[];
+
+  @ApiPropertyOptional({
+    type: RepaymentTrackerDto,
+    nullable: true,
+    description:
+      'Populated once the Credit Manager has configured loan servicing and ' +
+      'the EMI schedule has been generated; null before that.',
+  })
+  repayment: RepaymentTrackerDto | null;
 }

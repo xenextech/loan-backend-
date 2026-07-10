@@ -764,7 +764,7 @@ describe('DashboardRepaymentService', () => {
       );
     });
 
-    it('rejects a finalPrincipalAmount override above the Approver-approved credit limit', async () => {
+    it('rejects a finalPrincipalAmount override above the disbursed amount', async () => {
       loanAccountFindUniqueMock.mockResolvedValueOnce({
         applicationId,
         status: 'ACTIVE',
@@ -779,9 +779,48 @@ describe('DashboardRepaymentService', () => {
           finalPrincipalAmount: 600000,
         }),
       ).rejects.toThrow(
-        'Overridden disbursement amount (600000) cannot exceed the Approver-approved amount (500000)',
+        'Overridden disbursement amount (600000) cannot exceed the disbursed amount (500000)',
       );
       expect(loanAccountUpdateMock).not.toHaveBeenCalled();
+    });
+
+    // Regression test: creditLimit is a separate underwriting/credit-scoring
+    // output that isn't reliably populated for every application (can be a
+    // stale placeholder far below the real loan size) — the override cap
+    // must key off the actual disbursed amount, not creditLimit, or a
+    // perfectly valid downward override gets wrongly rejected.
+    it('allows an override below the disbursed amount even when creditLimit is a stale, much smaller placeholder', async () => {
+      const configuredLoanAccount = {
+        applicationId,
+        status: 'ACTIVE',
+        configuredAt: new Date(),
+        finalPrincipalAmount: 50000,
+      };
+      loanAccountFindUniqueMock
+        .mockResolvedValueOnce({ applicationId, status: 'ACTIVE' })
+        .mockResolvedValueOnce({ finalPrincipalAmount: 50000 })
+        .mockResolvedValueOnce(configuredLoanAccount)
+        .mockResolvedValueOnce(configuredLoanAccount);
+      findUniqueMock.mockResolvedValue({
+        ...application,
+        creditLimit: 2,
+        disbursement: { totalDisbursedAmount: 200000 },
+      });
+
+      const result = await service.configureServicing('cm-1', applicationId, {
+        finalPrincipalAmount: 50000,
+      });
+
+      expect(loanAccountUpdateMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            finalPrincipalAmount: 50000,
+          }) as unknown,
+        }),
+      );
+      expect(result.principalAmount).toBe(50000);
+      expect(result.disbursedAmount).toBe(200000);
+      expect(result.approvedAmount).toBe(2);
     });
   });
 

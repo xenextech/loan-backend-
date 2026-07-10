@@ -9,7 +9,7 @@ import { AuditService } from '../../audit/audit.service';
 import { EmiCalculatorService } from '../../utils/emi-calculator.service';
 import { NotificationsService } from '../../notifications/notifications.service';
 import { toEquivalentNominalRate } from '../../../common/utils/interest-rate.util';
-import { resolveFinalPrincipalAmount } from '../../../common/utils/loan-principal.util';
+import { resolveEffectiveLoanTerms } from '../../../common/utils/loan-principal.util';
 import {
   AuditAction,
   AuditCategory,
@@ -86,33 +86,38 @@ export class DashboardRepaymentService {
       where: { applicationId },
     });
 
-    // Principal is the Credit Manager's override if one was set, otherwise
-    // the actual approved *disbursement* amount, not the originally approved
-    // credit limit — the two can differ once tranches are confirmed. Falls
-    // back to the approved credit limit only when nothing has been
-    // disbursed yet.
-    const loanAmount = resolveFinalPrincipalAmount({
+    // Effective terms — principal is the Credit Manager's override if one
+    // was set, otherwise the actual approved *disbursement* amount, not the
+    // originally approved credit limit (the two can differ once tranches
+    // are confirmed), falling back to the approved credit limit only when
+    // nothing has been disbursed yet. Same precedence for rate/tenure/
+    // frequency — see resolveEffectiveLoanTerms() for the shared rule.
+    const {
+      principal: loanAmount,
+      interestRate,
+      tenureMonths,
+      gracePeriodMonths,
+      repaymentFrequency: frequency,
+      interestFrequency,
+    } = resolveEffectiveLoanTerms({
       finalPrincipalAmount: loanAccount?.finalPrincipalAmount,
       totalDisbursedAmount: application.disbursement?.totalDisbursedAmount,
       creditLimit: application.creditLimit,
       loanAmount: application.loanInformation?.loanAmount,
+      finalInterestRate: loanAccount?.finalInterestRate,
+      interestRate: application.interestRate,
+      finalTenureMonths: loanAccount?.finalTenureMonths,
+      period: application.period,
+      periodUnit: application.periodUnit,
+      gracePeriodMonths: loanAccount?.gracePeriodMonths,
+      repaymentFrequency: loanAccount?.repaymentFrequency,
+      interestFrequency: loanAccount?.interestFrequency,
     });
-    const interestRate = Number(
-      loanAccount?.finalInterestRate ?? application.interestRate ?? 0,
-    );
-    const tenureMonths =
-      loanAccount?.finalTenureMonths ??
-      (application.periodUnit === 'YEAR'
-        ? (application.period ?? 0) * 12
-        : (application.period ?? 0));
-    const gracePeriodMonths = loanAccount?.gracePeriodMonths ?? 0;
-    const frequency = loanAccount?.repaymentFrequency ?? 'MONTHLY';
     const { periodMonths, installmentsPerYear } = FREQUENCY_CONFIG[frequency];
 
     // Interest can compound at a different cadence than the borrower pays —
     // defaults to repaymentFrequency (identical to pre-existing behavior)
     // when not explicitly configured.
-    const interestFrequency = loanAccount?.interestFrequency ?? frequency;
     const effectiveInterestRate = toEquivalentNominalRate(
       interestRate,
       FREQUENCY_CONFIG[interestFrequency].installmentsPerYear,
@@ -243,18 +248,23 @@ export class DashboardRepaymentService {
       );
     }
 
-    // The Approver's originally approved figure — the override below may
-    // only revise the principal *downward or to* this ceiling, never past
-    // it, so a Credit Manager can't reintroduce an amount the approval
-    // pipeline never signed off on.
+    // The Approver's originally approved figure — reported alongside the
+    // override for audit purposes (see the response/audit log below). Not
+    // used as the validation ceiling: creditLimit is a separate underwriting
+    // output (from credit scoring) that isn't reliably populated for every
+    // application, unlike the disbursed amount, which is guaranteed > 0 at
+    // this point (checked just above).
     const approvedAmount = Number(application?.creditLimit ?? 0);
+    // The override may only revise the servicing principal *downward or to*
+    // the actual disbursed amount, never past it — a Credit Manager can't
+    // charge repayment on more than what was actually handed to the
+    // borrower.
     if (
       dto.finalPrincipalAmount !== undefined &&
-      approvedAmount > 0 &&
-      dto.finalPrincipalAmount > approvedAmount
+      dto.finalPrincipalAmount > disbursedAmount
     ) {
       throw new BadRequestException(
-        `Overridden disbursement amount (${dto.finalPrincipalAmount}) cannot exceed the Approver-approved amount (${approvedAmount})`,
+        `Overridden disbursement amount (${dto.finalPrincipalAmount}) cannot exceed the disbursed amount (${disbursedAmount})`,
       );
     }
     const amountOverridden =

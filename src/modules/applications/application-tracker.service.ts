@@ -3,10 +3,14 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { RepaymentFrequency } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditAction, ApplicationStage, UserRole } from '../../common/enums';
+import { DashboardRepaymentService } from '../dashboard/repayment/dashboard-repayment.service';
+import { resolveEffectiveLoanTerms } from '../../common/utils/loan-principal.util';
 import {
   ApplicationTrackerResponseDto,
+  RepaymentTrackerDto,
   TrackerOverallStatus,
   TrackerStageDto,
   TrackerStageKey,
@@ -47,13 +51,26 @@ type TrackerApplication = {
   sentBackReason: string | null;
   sentBackAt: Date | null;
   sentBackToStage: ApplicationStage | null;
+  creditLimit: unknown;
+  interestRate: unknown;
+  period: number | null;
+  periodUnit: 'YEAR' | 'MONTH' | null;
   user: { email: string } | null;
   parentVerification: { submittedAt: Date | null } | null;
   collegeVerification: {
     submittedAt: Date | null;
     isApplicationVerified: boolean;
   } | null;
-  loanAccount: { configuredAt: Date | null } | null;
+  loanInformation: { loanAmount: unknown } | null;
+  loanAccount: {
+    configuredAt: Date | null;
+    finalPrincipalAmount: unknown;
+    finalInterestRate: unknown;
+    finalTenureMonths: number | null;
+    gracePeriodMonths: number | null;
+    repaymentFrequency: RepaymentFrequency;
+    interestFrequency: RepaymentFrequency | null;
+  } | null;
   disbursement: {
     totalDisbursedAmount: unknown;
     updatedAt: Date;
@@ -237,7 +254,10 @@ const SUB_PIPELINE_KEYS = [
 
 @Injectable()
 export class ApplicationTrackerService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly dashboardRepaymentService: DashboardRepaymentService,
+  ) {}
 
   async getTracker(
     applicationId: string,
@@ -261,12 +281,27 @@ export class ApplicationTrackerService {
         sentBackReason: true,
         sentBackAt: true,
         sentBackToStage: true,
+        creditLimit: true,
+        interestRate: true,
+        period: true,
+        periodUnit: true,
         user: { select: { email: true } },
         parentVerification: { select: { submittedAt: true } },
         collegeVerification: {
           select: { submittedAt: true, isApplicationVerified: true },
         },
-        loanAccount: { select: { configuredAt: true } },
+        loanInformation: { select: { loanAmount: true } },
+        loanAccount: {
+          select: {
+            configuredAt: true,
+            finalPrincipalAmount: true,
+            finalInterestRate: true,
+            finalTenureMonths: true,
+            gracePeriodMonths: true,
+            repaymentFrequency: true,
+            interestFrequency: true,
+          },
+        },
         disbursement: {
           select: { totalDisbursedAmount: true, updatedAt: true },
         },
@@ -288,10 +323,15 @@ export class ApplicationTrackerService {
       throw new ForbiddenException('Access denied');
     }
 
-    return this.buildTracker(application);
+    const tracker = this.buildTracker(application);
+    const repayment = await this.buildRepaymentSection(application);
+
+    return { ...tracker, repayment };
   }
 
-  private buildTracker(app: TrackerApplication): ApplicationTrackerResponseDto {
+  private buildTracker(
+    app: TrackerApplication,
+  ): Omit<ApplicationTrackerResponseDto, 'repayment'> {
     const resolutions = STAGE_DEFINITIONS.map((def) => def.resolve(app));
 
     // A SENT_BACK application resets the sub-pipeline (Supporter/Credit
@@ -389,6 +429,93 @@ export class ApplicationTrackerService {
       completedStages,
       totalStages,
       timeline,
+    };
+  }
+
+  // ── Repayment section ───────────────────────────────────────────────────
+  // Populated once the Credit Manager has configured servicing (configureAt
+  // set implies the EMI schedule was already generated in the same call —
+  // see DashboardRepaymentService.configureServicing()). Deliberately its
+  // own method, separate from buildTracker()'s synchronous timeline build,
+  // since it needs I/O (DashboardRepaymentService calls) — this is also the
+  // template for future tracker sections (disbursement, insurance,
+  // documents, ...): one buildXSection(app) method, computed alongside
+  // buildTracker() in getTracker()'s Promise.all, merged into the response.
+  private async buildRepaymentSection(
+    app: TrackerApplication,
+  ): Promise<RepaymentTrackerDto | null> {
+    if (!app.loanAccount?.configuredAt) return null;
+
+    const [repaymentStatus, scheduleResult] = await Promise.all([
+      this.dashboardRepaymentService.getRepaymentStatus(app.id),
+      // Internal call, not an HTTP request — the public 100-row browsing
+      // cap on PaginationDto.limit doesn't apply here. A generous limit
+      // fetches this single loan's complete amortization table in one call
+      // (typical tenures are well under 360 installments).
+      this.dashboardRepaymentService.getSchedule(app.id, {
+        page: 1,
+        limit: 1000,
+      }),
+    ]);
+
+    const entries = scheduleResult.data;
+    const nextEntry = entries.find((e) => e.status !== 'PAID') ?? null;
+    const daysRemaining = nextEntry
+      ? Math.ceil(
+          (nextEntry.dueDate.getTime() - Date.now()) / (24 * 60 * 60 * 1000),
+        )
+      : null;
+
+    const terms = resolveEffectiveLoanTerms({
+      finalPrincipalAmount: app.loanAccount.finalPrincipalAmount,
+      totalDisbursedAmount: app.disbursement?.totalDisbursedAmount,
+      creditLimit: app.creditLimit,
+      loanAmount: app.loanInformation?.loanAmount,
+      finalInterestRate: app.loanAccount.finalInterestRate,
+      interestRate: app.interestRate,
+      finalTenureMonths: app.loanAccount.finalTenureMonths,
+      period: app.period,
+      periodUnit: app.periodUnit,
+      gracePeriodMonths: app.loanAccount.gracePeriodMonths,
+      repaymentFrequency: app.loanAccount.repaymentFrequency,
+      interestFrequency: app.loanAccount.interestFrequency,
+    });
+
+    return {
+      loanSummary: {
+        approvedAmount: Number(app.creditLimit ?? 0),
+        finalDisbursementAmount: terms.principal,
+        interestRate: terms.interestRate,
+        interestFrequency: terms.interestFrequency,
+        repaymentFrequency: terms.repaymentFrequency,
+        tenureMonths: terms.tenureMonths,
+        gracePeriodMonths: terms.gracePeriodMonths,
+        totalRepayable: repaymentStatus.totalRepayable,
+      },
+      nextPayment: {
+        dueDate: nextEntry?.dueDate ?? null,
+        amount: nextEntry ? Number(nextEntry.emiAmount) : null,
+        daysRemaining,
+        status: repaymentStatus.repaymentStatus,
+      },
+      schedule: entries.map((e) => ({
+        installmentNumber: e.installmentNumber,
+        dueDate: e.dueDate,
+        emiAmount: Number(e.emiAmount),
+        principalComponent: Number(e.principalComponent),
+        interestComponent: Number(e.interestComponent),
+        outstandingBalance: Number(e.outstandingPrincipal),
+        status: e.status,
+      })),
+      progress: {
+        totalInstallments: repaymentStatus.totalInstallments,
+        paidInstallments: repaymentStatus.paidInstallments,
+        remainingInstallments:
+          repaymentStatus.totalInstallments - repaymentStatus.paidInstallments,
+        outstandingBalance: repaymentStatus.outstandingBalance,
+        totalPaid: repaymentStatus.totalPaid,
+        totalRemaining: repaymentStatus.outstandingBalance,
+      },
     };
   }
 }

@@ -1,6 +1,7 @@
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { ApplicationTrackerService } from './application-tracker.service';
 import { PrismaService } from '../../prisma/prisma.service';
+import { DashboardRepaymentService } from '../dashboard/repayment/dashboard-repayment.service';
 import { AuditAction, ApplicationStage, UserRole } from '../../common/enums';
 import {
   TrackerOverallStatus,
@@ -10,6 +11,8 @@ import {
 
 describe('ApplicationTrackerService', () => {
   let findUniqueMock: jest.Mock;
+  let getRepaymentStatusMock: jest.Mock;
+  let getScheduleMock: jest.Mock;
   let service: ApplicationTrackerService;
 
   // Matches ApplicationTrackerService's `select` shape exactly — a draft,
@@ -29,13 +32,26 @@ describe('ApplicationTrackerService', () => {
     sentBackReason: null as string | null,
     sentBackAt: null as Date | null,
     sentBackToStage: null as ApplicationStage | null,
+    creditLimit: null as number | null,
+    interestRate: null as number | null,
+    period: null as number | null,
+    periodUnit: null as 'YEAR' | 'MONTH' | null,
     user: { email: 'student@unnati.com' },
     parentVerification: null as { submittedAt: Date | null } | null,
     collegeVerification: null as {
       submittedAt: Date | null;
       isApplicationVerified: boolean;
     } | null,
-    loanAccount: null as { configuredAt: Date | null } | null,
+    loanInformation: null as { loanAmount: number | null } | null,
+    loanAccount: null as {
+      configuredAt: Date | null;
+      finalPrincipalAmount?: number | null;
+      finalInterestRate?: number | null;
+      finalTenureMonths?: number | null;
+      gracePeriodMonths?: number | null;
+      repaymentFrequency?: string;
+      interestFrequency?: string | null;
+    } | null,
     disbursement: null as {
       totalDisbursedAmount: number | null;
       updatedAt: Date;
@@ -61,7 +77,42 @@ describe('ApplicationTrackerService', () => {
     const prisma = {
       loanApplication: { findUnique: findUniqueMock },
     } as unknown as PrismaService;
-    service = new ApplicationTrackerService(prisma);
+
+    getRepaymentStatusMock = jest.fn().mockResolvedValue({
+      repaymentStatus: 'ON_TRACK',
+      totalInstallments: 12,
+      paidInstallments: 3,
+      totalPaid: 30000,
+      totalRepayable: 120000,
+      outstandingBalance: 90000,
+    });
+    getScheduleMock = jest.fn().mockResolvedValue({
+      data: [
+        {
+          installmentNumber: 4,
+          dueDate: new Date('2026-07-01'),
+          emiAmount: 10000,
+          principalComponent: 9000,
+          interestComponent: 1000,
+          outstandingPrincipal: 90000,
+          status: 'UPCOMING',
+        },
+      ],
+      meta: {
+        total: 1,
+        page: 1,
+        limit: 1000,
+        totalPages: 1,
+        hasNext: false,
+        hasPrev: false,
+      },
+    });
+    const dashboardRepaymentService = {
+      getRepaymentStatus: getRepaymentStatusMock,
+      getSchedule: getScheduleMock,
+    } as unknown as DashboardRepaymentService;
+
+    service = new ApplicationTrackerService(prisma, dashboardRepaymentService);
   });
 
   function stageStatus(
@@ -113,6 +164,10 @@ describe('ApplicationTrackerService', () => {
     expect(stageStatus(result.timeline, TrackerStageKey.PARENT)).toBe(
       TrackerStageStatus.PENDING,
     );
+    // No LoanAccount yet, so the repayment section stays null — and the
+    // repayment service is never even called for a draft application.
+    expect(result.repayment).toBeNull();
+    expect(getRepaymentStatusMock).not.toHaveBeenCalled();
   });
 
   it('progresses through Parent/College/Initiator once submitted, and awaits the Supporter next', async () => {
@@ -169,7 +224,17 @@ describe('ApplicationTrackerService', () => {
         submittedAt: d('2026-06-01T02:00:00Z'),
         isApplicationVerified: true,
       },
-      loanAccount: { configuredAt: d('2026-06-05T00:00:00Z') },
+      creditLimit: 500000,
+      interestRate: 12,
+      loanAccount: {
+        configuredAt: d('2026-06-05T00:00:00Z'),
+        finalPrincipalAmount: null,
+        finalInterestRate: null,
+        finalTenureMonths: 12,
+        gracePeriodMonths: 0,
+        repaymentFrequency: 'MONTHLY',
+        interestFrequency: null,
+      },
       disbursement: {
         totalDisbursedAmount: 500000,
         updatedAt: d('2026-06-06T00:00:00Z'),
@@ -196,6 +261,51 @@ describe('ApplicationTrackerService', () => {
     expect(result.completedStages).toBe(9);
     expect(result.progressPercentage).toBe(100);
     expect(result.currentStageKey).toBeNull();
+
+    // Repayment section — reused from DashboardRepaymentService, not
+    // recomputed here.
+    expect(getRepaymentStatusMock).toHaveBeenCalledWith('app-1');
+    expect(getScheduleMock).toHaveBeenCalledWith('app-1', {
+      page: 1,
+      limit: 1000,
+    });
+    expect(result.repayment).toEqual({
+      loanSummary: {
+        approvedAmount: 500000,
+        finalDisbursementAmount: 500000,
+        interestRate: 12,
+        interestFrequency: 'MONTHLY',
+        repaymentFrequency: 'MONTHLY',
+        tenureMonths: 12,
+        gracePeriodMonths: 0,
+        totalRepayable: 120000,
+      },
+      nextPayment: {
+        dueDate: d('2026-07-01'),
+        amount: 10000,
+        daysRemaining: expect.any(Number) as number,
+        status: 'ON_TRACK',
+      },
+      schedule: [
+        {
+          installmentNumber: 4,
+          dueDate: d('2026-07-01'),
+          emiAmount: 10000,
+          principalComponent: 9000,
+          interestComponent: 1000,
+          outstandingBalance: 90000,
+          status: 'UPCOMING',
+        },
+      ],
+      progress: {
+        totalInstallments: 12,
+        paidInstallments: 3,
+        remainingInstallments: 9,
+        outstandingBalance: 90000,
+        totalPaid: 30000,
+        totalRemaining: 90000,
+      },
+    });
   });
 
   it('rejection at the Approver stage marks it REJECTED with the reason, halts everything after', async () => {

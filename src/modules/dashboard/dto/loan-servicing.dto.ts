@@ -71,7 +71,7 @@ export class ConfigureLoanServicingDto {
   @ApiPropertyOptional({
     example: 495000,
     description:
-      'Credit Manager override of the final disbursement/principal amount used for servicing math (EMI, total repayable, schedule). Defaults to the actual Disbursement.totalDisbursedAmount — visible in the response as disbursedAmount either way. Must be greater than 0 and cannot exceed the Approver-approved amount (loanApplication.creditLimit) — rejected with 400 otherwise. Only meaningful once at least one tranche has been disbursed. The original approved and disbursed amounts are never overwritten — both remain visible alongside the override for audit purposes.',
+      'Credit Manager override of the final disbursement/principal amount used for servicing math (EMI, total repayable, schedule). Defaults to the actual Disbursement.totalDisbursedAmount — visible in the response as disbursedAmount either way. Must be greater than 0 and cannot exceed the actual disbursed amount — rejected with 400 otherwise. Only meaningful once at least one tranche has been disbursed. The original approved (loanApplication.creditLimit) and disbursed amounts are never overwritten — both remain visible alongside the override for audit purposes.',
   })
   @IsOptional()
   @IsNumber()
