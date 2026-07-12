@@ -27,7 +27,7 @@ async function bootstrap() {
     origin: [
       config.get<string>('app.frontendUrl') ?? 'http://localhost:3000',
       'http://localhost:3000',
-      'https://edu-loan-self.vercel.app',
+      'https://edu-loan-frontend.vercel.app/',
     ],
     credentials: true,
   });
