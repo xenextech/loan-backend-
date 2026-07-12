@@ -61,7 +61,7 @@ $ npm run start:dev
 $ npm run start:prod
 ```
 
-## Run tests
+## Running tests
 
 ```bash
 # unit tests
@@ -85,7 +85,7 @@ $ npm install -g @nestjs/mau
 $ mau deploy
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing the infrastructure.
+With Mau, you can deploy our application in just a few clicks, allowing you to focus on building features rather than managing the infrastructure.
 
 ## Resources
 
