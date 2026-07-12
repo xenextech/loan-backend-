@@ -89,7 +89,7 @@ With Mau, you can deploy your application in just few clicks, allowing you to fo
 
 ## Resources
 
-Check out a few resources that may come in handy when working with NestJS framework:
+Check out a few resources that may come in handy when working with the NestJS framework:
 
 - Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
 - For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
