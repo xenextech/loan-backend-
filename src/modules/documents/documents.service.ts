@@ -21,9 +21,7 @@ import {
   MAX_DOCUMENT_SIZE,
 } from '../storage/storage.constants';
 import {
-  IDENTITY_DOCUMENT_TYPES,
   isIdentityDocumentType,
-  assertIdentityUploadNotConflicting,
   assertIdentitySingleDocumentMimeType,
 } from '../../common/utils/identity-document.util';
 
@@ -36,17 +34,16 @@ const DOCUMENT_CONFIG: Record<
     allowedTypes: ALLOWED_IMAGE_TYPES,
     maxSize: MAX_IMAGE_SIZE,
   },
-  // Front/Back are the "image mode" pair for Citizenship — PDF goes through
-  // IDENTITY_DOCUMENT instead (see identity-document.util.ts), so these two
-  // stay image-only to keep the two upload modes from mixing.
+  // Front and Back slots accept images as well as PDF so users can upload
+  // whichever format they have. Mixing images + PDF is fully supported.
   [DocumentType.IDENTITY_FRONT]: {
     bucket: DOCUMENT_BUCKET,
-    allowedTypes: ALLOWED_IMAGE_TYPES,
+    allowedTypes: ALLOWED_IDENTITY_DOCUMENT_TYPES,
     maxSize: MAX_DOCUMENT_SIZE,
   },
   [DocumentType.IDENTITY_BACK]: {
     bucket: DOCUMENT_BUCKET,
-    allowedTypes: ALLOWED_IMAGE_TYPES,
+    allowedTypes: ALLOWED_IDENTITY_DOCUMENT_TYPES,
     maxSize: MAX_DOCUMENT_SIZE,
   },
   [DocumentType.IDENTITY_DOCUMENT]: {
@@ -140,13 +137,6 @@ export class DocumentsService {
     const config = DOCUMENT_CONFIG[documentType];
 
     if (isIdentityDocumentType(documentType)) {
-      const existingIdentityDocs = await this.prisma.document.findMany({
-        where: { applicationId, documentType: { in: IDENTITY_DOCUMENT_TYPES } },
-      });
-      assertIdentityUploadNotConflicting(
-        documentType,
-        existingIdentityDocs.map((d) => d.documentType),
-      );
       assertIdentitySingleDocumentMimeType(
         application.identityType,
         documentType,

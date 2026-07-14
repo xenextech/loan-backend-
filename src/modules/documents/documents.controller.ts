@@ -43,11 +43,11 @@ export class DocumentsController {
   @ApiOperation({
     summary: 'Upload a document for an application',
     description:
-      'Accepts JPG, JPEG, PNG, WEBP images or a PDF file (application/pdf), depending on documentType. ' +
-      'For identity documents: IDENTITY_FRONT/IDENTITY_BACK are image-only and must be uploaded as a pair ' +
-      '(Citizenship only). IDENTITY_DOCUMENT is a single file — image or PDF for Passport/Driving ' +
-      'License/National ID/PAN Number, but PDF-only when identityType is Citizenship. ' +
-      'IDENTITY_DOCUMENT cannot be combined with IDENTITY_FRONT/IDENTITY_BACK on the same application. ' +
+      'Accepts JPG, JPEG, PNG, WEBP images or a PDF file (application/pdf). ' +
+      'For identity documents: IDENTITY_FRONT and IDENTITY_BACK accept images or PDF. ' +
+      'IDENTITY_DOCUMENT accepts image or PDF and can be used for any identity type. ' +
+      'All three slots (IDENTITY_FRONT, IDENTITY_BACK, IDENTITY_DOCUMENT) can be used ' +
+      'simultaneously — uploading both images and a PDF is supported for all identity types. ' +
       'Initiators may only upload to INITIATOR-sourced applications they created.',
   })
   @ApiParam({ name: 'documentType', enum: DocumentType })
