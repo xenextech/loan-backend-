@@ -68,6 +68,7 @@ export { AuditAction } from '@prisma/client';
 export enum ApplicationLinkType {
   PARENT = 'PARENT',
   COLLEGE = 'COLLEGE',
+  STUDENT_CONSENT = 'STUDENT_CONSENT',
 }
 
 // Re-export Prisma-generated NotificationType so it matches at runtime
@@ -92,6 +93,8 @@ export {
   NrbLoanClassification,
   ParentDocumentType,
   BlacklistStatus,
+  ApprovalEntryStatus,
+  FacilityStatus,
 } from '@prisma/client';
 
 // NRB digital lending cap per borrower (NPR), used by the commission

@@ -18,11 +18,16 @@ import {
   IsMoneyAmount,
   IsPercentage,
 } from '../../../common/decorators/numeric-range.decorators';
-import { BlacklistStatus } from '../../../common/enums';
+import {
+  ApprovalEntryStatus,
+  BlacklistStatus,
+  FacilityStatus,
+} from '../../../common/enums';
 import {
   ParentsBorrowingsWithBFIs,
   SourceOfIncome,
 } from '../../creditScore/enum/credit-score.enum';
+import { RiskCategory } from '../../creditScore/constant/credit-parameters.constant';
 
 export class FamilyMemberDto {
   @ApiPropertyOptional({
@@ -64,6 +69,48 @@ export class FamilyMemberDto {
   @IsOptional()
   @IsString()
   occupationSocialInvolvement?: string;
+}
+
+export class ExistingFacilityDto {
+  @ApiPropertyOptional({
+    description: 'Type of the existing credit facility',
+    example: 'Term Loan',
+  })
+  @IsOptional()
+  @IsString()
+  facilityType?: string;
+
+  @ApiPropertyOptional({
+    description: 'Bank / BFI holding this facility',
+    example: 'Nepal Bank Limited',
+  })
+  @IsOptional()
+  @IsString()
+  bank?: string;
+
+  @ApiPropertyOptional({
+    description: 'Sanctioned limit of the existing facility',
+    example: 2000000,
+  })
+  @IsOptional()
+  @IsMoneyAmount()
+  sanctionedLimit?: number;
+
+  @ApiPropertyOptional({
+    description: 'Current outstanding balance on the existing facility',
+    example: 850000,
+  })
+  @IsOptional()
+  @IsMoneyAmount()
+  outstanding?: number;
+
+  @ApiPropertyOptional({
+    enum: FacilityStatus,
+    description: 'Repayment status of the existing facility',
+  })
+  @IsOptional()
+  @IsEnum(FacilityStatus)
+  status?: FacilityStatus;
 }
 
 export class PersonalGuaranteeDto {
@@ -192,6 +239,100 @@ export class RepaymentCapacityDto {
   @IsOptional()
   @IsPercentage()
   insuranceCoverage?: number;
+}
+
+// ─── Step 9 — Approval Chain ────────────────────────────────────────────────
+// Maps onto the pre-existing per-role Name/Post/Date/Signature columns on
+// LoanApplication (see schema.prisma's "Approval Section") plus the newer
+// per-role Remarks/Status columns — see
+// ApplicationInitiatorService.buildApprovalUpdate() for the flattening.
+
+export class ApprovalEntryDto {
+  @ApiPropertyOptional({
+    description: "This role's signer name, as shown on the approval card",
+    example: 'Ram Prasad Sharma',
+  })
+  @IsOptional()
+  @IsString()
+  approverName?: string;
+
+  @ApiPropertyOptional({
+    enum: ApprovalEntryStatus,
+    description: "This role's own sign-off status within the approval chain",
+  })
+  @IsOptional()
+  @IsEnum(ApprovalEntryStatus)
+  status?: ApprovalEntryStatus;
+
+  @ApiPropertyOptional({
+    description: 'Date this role acted (approved/rejected/etc.)',
+    example: '2026-07-21',
+  })
+  @IsOptional()
+  @IsISO8601()
+  approvedDate?: string;
+
+  @ApiPropertyOptional({
+    description: "This role's remarks on the application",
+    example: 'Documents verified, no discrepancies found.',
+  })
+  @IsOptional()
+  @IsString()
+  remarks?: string;
+
+  @ApiPropertyOptional({
+    description: "This role's digital signature placeholder value",
+    example: 'signed-by-ram-sharma',
+  })
+  @IsOptional()
+  @IsString()
+  signature?: string;
+}
+
+export class InitiatorApprovalEntryDto extends ApprovalEntryDto {
+  @ApiPropertyOptional({
+    description:
+      "The initiator's branch. Stored on the application's top-level branch " +
+      'field, not a per-role column, since only the Initiator collects this.',
+    example: 'Kathmandu Branch',
+  })
+  @IsOptional()
+  @IsString()
+  branchName?: string;
+
+  @ApiPropertyOptional({
+    description: "The initiator's designation/job title",
+    example: 'Branch Manager',
+  })
+  @IsOptional()
+  @IsString()
+  designation?: string;
+}
+
+export class ApprovalChainDto {
+  @ApiPropertyOptional({ type: () => InitiatorApprovalEntryDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => InitiatorApprovalEntryDto)
+  initiator?: InitiatorApprovalEntryDto;
+
+  @ApiPropertyOptional({ type: () => ApprovalEntryDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => ApprovalEntryDto)
+  support?: ApprovalEntryDto;
+
+  @ApiPropertyOptional({ type: () => ApprovalEntryDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => ApprovalEntryDto)
+  checker?: ApprovalEntryDto;
+
+  @ApiPropertyOptional({ type: () => ApprovalEntryDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => ApprovalEntryDto)
+  approver?: ApprovalEntryDto;
 }
 
 export class UpdateInitiatorApplicationDto {
@@ -584,12 +725,16 @@ export class UpdateInitiatorApplicationDto {
   operationOfInstitution?: number;
 
   @ApiPropertyOptional({
-    description: 'Overall credit risk scoring bucket or narrative',
-    example: 'Low Risk Profile',
+    enum: RiskCategory,
+    description:
+      'Overall credit risk scoring bucket — same categories the credit-scoring ' +
+      'engine itself writes here after a score calculation (see ' +
+      'CreditScoreService.saveCreditScoreParameterByApplicationId); manually ' +
+      'setting it here lets the Initiator override that computed value.',
   })
   @IsOptional()
-  @IsString()
-  creditRiskScoring?: string;
+  @IsEnum(RiskCategory)
+  creditRiskScoring?: RiskCategory;
 
   @ApiPropertyOptional({
     description: 'Final determined internal risk grade rating',
@@ -631,6 +776,17 @@ export class UpdateInitiatorApplicationDto {
   @ValidateNested({ each: true })
   @Type(() => FamilyMemberDto)
   familyMembers?: FamilyMemberDto[];
+
+  @ApiPropertyOptional({
+    description:
+      'Other credit facilities held at other banks/BFIs. Sending this array replaces the existing set entirely.',
+    type: () => [ExistingFacilityDto],
+  })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ExistingFacilityDto)
+  existingFacilities?: ExistingFacilityDto[];
 
   @ApiPropertyOptional({
     description: 'Type of banking credit facility requested',
@@ -894,4 +1050,18 @@ export class UpdateInitiatorApplicationDto {
   @IsOptional()
   @IsString()
   conclusionAndRecommendation?: string;
+
+  // =========================
+  // 9. Approval Chain
+  // =========================
+
+  @ApiPropertyOptional({
+    description:
+      'Sequential Initiator -> Support -> Checker -> Approver sign-off chain for Step 9 of the assessment wizard.',
+    type: () => ApprovalChainDto,
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => ApprovalChainDto)
+  approval?: ApprovalChainDto;
 }

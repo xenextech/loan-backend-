@@ -515,4 +515,51 @@ export class ApplicationsService {
     await this.prisma.loanApplication.delete({ where: { id } });
     return { message: 'Draft application deleted' };
   }
+
+  // ── Student consent (Approver-authored terms, consented to from the
+  // student's own logged-in dashboard — no anonymous link involved) ─────────
+  private async assertOwnedByUser(id: string, userId: string) {
+    const application = await this.prisma.loanApplication.findUnique({
+      where: { id },
+    });
+    if (!application) throw new NotFoundException('Application not found');
+    if (application.userId !== userId) {
+      throw new ForbiddenException('Access denied');
+    }
+    return application;
+  }
+
+  async getMyConsent(id: string, userId: string) {
+    await this.assertOwnedByUser(id, userId);
+    return this.prisma.studentConsent.findUnique({
+      where: { applicationId: id },
+    });
+  }
+
+  async acceptMyConsent(id: string, userId: string, ip?: string) {
+    const application = await this.assertOwnedByUser(id, userId);
+
+    const existing = await this.prisma.studentConsent.findUnique({
+      where: { applicationId: id },
+    });
+    if (!existing) {
+      throw new NotFoundException(
+        'No terms & conditions have been sent for this application yet.',
+      );
+    }
+
+    const consent = await this.prisma.studentConsent.update({
+      where: { applicationId: id },
+      data: { consentedAt: new Date(), consentedIp: ip ?? null },
+    });
+
+    await this.audit.log(
+      userId,
+      AuditAction.STUDENT_CONSENT_ACCEPTED,
+      { applicationNumber: application.applicationNumber },
+      id,
+    );
+
+    return consent;
+  }
 }

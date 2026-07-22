@@ -29,6 +29,11 @@ export class Step1Dto {
   @Matches(/^(\+977)?[0-9]{10}$/, { message: 'Invalid phone number' })
   phoneNumber?: string;
 
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  collegeName?: string;
+  
   // Study Information
   @ApiPropertyOptional({ enum: StudyType })
   @IsOptional()

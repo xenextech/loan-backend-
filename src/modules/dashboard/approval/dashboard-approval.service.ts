@@ -3,6 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { AuditService } from '../../audit/audit.service';
 import { CreditScoreService } from '../../creditScore/credit-score.service';
@@ -11,6 +12,8 @@ import {
   AuditAction,
   AuditCategory,
   ApplicationStage,
+  ApprovalEntryStatus,
+  UserRole,
 } from '../../../common/enums';
 import { generateLoanAccountNumber } from '../../../common/utils/loan-account-number.util';
 import {
@@ -22,6 +25,7 @@ import {
   RejectApplicationDto,
   SendBackApplicationDto,
   PepScreeningDto,
+  SendStudentConsentDto,
 } from '../dto/approval-transition.dto';
 
 // Valid predecessor stage(s) for each transition — null means "no prior
@@ -42,6 +46,7 @@ export class DashboardApprovalService {
     private readonly creditScore: CreditScoreService,
     private readonly audit: AuditService,
     private readonly notifications: NotificationsService,
+    private readonly config: ConfigService,
   ) {}
 
   private async getApplicationOrThrow(applicationId: string) {
@@ -70,10 +75,31 @@ export class DashboardApprovalService {
   private async resolveActingUser(userId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true, fullName: true, email: true },
+      select: { id: true, fullName: true, email: true, role: true },
     });
     if (!user) throw new NotFoundException('User not found');
-    return { id: user.id, name: user.fullName ?? user.email };
+    return { id: user.id, name: user.fullName ?? user.email, role: user.role };
+  }
+
+  // reject()/sendBack() are shared across multiple roles (see their @Roles
+  // lists), so — unlike support()/check()/approve(), which each belong to
+  // exactly one role — the *Status column they stamp depends on who's
+  // actually acting. CREDIT_MANAGER reuses the checker* columns, same as
+  // everywhere else in this system (see schema.prisma's "Approval Section").
+  private approvalStatusColumnForRole(
+    role: UserRole,
+  ): 'supporterStatus' | 'checkerStatus' | 'approverStatus' | null {
+    switch (role) {
+      case UserRole.SUPPORTER:
+        return 'supporterStatus';
+      case UserRole.CHECKER:
+      case UserRole.CREDIT_MANAGER:
+        return 'checkerStatus';
+      case UserRole.APPROVER:
+        return 'approverStatus';
+      default:
+        return null;
+    }
   }
 
   // Shapes a stage's stored user/name/date columns into the
@@ -99,6 +125,7 @@ export class DashboardApprovalService {
         supporterUserId: actor.id,
         supporterName: actor.name,
         supporterDate: new Date(),
+        supporterStatus: ApprovalEntryStatus.APPROVED,
       },
     });
 
@@ -124,6 +151,7 @@ export class DashboardApprovalService {
         checkerUserId: actor.id,
         checkerName: actor.name,
         checkerDate: new Date(),
+        checkerStatus: ApprovalEntryStatus.APPROVED,
       },
     });
 
@@ -150,6 +178,7 @@ export class DashboardApprovalService {
           approverUserId: actor.id,
           approverName: actor.name,
           approverDate: new Date(),
+          approverStatus: ApprovalEntryStatus.APPROVED,
         },
       }),
       this.prisma.loanAccount.create({
@@ -186,6 +215,8 @@ export class DashboardApprovalService {
     dto: RejectApplicationDto,
   ) {
     await this.getApplicationOrThrow(applicationId);
+    const actor = await this.resolveActingUser(userId);
+    const statusColumn = this.approvalStatusColumnForRole(actor.role);
 
     const updated = await this.prisma.loanApplication.update({
       where: { id: applicationId },
@@ -194,6 +225,7 @@ export class DashboardApprovalService {
         rejectionReason: dto.reason,
         rejectedAt: new Date(),
         rejectedByUserId: userId,
+        ...(statusColumn && { [statusColumn]: ApprovalEntryStatus.REJECTED }),
       },
     });
 
@@ -214,6 +246,8 @@ export class DashboardApprovalService {
     dto: SendBackApplicationDto,
   ) {
     await this.getApplicationOrThrow(applicationId);
+    const actor = await this.resolveActingUser(userId);
+    const statusColumn = this.approvalStatusColumnForRole(actor.role);
     const toStage = dto.toStage ?? ApplicationStage.INITIATED;
 
     const updated = await this.prisma.loanApplication.update({
@@ -224,6 +258,9 @@ export class DashboardApprovalService {
         sentBackAt: new Date(),
         sentBackByUserId: userId,
         sentBackToStage: toStage,
+        ...(statusColumn && {
+          [statusColumn]: ApprovalEntryStatus.SENT_BACK,
+        }),
       },
     });
 
@@ -262,6 +299,77 @@ export class DashboardApprovalService {
       AuditCategory.APPROVAL,
     );
     return updated;
+  }
+
+  async getStudentConsent(applicationId: string) {
+    return this.prisma.studentConsent.findUnique({
+      where: { applicationId },
+    });
+  }
+
+  // Notifies the student that new terms are waiting, but does NOT grant
+  // consent power via the link itself — consent can only be recorded once
+  // the student is logged into their own account and it's their own
+  // application (see ApplicationsController's student-facing consent
+  // endpoints), so identity is backed by the same login every other
+  // authenticated action in this app relies on, not by "whoever has the link."
+  async sendStudentConsent(
+    userId: string,
+    applicationId: string,
+    dto: SendStudentConsentDto,
+  ) {
+    const application = await this.getApplicationOrThrow(applicationId);
+    if (!application.email) {
+      throw new BadRequestException(
+        'This application has no student email on file to send the consent request to.',
+      );
+    }
+    // Consent can only be recorded from the student's own logged-in
+    // dashboard, which requires a real account — applications with no
+    // student user (e.g. some Initiator-created ones) can't use this.
+    if (!application.userId) {
+      throw new BadRequestException(
+        'This application has no student account associated with it — consent cannot be requested.',
+      );
+    }
+
+    const consent = await this.prisma.studentConsent.upsert({
+      where: { applicationId },
+      create: {
+        applicationId,
+        termsText: dto.termsText,
+        createdByUserId: userId,
+      },
+      update: {
+        termsText: dto.termsText,
+        createdByUserId: userId,
+        // A freshly (re)sent consent must be re-accepted, even if the
+        // student had already consented to an earlier version of the terms.
+        consentedAt: null,
+        consentedIp: null,
+      },
+    });
+
+    const frontendUrl = this.config.get<string>('app.frontendUrl');
+    const consentLink = `${frontendUrl}/dashboard/applications/${applicationId}`;
+
+    await this.notifications.notifyStudentConsentRequested(
+      application.userId,
+      applicationId,
+      application.applicationNumber ?? '',
+      application.email,
+      consentLink,
+    );
+
+    await this.audit.log(
+      userId,
+      AuditAction.STUDENT_CONSENT_SENT,
+      { applicationNumber: application.applicationNumber },
+      applicationId,
+      AuditCategory.APPROVAL,
+    );
+
+    return { ...consent, consentLink };
   }
 
   async getSummary(applicationId: string) {
@@ -384,7 +492,7 @@ export class DashboardApprovalService {
         take,
         skip,
         orderBy: { createdAt: 'desc' },
-        include: { user: { select: { id: true, email: true, role: true } } },
+        include: { user: { select: { id: true, fullName: true, email: true, role: true } } },
       }),
       this.prisma.auditLog.count({ where: { applicationId } }),
     ]);

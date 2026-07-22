@@ -445,6 +445,42 @@ export class NotificationsService {
     );
   }
 
+  async sendStudentConsentLink(
+    email: string,
+    applicationNumber: string,
+    consentLink: string,
+  ) {
+    await this.sendEmail(
+      email,
+      `Action required: Review and consent to terms for application ${applicationNumber}`,
+      `
+      <h2>Education Loan — Terms &amp; Conditions Consent</h2>
+      <p>The Approver reviewing your education loan application <strong>${applicationNumber}</strong> has sent you terms &amp; conditions that require your consent before your application can proceed.</p>
+      <p>Please log in to your account and open your application to review and consent:</p>
+      <a href="${consentLink}" style="background:#4F46E5;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;display:inline-block;">Log In &amp; Review</a>
+      <p style="margin-top:16px;font-size:13px;color:#6B7280;">You'll need to sign in to your Unnati account to consent — this protects your application from anyone else acting on your behalf. If you were not expecting this email, you can safely ignore it.</p>
+      <p>Thank you,<br/>Unnati Loan Team</p>
+    `,
+    );
+  }
+
+  // Also persists an in-app Notification (not just email) so the student
+  // finds out even if they never open/see that email — it shows up next
+  // time they check /dashboard/notifications regardless of channel.
+  async notifyStudentConsentRequested(
+    userId: string,
+    applicationId: string,
+    applicationNumber: string,
+    email: string,
+    consentLink: string,
+  ) {
+    const title = 'Terms & Conditions Consent Required';
+    const message = `Your Approver has sent terms & conditions for application ${applicationNumber} that require your consent before it can proceed. Open the application to review and consent.`;
+
+    await this.createDatabaseNotification(userId, title, message, applicationId);
+    await this.sendStudentConsentLink(email, applicationNumber, consentLink);
+  }
+
   private async sendEmail(to: string, subject: string, html: string) {
     try {
       await this.transporter.sendMail({

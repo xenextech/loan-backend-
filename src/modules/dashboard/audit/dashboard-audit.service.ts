@@ -44,7 +44,7 @@ export class DashboardAuditService {
         skip,
         orderBy: { createdAt: 'desc' },
         include: {
-          user: { select: { id: true, email: true, role: true } },
+          user: { select: { id: true, fullName: true, email: true, role: true } },
         },
       }),
       this.prisma.auditLog.count({ where }),
@@ -74,7 +74,7 @@ export class DashboardAuditService {
     const logs = await this.prisma.auditLog.findMany({
       where,
       orderBy: { createdAt: 'desc' },
-      include: { user: { select: { email: true, role: true } } },
+      include: { user: { select: { fullName: true, email: true, role: true } } },
     });
 
     const header = [
@@ -90,7 +90,7 @@ export class DashboardAuditService {
     const rows = logs.map((l) => {
       const fields = [
         l.createdAt.toISOString(),
-        l.user?.email ?? '',
+        l.user?.fullName || l.user?.email || '',
         l.user?.role ?? '',
         l.category,
         l.action,
