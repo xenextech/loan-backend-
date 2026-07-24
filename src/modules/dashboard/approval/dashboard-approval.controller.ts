@@ -21,6 +21,7 @@ import {
   RejectApplicationDto,
   SendBackApplicationDto,
   PepScreeningDto,
+  SendStudentConsentDto,
 } from '../dto/approval-transition.dto';
 
 @ApiTags('Dashboard: Approval Workflow')
@@ -64,6 +65,19 @@ export class DashboardApprovalController {
     @Query() query: PaginationDto,
   ) {
     return this.dashboardApprovalService.getActivity(applicationId, query);
+  }
+
+  @Post('resubmit')
+  @Roles(UserRole.INITIATOR)
+  @ApiOperation({
+    summary:
+      'Initiator resubmits after corrections following a send-back that targeted them — advances to CHECKING directly if the Approver sent it back (skipping Supporter/Checker re-review), otherwise to SUPPORTED as usual.',
+  })
+  resubmit(
+    @CurrentUser() user: JwtPayload,
+    @Param('applicationId') applicationId: string,
+  ) {
+    return this.dashboardApprovalService.resubmit(user.sub, applicationId);
   }
 
   @Post('support')
@@ -128,6 +142,33 @@ export class DashboardApprovalController {
     @Body() dto: SendBackApplicationDto,
   ) {
     return this.dashboardApprovalService.sendBack(user.sub, applicationId, dto);
+  }
+
+  @Get('student-consent')
+  @ApiOperation({
+    summary:
+      "Get the current student consent status for this application — null if the Approver hasn't sent one yet",
+  })
+  getStudentConsent(@Param('applicationId') applicationId: string) {
+    return this.dashboardApprovalService.getStudentConsent(applicationId);
+  }
+
+  @Post('student-consent')
+  @Roles(UserRole.APPROVER)
+  @ApiOperation({
+    summary:
+      'Send custom terms & conditions to the student via a magic link for their consent',
+  })
+  sendStudentConsent(
+    @CurrentUser() user: JwtPayload,
+    @Param('applicationId') applicationId: string,
+    @Body() dto: SendStudentConsentDto,
+  ) {
+    return this.dashboardApprovalService.sendStudentConsent(
+      user.sub,
+      applicationId,
+      dto,
+    );
   }
 
   @Post('pep-screening')

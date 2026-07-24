@@ -36,11 +36,16 @@ export class AuthService {
     const passwordHash = await bcrypt.hash(dto.password, 12);
     const emailVerifyToken = randomBytes(32).toString('hex');
     const emailVerifyExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24h
+    const firstName = dto.firstName.trim();
+    const lastName = dto.lastName.trim();
 
     const user = await this.prisma.user.create({
       data: {
         email: dto.email,
         passwordHash,
+        firstName,
+        lastName,
+        fullName: `${firstName} ${lastName}`.trim(),
         emailVerifyToken,
         emailVerifyExpiry,
       },
@@ -84,6 +89,8 @@ export class AuthService {
         email: user.email,
         role: user.role,
         fullName: user.fullName,
+        firstName: user.firstName,
+        lastName: user.lastName,
       },
     };
   }
@@ -172,6 +179,8 @@ export class AuthService {
         id: true,
         email: true,
         fullName: true,
+        firstName: true,
+        lastName: true,
         role: true,
         isEmailVerified: true,
         createdAt: true,

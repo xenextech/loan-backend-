@@ -18,7 +18,10 @@ import {
   buildPaginatedResponse,
 } from '../../common/dto/pagination.dto';
 import { CreateInitiatorApplicationDto } from './dto/create-initiator-application.dto';
-import { UpdateInitiatorApplicationDto } from './dto/update-initiator-application.dto';
+import {
+  ApprovalChainDto,
+  UpdateInitiatorApplicationDto,
+} from './dto/update-initiator-application.dto';
 import { CreateInitiatorNewApplicationDto } from './dto/create-initiator-new-application.dto';
 import { QueryCollegeVerifiedDto } from './dto/query-college-verified.dto';
 
@@ -118,6 +121,56 @@ export class ApplicationInitiatorService {
     };
   }
 
+  // Flattens the Step 9 approval chain's nested { initiator, support, checker,
+  // approver } shape onto LoanApplication's per-role columns (initiatorName/
+  // initiatorPost/..., supporterName/..., etc. — see schema.prisma's
+  // "Approval Section"). Only the Initiator's entry carries branchName —
+  // written to the application's single top-level `branch` field, since that
+  // column represents the application's branch as a whole, not one role's.
+  private buildApprovalUpdate(approval?: ApprovalChainDto) {
+    if (!approval) return {};
+    const { initiator, support, checker, approver } = approval;
+
+    const entryFields = (
+      entry: (typeof approval)['support'],
+      prefix: 'initiator' | 'supporter' | 'checker' | 'approver',
+    ) => {
+      if (!entry) return {};
+      return {
+        ...(entry.approverName !== undefined && {
+          [`${prefix}Name`]: entry.approverName,
+        }),
+        ...(entry.status !== undefined && {
+          [`${prefix}Status`]: entry.status,
+        }),
+        ...(entry.approvedDate !== undefined && {
+          [`${prefix}Date`]: entry.approvedDate
+            ? new Date(entry.approvedDate)
+            : null,
+        }),
+        ...(entry.remarks !== undefined && {
+          [`${prefix}Remarks`]: entry.remarks,
+        }),
+        ...(entry.signature !== undefined && {
+          [`${prefix}Signature`]: entry.signature,
+        }),
+      };
+    };
+
+    return {
+      ...entryFields(initiator, 'initiator'),
+      ...(initiator?.designation !== undefined && {
+        initiatorPost: initiator.designation,
+      }),
+      ...(initiator?.branchName !== undefined && {
+        branch: initiator.branchName,
+      }),
+      ...entryFields(support, 'supporter'),
+      ...entryFields(checker, 'checker'),
+      ...entryFields(approver, 'approver'),
+    };
+  }
+
   // ── Combined initiator sections, merged directly onto LoanApplication ──────
 
   async getInitiatorApplication(applicationId: string) {
@@ -138,11 +191,15 @@ export class ApplicationInitiatorService {
         loanInformation: true,
         documents: true,
         familyMember: true,
+        existingFacility: true,
         personalGuarantee: true,
         insurance: true,
         repaymentCapacity: true,
         collegeVerification: true,
-        parentVerification: true,
+        // Includes the parent's NID/PAN/salary-sheet uploads (ParentDocument,
+        // supports multiple labeled files) alongside the verification form
+        // itself — the legacy salarySheetPublicUrl only ever covered one file.
+        parentVerification: { include: { documents: true } },
       },
     });
     if (!application) throw new NotFoundException('Application not found');
@@ -414,6 +471,7 @@ export class ApplicationInitiatorService {
 
     const {
       familyMembers,
+      existingFacilities,
       personalGuarantee,
       insuredAssets,
       valueOfAssets,
@@ -425,8 +483,11 @@ export class ApplicationInitiatorService {
       blacklistReason,
       blacklistDate,
       blacklistReferenceNumber,
+      approval,
       ...rest
     } = dto;
+
+    const approvalUpdate = this.buildApprovalUpdate(approval);
 
     const insurance = {
       insuredAssets,
@@ -452,10 +513,17 @@ export class ApplicationInitiatorService {
       data: {
         ...rest,
         ...blacklistUpdate,
+        ...approvalUpdate,
         ...(familyMembers && {
           familyMember: {
             deleteMany: {},
             create: familyMembers,
+          },
+        }),
+        ...(existingFacilities && {
+          existingFacility: {
+            deleteMany: {},
+            create: existingFacilities,
           },
         }),
         ...(personalGuarantee && {

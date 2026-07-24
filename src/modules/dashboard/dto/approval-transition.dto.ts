@@ -25,6 +25,17 @@ export class SendBackApplicationDto {
   toStage?: ApplicationStage;
 }
 
+export class SendStudentConsentDto {
+  @ApiProperty({
+    description:
+      'Custom terms & conditions text the Approver is sending to the student for consent',
+    example:
+      'By proceeding, you agree that disbursement is contingent on submission of the signed loan agreement within 7 days of approval...',
+  })
+  @IsString()
+  termsText!: string;
+}
+
 export class PepScreeningDto {
   @ApiProperty({
     description: 'true if the applicant is a Politically Exposed Person',

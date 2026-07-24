@@ -3,6 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { AuditService } from '../../audit/audit.service';
 import { CreditScoreService } from '../../creditScore/credit-score.service';
@@ -11,6 +12,8 @@ import {
   AuditAction,
   AuditCategory,
   ApplicationStage,
+  ApprovalEntryStatus,
+  UserRole,
 } from '../../../common/enums';
 import { generateLoanAccountNumber } from '../../../common/utils/loan-account-number.util';
 import {
@@ -22,6 +25,7 @@ import {
   RejectApplicationDto,
   SendBackApplicationDto,
   PepScreeningDto,
+  SendStudentConsentDto,
 } from '../dto/approval-transition.dto';
 
 // Valid predecessor stage(s) for each transition — null means "no prior
@@ -42,6 +46,7 @@ export class DashboardApprovalService {
     private readonly creditScore: CreditScoreService,
     private readonly audit: AuditService,
     private readonly notifications: NotificationsService,
+    private readonly config: ConfigService,
   ) {}
 
   private async getApplicationOrThrow(applicationId: string) {
@@ -70,10 +75,31 @@ export class DashboardApprovalService {
   private async resolveActingUser(userId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true, fullName: true, email: true },
+      select: { id: true, fullName: true, email: true, role: true },
     });
     if (!user) throw new NotFoundException('User not found');
-    return { id: user.id, name: user.fullName ?? user.email };
+    return { id: user.id, name: user.fullName ?? user.email, role: user.role };
+  }
+
+  // reject()/sendBack() are shared across multiple roles (see their @Roles
+  // lists), so — unlike support()/check()/approve(), which each belong to
+  // exactly one role — the *Status column they stamp depends on who's
+  // actually acting. CREDIT_MANAGER reuses the checker* columns, same as
+  // everywhere else in this system (see schema.prisma's "Approval Section").
+  private approvalStatusColumnForRole(
+    role: UserRole,
+  ): 'supporterStatus' | 'checkerStatus' | 'approverStatus' | null {
+    switch (role) {
+      case UserRole.SUPPORTER:
+        return 'supporterStatus';
+      case UserRole.CHECKER:
+      case UserRole.CREDIT_MANAGER:
+        return 'checkerStatus';
+      case UserRole.APPROVER:
+        return 'approverStatus';
+      default:
+        return null;
+    }
   }
 
   // Shapes a stage's stored user/name/date columns into the
@@ -87,25 +113,74 @@ export class DashboardApprovalService {
     return { id: userId, name, approvedAt };
   }
 
+  // The Initiator has no formal stage in the approval chain — no
+  // initiator*Status column exists, unlike supporter/checker/approver — so
+  // when a send-back targets them, nothing advances the stage until they
+  // explicitly resubmit. Only reachable while stage is SENT_BACK. Lands on
+  // CHECKING (Approver-actionable) if the Approver themself sent it back
+  // (skipping Supporter/Checker re-review of the same fix), otherwise on
+  // SUPPORTED — the same normal next stage support() itself sets, since the
+  // Initiator isn't a reviewer, just resuming the chain at the Supporter.
+  async resubmit(userId: string, applicationId: string) {
+    const application = await this.getApplicationOrThrow(applicationId);
+    if (
+      application.stage !== ApplicationStage.SENT_BACK ||
+      application.sentBackToStage !== ApplicationStage.INITIATED
+    ) {
+      throw new BadRequestException(
+        'This application was not sent back to the Initiator — nothing to resubmit.',
+      );
+    }
+    const shortcut = application.sentBackByApprover;
+    const nextStage = shortcut
+      ? ApplicationStage.CHECKING
+      : ApplicationStage.SUPPORTED;
+
+    const updated = await this.prisma.loanApplication.update({
+      where: { id: applicationId },
+      data: {
+        stage: nextStage,
+        ...(shortcut && { sentBackByApprover: false }),
+      },
+    });
+
+    await this.audit.log(
+      userId,
+      AuditAction.APPLICATION_RESUBMITTED,
+      { stage: nextStage, skippedToApprover: shortcut },
+      applicationId,
+      AuditCategory.APPROVAL,
+    );
+    return updated;
+  }
+
   async support(userId: string, applicationId: string) {
     const application = await this.getApplicationOrThrow(applicationId);
     this.assertTransitionAllowed('support', application.stage);
     const actor = await this.resolveActingUser(userId);
 
+    // Approver-originated send-back shortcut: skip straight to CHECKING
+    // (Approver-actionable) instead of the normal SUPPORTED stage, so the
+    // Checker doesn't have to re-review something the Approver only sent
+    // back to the Supporter/Initiator for.
+    const shortcut = application.sentBackByApprover;
+
     const updated = await this.prisma.loanApplication.update({
       where: { id: applicationId },
       data: {
-        stage: ApplicationStage.SUPPORTED,
+        stage: shortcut ? ApplicationStage.CHECKING : ApplicationStage.SUPPORTED,
         supporterUserId: actor.id,
         supporterName: actor.name,
         supporterDate: new Date(),
+        supporterStatus: ApprovalEntryStatus.APPROVED,
+        ...(shortcut && { sentBackByApprover: false }),
       },
     });
 
     await this.audit.log(
       userId,
       AuditAction.APPLICATION_SUPPORTED,
-      { stage: ApplicationStage.SUPPORTED },
+      { stage: updated.stage, skippedToApprover: shortcut },
       applicationId,
       AuditCategory.APPROVAL,
     );
@@ -116,6 +191,7 @@ export class DashboardApprovalService {
     const application = await this.getApplicationOrThrow(applicationId);
     this.assertTransitionAllowed('check', application.stage);
     const actor = await this.resolveActingUser(userId);
+    const shortcut = application.sentBackByApprover;
 
     const updated = await this.prisma.loanApplication.update({
       where: { id: applicationId },
@@ -124,6 +200,8 @@ export class DashboardApprovalService {
         checkerUserId: actor.id,
         checkerName: actor.name,
         checkerDate: new Date(),
+        checkerStatus: ApprovalEntryStatus.APPROVED,
+        ...(shortcut && { sentBackByApprover: false }),
       },
     });
 
@@ -150,6 +228,7 @@ export class DashboardApprovalService {
           approverUserId: actor.id,
           approverName: actor.name,
           approverDate: new Date(),
+          approverStatus: ApprovalEntryStatus.APPROVED,
         },
       }),
       this.prisma.loanAccount.create({
@@ -186,6 +265,8 @@ export class DashboardApprovalService {
     dto: RejectApplicationDto,
   ) {
     await this.getApplicationOrThrow(applicationId);
+    const actor = await this.resolveActingUser(userId);
+    const statusColumn = this.approvalStatusColumnForRole(actor.role);
 
     const updated = await this.prisma.loanApplication.update({
       where: { id: applicationId },
@@ -194,6 +275,7 @@ export class DashboardApprovalService {
         rejectionReason: dto.reason,
         rejectedAt: new Date(),
         rejectedByUserId: userId,
+        ...(statusColumn && { [statusColumn]: ApprovalEntryStatus.REJECTED }),
       },
     });
 
@@ -214,7 +296,13 @@ export class DashboardApprovalService {
     dto: SendBackApplicationDto,
   ) {
     await this.getApplicationOrThrow(applicationId);
+    const actor = await this.resolveActingUser(userId);
+    const statusColumn = this.approvalStatusColumnForRole(actor.role);
     const toStage = dto.toStage ?? ApplicationStage.INITIATED;
+    // Only an Approver-originated send-back grants the "skip back to
+    // Approver" shortcut consumed by support()/check() — Supporter/Checker/
+    // Credit Manager send-backs go through the normal hierarchy as before.
+    const sentBackByApprover = actor.role === UserRole.APPROVER;
 
     const updated = await this.prisma.loanApplication.update({
       where: { id: applicationId },
@@ -224,6 +312,10 @@ export class DashboardApprovalService {
         sentBackAt: new Date(),
         sentBackByUserId: userId,
         sentBackToStage: toStage,
+        sentBackByApprover,
+        ...(statusColumn && {
+          [statusColumn]: ApprovalEntryStatus.SENT_BACK,
+        }),
       },
     });
 
@@ -262,6 +354,77 @@ export class DashboardApprovalService {
       AuditCategory.APPROVAL,
     );
     return updated;
+  }
+
+  async getStudentConsent(applicationId: string) {
+    return this.prisma.studentConsent.findUnique({
+      where: { applicationId },
+    });
+  }
+
+  // Notifies the student that new terms are waiting, but does NOT grant
+  // consent power via the link itself — consent can only be recorded once
+  // the student is logged into their own account and it's their own
+  // application (see ApplicationsController's student-facing consent
+  // endpoints), so identity is backed by the same login every other
+  // authenticated action in this app relies on, not by "whoever has the link."
+  async sendStudentConsent(
+    userId: string,
+    applicationId: string,
+    dto: SendStudentConsentDto,
+  ) {
+    const application = await this.getApplicationOrThrow(applicationId);
+    if (!application.email) {
+      throw new BadRequestException(
+        'This application has no student email on file to send the consent request to.',
+      );
+    }
+    // Consent can only be recorded from the student's own logged-in
+    // dashboard, which requires a real account — applications with no
+    // student user (e.g. some Initiator-created ones) can't use this.
+    if (!application.userId) {
+      throw new BadRequestException(
+        'This application has no student account associated with it — consent cannot be requested.',
+      );
+    }
+
+    const consent = await this.prisma.studentConsent.upsert({
+      where: { applicationId },
+      create: {
+        applicationId,
+        termsText: dto.termsText,
+        createdByUserId: userId,
+      },
+      update: {
+        termsText: dto.termsText,
+        createdByUserId: userId,
+        // A freshly (re)sent consent must be re-accepted, even if the
+        // student had already consented to an earlier version of the terms.
+        consentedAt: null,
+        consentedIp: null,
+      },
+    });
+
+    const frontendUrl = this.config.get<string>('app.frontendUrl');
+    const consentLink = `${frontendUrl}/dashboard/applications/${applicationId}`;
+
+    await this.notifications.notifyStudentConsentRequested(
+      application.userId,
+      applicationId,
+      application.applicationNumber ?? '',
+      application.email,
+      consentLink,
+    );
+
+    await this.audit.log(
+      userId,
+      AuditAction.STUDENT_CONSENT_SENT,
+      { applicationNumber: application.applicationNumber },
+      applicationId,
+      AuditCategory.APPROVAL,
+    );
+
+    return { ...consent, consentLink };
   }
 
   async getSummary(applicationId: string) {
@@ -384,7 +547,7 @@ export class DashboardApprovalService {
         take,
         skip,
         orderBy: { createdAt: 'desc' },
-        include: { user: { select: { id: true, email: true, role: true } } },
+        include: { user: { select: { id: true, fullName: true, email: true, role: true } } },
       }),
       this.prisma.auditLog.count({ where: { applicationId } }),
     ]);

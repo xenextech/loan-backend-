@@ -51,6 +51,14 @@ export class DashboardDisbursementService {
           },
           disbursement: { select: { status: true } },
           parentVerification: { select: { bankAccountNumber: true } },
+          generatedAgreements: {
+            where: {
+              agreementType: 'LOAN_AGREEMENT',
+              status: { in: ['SIGNED', 'ACTIVE'] },
+            },
+            select: { id: true },
+            take: 1,
+          },
         },
       }),
       this.prisma.loanApplication.count({ where }),
@@ -70,6 +78,7 @@ export class DashboardDisbursementService {
         conditionsTotal: total,
         status: a.disbursement?.status ?? 'PENDING',
         bankAccountReady: Boolean(a.parentVerification?.bankAccountNumber),
+        legalDocumentReady: a.generatedAgreements.length > 0,
       };
     });
 
@@ -90,6 +99,27 @@ export class DashboardDisbursementService {
     return application;
   }
 
+  // Shared by addCondition/updateCondition/confirm — disbursement conditions
+  // are the Credit Manager's post-legal-document checklist, not a substitute
+  // for the legal document itself, so managing them (and disbursing) only
+  // opens up once a signed Loan Agreement actually exists.
+  private async assertSignedLoanAgreement(applicationId: string) {
+    const signedLoanAgreement = await this.prisma.generatedAgreement.findFirst(
+      {
+        where: {
+          applicationId,
+          agreementType: 'LOAN_AGREEMENT',
+          status: { in: ['SIGNED', 'ACTIVE'] },
+        },
+      },
+    );
+    if (!signedLoanAgreement) {
+      throw new BadRequestException(
+        'A signed Loan Agreement legal document is required before disbursement conditions can be managed — generate and complete signing in the Credit Manager Legal Documents module first.',
+      );
+    }
+  }
+
   async getConditions(applicationId: string) {
     await this.assertApplicationExists(applicationId);
     return this.prisma.disbursementCondition.findMany({
@@ -104,6 +134,7 @@ export class DashboardDisbursementService {
     dto: CreateDisbursementConditionDto,
   ) {
     await this.assertApplicationExists(applicationId);
+    await this.assertSignedLoanAgreement(applicationId);
     const condition = await this.prisma.disbursementCondition.create({
       data: { applicationId, label: dto.label },
     });
@@ -129,6 +160,7 @@ export class DashboardDisbursementService {
     if (!condition || condition.applicationId !== applicationId) {
       throw new NotFoundException('Disbursement condition not found');
     }
+    await this.assertSignedLoanAgreement(applicationId);
 
     const updated = await this.prisma.disbursementCondition.update({
       where: { id: conditionId },
@@ -160,6 +192,18 @@ export class DashboardDisbursementService {
     if (!application.parentVerification?.bankAccountNumber) {
       throw new BadRequestException(
         'Parent bank account not set up — cannot disburse',
+      );
+    }
+
+    await this.assertSignedLoanAgreement(applicationId);
+
+    const conditions = await this.prisma.disbursementCondition.findMany({
+      where: { applicationId },
+    });
+    const pendingConditions = conditions.filter((c) => c.status !== 'DONE');
+    if (pendingConditions.length > 0) {
+      throw new BadRequestException(
+        `${pendingConditions.length} disbursement condition(s) are not yet marked done — complete them before confirming disbursement.`,
       );
     }
 

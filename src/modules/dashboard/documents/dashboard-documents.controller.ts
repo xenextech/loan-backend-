@@ -53,7 +53,10 @@ export class DashboardDocumentsController {
   }
 
   @Get('agreements')
-  @ApiOperation({ summary: 'List generated agreements (paginated)' })
+  @ApiOperation({
+    summary:
+      'List generated legal documents (paginated) — Loan Agreement, Guarantee Deed, Hypothecation, Promissory Note. Pass applicationId to scope to a single application (used by the Credit Manager Legal Documents list and detail views).',
+  })
   listAgreements(@Query() query: GeneratedAgreementQueryDto) {
     return this.dashboardDocumentsService.listAgreements(query);
   }
@@ -61,7 +64,7 @@ export class DashboardDocumentsController {
   @Post('agreements')
   @ApiOperation({
     summary:
-      'Generate an agreement draft, auto-populated from the loan application',
+      'Generate a legal document draft. Student/college/loan/EMI/guarantor fields are auto-populated from the application and its Credit-Manager-configured loan account — only `remarks` (additional clauses/conditions) is user-supplied. Calling again for the same application/type creates a new draft (used for regeneration).',
   })
   createAgreement(
     @CurrentUser() user: JwtPayload,
@@ -71,13 +74,16 @@ export class DashboardDocumentsController {
   }
 
   @Post('agreements/:id/send-to-sign')
-  @ApiOperation({ summary: 'Send a draft agreement to the borrower to sign' })
+  @ApiOperation({ summary: 'Send a draft legal document to the borrower to sign' })
   sendToSign(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
     return this.dashboardDocumentsService.sendToSign(user.sub, id);
   }
 
   @Patch('agreements/:id/mark-signed')
-  @ApiOperation({ summary: 'Mark an agreement as signed' })
+  @ApiOperation({
+    summary:
+      'Mark a legal document as signed. A SIGNED (or ACTIVE) Loan Agreement is required before disbursement can be confirmed.',
+  })
   markSigned(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
     return this.dashboardDocumentsService.markSigned(user.sub, id);
   }

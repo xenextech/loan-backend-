@@ -237,7 +237,7 @@ export class DashboardApplicationsService {
         take,
         skip,
         orderBy: { createdAt: 'desc' },
-        include: { user: { select: { id: true, email: true, role: true } } },
+        include: { user: { select: { id: true, fullName: true, email: true, role: true } } },
       }),
       this.prisma.auditLog.count({ where: { applicationId: id } }),
     ]);

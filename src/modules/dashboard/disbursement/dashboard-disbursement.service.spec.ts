@@ -1,4 +1,4 @@
-import { NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { DashboardDisbursementService } from './dashboard-disbursement.service';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { AuditService } from '../../audit/audit.service';
@@ -39,15 +39,17 @@ describe('DashboardDisbursementService', () => {
   let trancheCreateMock: jest.Mock<unknown, [TrancheCreateCallArgs]>;
   let trancheFindManyMock: jest.Mock;
   let trancheCountMock: jest.Mock;
+  let generatedAgreementFindFirstMock: jest.Mock;
   let auditLogMock: jest.Mock;
   let service: DashboardDisbursementService;
 
   beforeEach(() => {
     loanApplicationFindManyMock = jest.fn().mockResolvedValue([]);
     loanApplicationCountMock = jest.fn().mockResolvedValue(0);
-    loanApplicationFindUniqueMock = jest
-      .fn()
-      .mockResolvedValue({ id: 'app-1' });
+    loanApplicationFindUniqueMock = jest.fn().mockResolvedValue({
+      id: 'app-1',
+      parentVerification: { bankAccountNumber: '1234567890' },
+    });
     conditionFindManyMock = jest.fn().mockResolvedValue([]);
     conditionCreateMock = jest.fn();
     conditionFindUniqueMock = jest.fn().mockResolvedValue(null);
@@ -56,6 +58,9 @@ describe('DashboardDisbursementService', () => {
     trancheCreateMock = jest.fn<unknown, [TrancheCreateCallArgs]>();
     trancheFindManyMock = jest.fn().mockResolvedValue([]);
     trancheCountMock = jest.fn().mockResolvedValue(0);
+    generatedAgreementFindFirstMock = jest
+      .fn()
+      .mockResolvedValue({ id: 'agr-1', status: 'SIGNED' });
     auditLogMock = jest.fn().mockResolvedValue(undefined);
 
     const prisma = {
@@ -76,6 +81,7 @@ describe('DashboardDisbursementService', () => {
         findMany: trancheFindManyMock,
         count: trancheCountMock,
       },
+      generatedAgreement: { findFirst: generatedAgreementFindFirstMock },
     } as unknown as PrismaService;
 
     const audit = { log: auditLogMock } as unknown as AuditService;
@@ -93,6 +99,8 @@ describe('DashboardDisbursementService', () => {
           creditLimit: 710000,
           disbursementConditions: [{ status: 'DONE' }, { status: 'PENDING' }],
           disbursement: null,
+          parentVerification: null,
+          generatedAgreements: [],
         },
       ]);
 
@@ -105,6 +113,8 @@ describe('DashboardDisbursementService', () => {
         conditionsDone: 1,
         conditionsTotal: 2,
         status: 'PENDING',
+        bankAccountReady: false,
+        legalDocumentReady: false,
       });
     });
 
@@ -117,10 +127,14 @@ describe('DashboardDisbursementService', () => {
           creditLimit: 450000,
           disbursementConditions: [],
           disbursement: { status: 'PARTIAL' },
+          parentVerification: { bankAccountNumber: '999' },
+          generatedAgreements: [{ id: 'agr-1' }],
         },
       ]);
       const result = await service.getPending({ page: 1, limit: 20 });
       expect(result.data[0].status).toBe('PARTIAL');
+      expect(result.data[0].bankAccountReady).toBe(true);
+      expect(result.data[0].legalDocumentReady).toBe(true);
     });
   });
 
@@ -148,6 +162,14 @@ describe('DashboardDisbursementService', () => {
         'app-1',
         AuditCategory.DISBURSEMENT,
       );
+    });
+
+    it('rejects when no signed Loan Agreement legal document exists', async () => {
+      generatedAgreementFindFirstMock.mockResolvedValueOnce(null);
+      await expect(
+        service.addCondition('user-1', 'app-1', { label: 'Deed executed' }),
+      ).rejects.toThrow(BadRequestException);
+      expect(conditionCreateMock).not.toHaveBeenCalled();
     });
   });
 
@@ -191,6 +213,20 @@ describe('DashboardDisbursementService', () => {
       const { data } = conditionUpdateMock.mock.calls[0][0];
       expect(data.completedAt).toBeNull();
       expect(data.completedByUserId).toBeNull();
+    });
+
+    it('rejects when no signed Loan Agreement legal document exists', async () => {
+      conditionFindUniqueMock.mockResolvedValueOnce({
+        id: 'cond-1',
+        applicationId: 'app-1',
+      });
+      generatedAgreementFindFirstMock.mockResolvedValueOnce(null);
+      await expect(
+        service.updateCondition('user-1', 'app-1', 'cond-1', {
+          status: DisbursementConditionStatus.DONE,
+        }),
+      ).rejects.toThrow(BadRequestException);
+      expect(conditionUpdateMock).not.toHaveBeenCalled();
     });
   });
 
@@ -252,6 +288,33 @@ describe('DashboardDisbursementService', () => {
       await expect(
         service.confirm('user-1', 'missing', { trancheNumber: 1, amount: 100 }),
       ).rejects.toThrow(NotFoundException);
+      expect(disbursementUpsertMock).not.toHaveBeenCalled();
+    });
+
+    it('rejects disbursement when no signed Loan Agreement legal document exists', async () => {
+      generatedAgreementFindFirstMock.mockResolvedValueOnce(null);
+      await expect(
+        service.confirm('user-1', 'app-1', {
+          trancheNumber: 1,
+          amount: 710000,
+          accountCredited: 'College A/C',
+        }),
+      ).rejects.toThrow(BadRequestException);
+      expect(disbursementUpsertMock).not.toHaveBeenCalled();
+    });
+
+    it('rejects disbursement while any condition is not yet DONE', async () => {
+      conditionFindManyMock.mockResolvedValueOnce([
+        { id: 'cond-1', status: 'DONE' },
+        { id: 'cond-2', status: 'PENDING' },
+      ]);
+      await expect(
+        service.confirm('user-1', 'app-1', {
+          trancheNumber: 1,
+          amount: 710000,
+          accountCredited: 'College A/C',
+        }),
+      ).rejects.toThrow(BadRequestException);
       expect(disbursementUpsertMock).not.toHaveBeenCalled();
     });
   });

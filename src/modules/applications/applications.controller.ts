@@ -7,10 +7,12 @@ import {
   Body,
   Param,
   Query,
+  Req,
   UseGuards,
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
+import type { Request } from 'express';
 import {
   ApiTags,
   ApiOperation,
@@ -140,5 +142,30 @@ export class ApplicationsController {
   @ApiOperation({ summary: 'Delete a draft application' })
   delete(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
     return this.applicationsService.deleteDraft(id, user.sub);
+  }
+
+  @Get(':id/consent')
+  @Roles(UserRole.STUDENT)
+  @ApiOperation({
+    summary:
+      "Get the Approver-authored terms & conditions consent status for this application — null if none has been sent yet. Only the application's own owner can access this.",
+  })
+  getConsent(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
+    return this.applicationsService.getMyConsent(id, user.sub);
+  }
+
+  @Post(':id/consent/accept')
+  @HttpCode(HttpStatus.OK)
+  @Roles(UserRole.STUDENT)
+  @ApiOperation({
+    summary:
+      "Record the logged-in student's consent to the terms sent by the Approver. Requires being signed in as the account that owns this application.",
+  })
+  acceptConsent(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+    @Req() req: Request,
+  ) {
+    return this.applicationsService.acceptMyConsent(id, user.sub, req.ip);
   }
 }
