@@ -725,6 +725,17 @@ export class UpdateInitiatorApplicationDto {
   operationOfInstitution?: number;
 
   @ApiPropertyOptional({
+    description:
+      "Years of the customer's satisfactory performance with the institution — a scoring input (CREDIT_PARAMETERS.satisfactoryPerformance)",
+    example: 2,
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(100, { message: 'satisfactoryPerformance must not exceed 100' })
+  satisfactoryPerformance?: number;
+
+  @ApiPropertyOptional({
     enum: RiskCategory,
     description:
       'Overall credit risk scoring bucket — same categories the credit-scoring ' +

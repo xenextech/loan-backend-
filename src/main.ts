@@ -63,6 +63,7 @@ async function bootstrap() {
     .addTag('Applications', 'Student loan applications')
     .addTag('Documents', 'File uploads & document management')
     .addTag('Admin', 'Admin dashboard & exports')
+    .addTag('Permissions (RBAC)', 'Role & permission management — dynamic sidebar, widgets, and API authorization')
     .addTag('Utils', 'EMI calculator & eligibility checker')
     .addTag('Credit Score', 'Credit score calculation & reporting')
     .build();

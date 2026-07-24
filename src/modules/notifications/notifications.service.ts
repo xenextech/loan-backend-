@@ -64,13 +64,55 @@ export class NotificationsService {
     });
   }
 
-  // ── College document generated (offer letter / agreement / enrollment cert) ─
-  // Fans out a DB notification to every distinct participant of the linked
+  // ── Shared fan-out helper ────────────────────────────────────────────────
+  // Sends one DB notification to every distinct participant of a
   // LoanApplication (student + initiator/supporter/checker/approver staff).
   // Recipients come solely from the application record — never a role-wide
-  // broadcast. Never throws: a notification failure must not block document
-  // generation, so each send is isolated via Promise.allSettled and any
-  // failure is only logged.
+  // broadcast — and de-dupe automatically if e.g. the same user filled two
+  // roles. Never throws: a notification failure must not block whatever
+  // business action triggered it, so each send is isolated via
+  // Promise.allSettled and any failure is only logged.
+  private async fanOutToParticipants(
+    application: {
+      id: string;
+      applicationNumber: string | null;
+      userId: string | null;
+      initiatorUserId: string | null;
+      supporterUserId: string | null;
+      checkerUserId: string | null;
+      approverUserId: string | null;
+    },
+    title: string,
+    message: string,
+  ) {
+    const recipients = [
+      ...new Set(
+        [
+          application.userId,
+          application.initiatorUserId,
+          application.supporterUserId,
+          application.checkerUserId,
+          application.approverUserId,
+        ].filter((id): id is string => !!id),
+      ),
+    ];
+    if (recipients.length === 0) return;
+
+    const results = await Promise.allSettled(
+      recipients.map((userId) =>
+        this.createDatabaseNotification(userId, title, message, application.id),
+      ),
+    );
+    results.forEach((result, i) => {
+      if (result.status === 'rejected') {
+        this.logger.warn(
+          `Failed to notify user ${recipients[i]} about "${title}" for application ${application.id}: ${String(result.reason)}`,
+        );
+      }
+    });
+  }
+
+  // ── College document generated (offer letter / agreement / enrollment cert) ─
   async notifyCollegeDocumentGenerated(params: {
     application: {
       id: string;
@@ -85,34 +127,65 @@ export class NotificationsService {
     collegeName: string;
   }) {
     const { application, documentLabel, collegeName } = params;
-    const recipients = [
-      ...new Set(
-        [
-          application.userId,
-          application.initiatorUserId,
-          application.supporterUserId,
-          application.checkerUserId,
-          application.approverUserId,
-        ].filter((id): id is string => !!id),
-      ),
-    ];
-    if (recipients.length === 0) return;
-
     const title = `${documentLabel} generated`;
     const message = `${collegeName} generated the ${documentLabel} for application ${application.applicationNumber ?? application.id}.`;
+    await this.fanOutToParticipants(application, title, message);
+  }
 
-    const results = await Promise.allSettled(
-      recipients.map((userId) =>
-        this.createDatabaseNotification(userId, title, message, application.id),
-      ),
-    );
-    results.forEach((result, i) => {
-      if (result.status === 'rejected') {
-        this.logger.warn(
-          `Failed to notify user ${recipients[i]} about ${documentLabel} for application ${application.id}: ${String(result.reason)}`,
-        );
-      }
-    });
+  // ── Legal document generated (Credit Manager, dashboard/documents) ─────────
+  async notifyLegalDocumentGenerated(params: {
+    application: {
+      id: string;
+      applicationNumber: string | null;
+      userId: string | null;
+      initiatorUserId: string | null;
+      supporterUserId: string | null;
+      checkerUserId: string | null;
+      approverUserId: string | null;
+    };
+    documentLabel: string;
+    documentNumber: string | null;
+    generatedByName: string;
+  }) {
+    const { application, documentLabel, documentNumber, generatedByName } = params;
+    const title = `${documentLabel} generated`;
+    const message =
+      `${generatedByName} generated the ${documentLabel}` +
+      (documentNumber ? ` (${documentNumber})` : '') +
+      ` for application ${application.applicationNumber ?? application.id}.`;
+    await this.fanOutToParticipants(application, title, message);
+  }
+
+  // ── Legal document sent to sign (student only) ──────────────────────────────
+  // Fired when the Credit Manager moves a document DRAFT -> PENDING_SIGNATURE —
+  // the actual "come to the branch" call-to-action, distinct from
+  // notifyLegalDocumentGenerated's broader staff fan-out above. Student-only:
+  // signing is an in-person action for the borrower, not something staff need
+  // paged for. DB + SMS (not email) since this is a physical-visit prompt the
+  // student needs to see promptly, mirroring notifyLoanFinalized's channel mix.
+  async notifyStudentDocumentReadyToSign(params: {
+    userId?: string | null;
+    applicationId: string;
+    applicationNumber: string | null;
+    fullName?: string | null;
+    phoneNumber?: string | null;
+    documentLabel: string;
+    documentNumber: string | null;
+  }) {
+    const { userId, applicationId, applicationNumber, fullName, phoneNumber, documentLabel, documentNumber } = params;
+    const title = `${documentLabel} ready for signature`;
+    const message =
+      `Dear ${fullName ?? 'borrower'}, your ${documentLabel}` +
+      (documentNumber ? ` (${documentNumber})` : '') +
+      ` for application ${applicationNumber ?? applicationId} is ready for signature. ` +
+      `Please visit the branch to sign it in person to proceed with disbursement.`;
+
+    if (userId) {
+      await this.createDatabaseNotification(userId, title, message, applicationId);
+    }
+    if (phoneNumber) {
+      await this.sendSms(phoneNumber, message);
+    }
   }
 
   // ── Application rejected ───────────────────────────────────────────────────

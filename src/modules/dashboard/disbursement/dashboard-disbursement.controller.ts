@@ -21,6 +21,7 @@ import { RolesGuard } from '../../../common/guards/roles.guard';
 import { Roles } from '../../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import { JwtPayload } from '../../../common/interfaces/jwt-payload.interface';
+import { UserRole } from '../../../common/enums';
 import { DASHBOARD_STAFF_ROLES } from '../dashboard-roles.constant';
 
 @ApiTags('Dashboard: Disbursement')
@@ -48,7 +49,11 @@ export class DashboardDisbursementController {
   }
 
   @Post(':applicationId/conditions')
-  @ApiOperation({ summary: 'Add a disbursement condition' })
+  @Roles(UserRole.CREDIT_MANAGER)
+  @ApiOperation({
+    summary:
+      'Add a disbursement condition. Credit Manager only — the Credit Manager owns disbursement readiness end-to-end (conditions, tranche confirmation) as of the legal-document-gated workflow.',
+  })
   addCondition(
     @CurrentUser() user: JwtPayload,
     @Param('applicationId') applicationId: string,
@@ -62,7 +67,8 @@ export class DashboardDisbursementController {
   }
 
   @Patch(':applicationId/conditions/:conditionId')
-  @ApiOperation({ summary: 'Update a disbursement condition status' })
+  @Roles(UserRole.CREDIT_MANAGER)
+  @ApiOperation({ summary: 'Update a disbursement condition status. Credit Manager only.' })
   updateCondition(
     @CurrentUser() user: JwtPayload,
     @Param('applicationId') applicationId: string,
@@ -78,8 +84,10 @@ export class DashboardDisbursementController {
   }
 
   @Post(':applicationId/confirm')
+  @Roles(UserRole.CREDIT_MANAGER)
   @ApiOperation({
-    summary: 'Confirm a disbursement tranche for an application',
+    summary:
+      'Confirm a disbursement tranche for an application. Credit Manager only — the Approver no longer determines or confirms the disbursement amount. Requires the parent bank account to be set up and a SIGNED (or ACTIVE) Loan Agreement legal document to exist — returns 400 with a validation message otherwise.',
   })
   confirm(
     @CurrentUser() user: JwtPayload,

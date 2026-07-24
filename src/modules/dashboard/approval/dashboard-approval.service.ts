@@ -113,26 +113,74 @@ export class DashboardApprovalService {
     return { id: userId, name, approvedAt };
   }
 
+  // The Initiator has no formal stage in the approval chain — no
+  // initiator*Status column exists, unlike supporter/checker/approver — so
+  // when a send-back targets them, nothing advances the stage until they
+  // explicitly resubmit. Only reachable while stage is SENT_BACK. Lands on
+  // CHECKING (Approver-actionable) if the Approver themself sent it back
+  // (skipping Supporter/Checker re-review of the same fix), otherwise on
+  // SUPPORTED — the same normal next stage support() itself sets, since the
+  // Initiator isn't a reviewer, just resuming the chain at the Supporter.
+  async resubmit(userId: string, applicationId: string) {
+    const application = await this.getApplicationOrThrow(applicationId);
+    if (
+      application.stage !== ApplicationStage.SENT_BACK ||
+      application.sentBackToStage !== ApplicationStage.INITIATED
+    ) {
+      throw new BadRequestException(
+        'This application was not sent back to the Initiator — nothing to resubmit.',
+      );
+    }
+    const shortcut = application.sentBackByApprover;
+    const nextStage = shortcut
+      ? ApplicationStage.CHECKING
+      : ApplicationStage.SUPPORTED;
+
+    const updated = await this.prisma.loanApplication.update({
+      where: { id: applicationId },
+      data: {
+        stage: nextStage,
+        ...(shortcut && { sentBackByApprover: false }),
+      },
+    });
+
+    await this.audit.log(
+      userId,
+      AuditAction.APPLICATION_RESUBMITTED,
+      { stage: nextStage, skippedToApprover: shortcut },
+      applicationId,
+      AuditCategory.APPROVAL,
+    );
+    return updated;
+  }
+
   async support(userId: string, applicationId: string) {
     const application = await this.getApplicationOrThrow(applicationId);
     this.assertTransitionAllowed('support', application.stage);
     const actor = await this.resolveActingUser(userId);
 
+    // Approver-originated send-back shortcut: skip straight to CHECKING
+    // (Approver-actionable) instead of the normal SUPPORTED stage, so the
+    // Checker doesn't have to re-review something the Approver only sent
+    // back to the Supporter/Initiator for.
+    const shortcut = application.sentBackByApprover;
+
     const updated = await this.prisma.loanApplication.update({
       where: { id: applicationId },
       data: {
-        stage: ApplicationStage.SUPPORTED,
+        stage: shortcut ? ApplicationStage.CHECKING : ApplicationStage.SUPPORTED,
         supporterUserId: actor.id,
         supporterName: actor.name,
         supporterDate: new Date(),
         supporterStatus: ApprovalEntryStatus.APPROVED,
+        ...(shortcut && { sentBackByApprover: false }),
       },
     });
 
     await this.audit.log(
       userId,
       AuditAction.APPLICATION_SUPPORTED,
-      { stage: ApplicationStage.SUPPORTED },
+      { stage: updated.stage, skippedToApprover: shortcut },
       applicationId,
       AuditCategory.APPROVAL,
     );
@@ -143,6 +191,7 @@ export class DashboardApprovalService {
     const application = await this.getApplicationOrThrow(applicationId);
     this.assertTransitionAllowed('check', application.stage);
     const actor = await this.resolveActingUser(userId);
+    const shortcut = application.sentBackByApprover;
 
     const updated = await this.prisma.loanApplication.update({
       where: { id: applicationId },
@@ -152,6 +201,7 @@ export class DashboardApprovalService {
         checkerName: actor.name,
         checkerDate: new Date(),
         checkerStatus: ApprovalEntryStatus.APPROVED,
+        ...(shortcut && { sentBackByApprover: false }),
       },
     });
 
@@ -249,6 +299,10 @@ export class DashboardApprovalService {
     const actor = await this.resolveActingUser(userId);
     const statusColumn = this.approvalStatusColumnForRole(actor.role);
     const toStage = dto.toStage ?? ApplicationStage.INITIATED;
+    // Only an Approver-originated send-back grants the "skip back to
+    // Approver" shortcut consumed by support()/check() — Supporter/Checker/
+    // Credit Manager send-backs go through the normal hierarchy as before.
+    const sentBackByApprover = actor.role === UserRole.APPROVER;
 
     const updated = await this.prisma.loanApplication.update({
       where: { id: applicationId },
@@ -258,6 +312,7 @@ export class DashboardApprovalService {
         sentBackAt: new Date(),
         sentBackByUserId: userId,
         sentBackToStage: toStage,
+        sentBackByApprover,
         ...(statusColumn && {
           [statusColumn]: ApprovalEntryStatus.SENT_BACK,
         }),

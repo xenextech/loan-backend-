@@ -24,6 +24,7 @@ import { EnrollmentCertificateModule } from './modules/enrollment-certificate/en
 import { DocumentVaultModule } from './modules/document-vault/document-vault.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { DashboardJobsModule } from './modules/dashboard/jobs/dashboard-jobs.module';
+import { PermissionsModule } from './modules/permissions/permissions.module';
 
 @Module({
   imports: [
@@ -51,6 +52,7 @@ import { DashboardJobsModule } from './modules/dashboard/jobs/dashboard-jobs.mod
     DocumentVaultModule,
     DashboardModule,
     DashboardJobsModule,
+    PermissionsModule,
   ],
 })
 export class AppModule {}

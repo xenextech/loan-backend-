@@ -67,6 +67,19 @@ export class DashboardApprovalController {
     return this.dashboardApprovalService.getActivity(applicationId, query);
   }
 
+  @Post('resubmit')
+  @Roles(UserRole.INITIATOR)
+  @ApiOperation({
+    summary:
+      'Initiator resubmits after corrections following a send-back that targeted them — advances to CHECKING directly if the Approver sent it back (skipping Supporter/Checker re-review), otherwise to SUPPORTED as usual.',
+  })
+  resubmit(
+    @CurrentUser() user: JwtPayload,
+    @Param('applicationId') applicationId: string,
+  ) {
+    return this.dashboardApprovalService.resubmit(user.sub, applicationId);
+  }
+
   @Post('support')
   @Roles(UserRole.SUPPORTER)
   @ApiOperation({

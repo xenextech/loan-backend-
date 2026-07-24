@@ -1,19 +1,27 @@
-import { NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { DashboardApprovalService } from './dashboard-approval.service';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { CreditScoreService } from '../../creditScore/credit-score.service';
+import { AuditService } from '../../audit/audit.service';
+import { NotificationsService } from '../../notifications/notifications.service';
+import { ConfigService } from '@nestjs/config';
 
 describe('DashboardApprovalService', () => {
   let findUniqueMock: jest.Mock;
   let auditFindManyMock: jest.Mock;
   let auditCountMock: jest.Mock;
+  let loanApplicationUpdateMock: jest.Mock;
+  let userFindUniqueMock: jest.Mock;
   let calculateByApplicationIdMock: jest.Mock;
+  let auditLogMock: jest.Mock;
+  let notifyApplicationRejectedMock: jest.Mock;
   let service: DashboardApprovalService;
 
   const baseApplication = {
     id: 'app-1',
     applicationNumber: 'Unnati-2026-00001',
     status: 'SUBMITTED',
+    stage: 'SENT_BACK',
     dsgir: 30,
     loanToValueRatio: 55,
     identityType: 'CITIZENSHIP',
@@ -22,6 +30,7 @@ describe('DashboardApprovalService', () => {
     riskGrade: 'A2',
     securityDetails: 'Land at Ward 3',
     isBlacklisted: false,
+    sentBackByApprover: false,
     personalGuarantee: { ciclStatus: true, ciclRemarks: 'Clear' },
     insurance: { id: 'ins-1' },
   };
@@ -30,20 +39,48 @@ describe('DashboardApprovalService', () => {
     findUniqueMock = jest.fn().mockResolvedValue(baseApplication);
     auditFindManyMock = jest.fn().mockResolvedValue([]);
     auditCountMock = jest.fn().mockResolvedValue(0);
+    loanApplicationUpdateMock = jest.fn().mockImplementation(({ data }) => ({
+      ...baseApplication,
+      ...data,
+    }));
+    userFindUniqueMock = jest.fn().mockResolvedValue({
+      id: 'user-1',
+      fullName: 'Test User',
+      email: 'test@unnati.com',
+      role: 'SUPPORTER',
+    });
     calculateByApplicationIdMock = jest
       .fn()
       .mockResolvedValue({ overall: { score: 80 } });
+    auditLogMock = jest.fn().mockResolvedValue(undefined);
+    notifyApplicationRejectedMock = jest.fn().mockResolvedValue(undefined);
 
     const prisma = {
-      loanApplication: { findUnique: findUniqueMock },
+      loanApplication: {
+        findUnique: findUniqueMock,
+        update: loanApplicationUpdateMock,
+      },
       auditLog: { findMany: auditFindManyMock, count: auditCountMock },
+      user: { findUnique: userFindUniqueMock },
     } as unknown as PrismaService;
 
     const creditScore = {
       calculateByApplicationId: calculateByApplicationIdMock,
     } as unknown as CreditScoreService;
 
-    service = new DashboardApprovalService(prisma, creditScore);
+    const audit = { log: auditLogMock } as unknown as AuditService;
+    const notifications = {
+      notifyApplicationRejected: notifyApplicationRejectedMock,
+    } as unknown as NotificationsService;
+    const config = {} as unknown as ConfigService;
+
+    service = new DashboardApprovalService(
+      prisma,
+      creditScore,
+      audit,
+      notifications,
+      config,
+    );
   });
 
   describe('getSummary', () => {
@@ -214,6 +251,121 @@ describe('DashboardApprovalService', () => {
         service.getActivity('missing', { page: 1, limit: 20 }),
       ).rejects.toThrow(NotFoundException);
       expect(auditFindManyMock).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('sendBack', () => {
+    it('sets sentBackByApprover true only when the acting user is APPROVER', async () => {
+      userFindUniqueMock.mockResolvedValueOnce({
+        id: 'user-approver',
+        fullName: 'Approver One',
+        email: 'approver@unnati.com',
+        role: 'APPROVER',
+      });
+      await service.sendBack('user-approver', 'app-1', {
+        reason: 'Missing collateral doc',
+        toStage: 'SUPPORTED',
+      });
+      const { data } = loanApplicationUpdateMock.mock.calls[0][0];
+      expect(data.sentBackByApprover).toBe(true);
+      expect(data.sentBackToStage).toBe('SUPPORTED');
+    });
+
+    it('sets sentBackByApprover false when a non-Approver role sends it back', async () => {
+      // beforeEach's default actor role is SUPPORTER
+      await service.sendBack('user-1', 'app-1', { reason: 'Needs rework' });
+      const { data } = loanApplicationUpdateMock.mock.calls[0][0];
+      expect(data.sentBackByApprover).toBe(false);
+    });
+  });
+
+  describe('resubmit', () => {
+    it('rejects when the application was not sent back to the Initiator', async () => {
+      findUniqueMock.mockResolvedValueOnce({
+        ...baseApplication,
+        stage: 'SENT_BACK',
+        sentBackToStage: 'CHECKING',
+      });
+      await expect(service.resubmit('user-1', 'app-1')).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(loanApplicationUpdateMock).not.toHaveBeenCalled();
+    });
+
+    it('advances to SUPPORTED when no Approver shortcut is active', async () => {
+      findUniqueMock.mockResolvedValueOnce({
+        ...baseApplication,
+        stage: 'SENT_BACK',
+        sentBackToStage: 'INITIATED',
+        sentBackByApprover: false,
+      });
+      await service.resubmit('user-1', 'app-1');
+      const { data } = loanApplicationUpdateMock.mock.calls[0][0];
+      expect(data.stage).toBe('SUPPORTED');
+      expect(data.sentBackByApprover).toBeUndefined();
+    });
+
+    it('skips straight to CHECKING and consumes the shortcut when the Approver sent it back', async () => {
+      findUniqueMock.mockResolvedValueOnce({
+        ...baseApplication,
+        stage: 'SENT_BACK',
+        sentBackToStage: 'INITIATED',
+        sentBackByApprover: true,
+      });
+      await service.resubmit('user-1', 'app-1');
+      const { data } = loanApplicationUpdateMock.mock.calls[0][0];
+      expect(data.stage).toBe('CHECKING');
+      expect(data.sentBackByApprover).toBe(false);
+    });
+  });
+
+  describe('support', () => {
+    it('advances to SUPPORTED normally when no Approver shortcut is active', async () => {
+      findUniqueMock.mockResolvedValueOnce({
+        ...baseApplication,
+        sentBackByApprover: false,
+      });
+      await service.support('user-1', 'app-1');
+      const { data } = loanApplicationUpdateMock.mock.calls[0][0];
+      expect(data.stage).toBe('SUPPORTED');
+      expect(data.sentBackByApprover).toBeUndefined();
+    });
+
+    it('skips straight to CHECKING and consumes the shortcut when the Approver sent it back', async () => {
+      findUniqueMock.mockResolvedValueOnce({
+        ...baseApplication,
+        sentBackByApprover: true,
+      });
+      await service.support('user-1', 'app-1');
+      const { data } = loanApplicationUpdateMock.mock.calls[0][0];
+      expect(data.stage).toBe('CHECKING');
+      expect(data.sentBackByApprover).toBe(false);
+    });
+  });
+
+  describe('check', () => {
+    it('consumes the shortcut flag when the Approver sent it back, still landing on CHECKING', async () => {
+      findUniqueMock.mockResolvedValueOnce({
+        ...baseApplication,
+        stage: 'SUPPORTED',
+        sentBackByApprover: true,
+      });
+      await service.check('user-1', 'app-1');
+      const { data } = loanApplicationUpdateMock.mock.calls[0][0];
+      expect(data.stage).toBe('CHECKING');
+      expect(data.sentBackByApprover).toBe(false);
+    });
+
+    it('does not touch sentBackByApprover when no shortcut is active', async () => {
+      findUniqueMock.mockResolvedValueOnce({
+        ...baseApplication,
+        stage: 'SUPPORTED',
+        sentBackByApprover: false,
+      });
+      await service.check('user-1', 'app-1');
+      const { data } = loanApplicationUpdateMock.mock.calls[0][0];
+      expect(data.stage).toBe('CHECKING');
+      expect(data.sentBackByApprover).toBeUndefined();
     });
   });
 });

@@ -2,6 +2,7 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { DashboardDocumentsService } from './dashboard-documents.service';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { AuditService } from '../../audit/audit.service';
+import { NotificationsService } from '../../notifications/notifications.service';
 import {
   AuditAction,
   AuditCategory,
@@ -13,6 +14,8 @@ interface AgreementCreateCallArgs {
   data: {
     status: string;
     generatedByUserId: string;
+    generatedByName: string;
+    documentNumber: string;
     templateSnapshot: Record<string, unknown>;
   };
 }
@@ -40,18 +43,35 @@ describe('DashboardDocumentsService', () => {
   let agreementCreateMock: jest.Mock<unknown, [AgreementCreateCallArgs]>;
   let agreementFindUniqueMock: jest.Mock;
   let agreementUpdateMock: jest.Mock<unknown, [AgreementUpdateCallArgs]>;
+  let loanAccountFindUniqueMock: jest.Mock;
+  let emiScheduleFindManyMock: jest.Mock;
+  let userFindUniqueMock: jest.Mock;
   let auditLogMock: jest.Mock;
+  let notifyLegalDocumentGeneratedMock: jest.Mock;
+  let notifyStudentDocumentReadyToSignMock: jest.Mock;
   let service: DashboardDocumentsService;
 
   beforeEach(() => {
     applicationFindUniqueMock = jest.fn().mockResolvedValue({
       id: 'app-1',
+      applicationNumber: 'Unati-2026-00001',
       fullName: 'Bikash Rai',
+      collegeName: 'Kathmandu University',
+      facility: 'Education Loan',
       creditLimit: 637000,
       interestRate: 9.5,
       period: 8,
       periodUnit: 'MONTH',
-      collegeVerification: { applicationId: 'app-1' },
+      userId: 'student-1',
+      initiatorUserId: null,
+      supporterUserId: null,
+      checkerUserId: null,
+      approverUserId: null,
+      studyInformation: { courseName: 'B.Tech' },
+      loanInformation: { loanAmount: 637000 },
+      collegeVerification: { applicationId: 'app-1', collegeName: null },
+      personalGuarantee: null,
+      disbursement: null,
     });
     offerLetterFindFirstMock = jest.fn().mockResolvedValue(null);
     collegeVerificationUpdateMock = jest.fn<
@@ -65,7 +85,14 @@ describe('DashboardDocumentsService', () => {
     agreementCreateMock = jest.fn<unknown, [AgreementCreateCallArgs]>();
     agreementFindUniqueMock = jest.fn().mockResolvedValue(null);
     agreementUpdateMock = jest.fn<unknown, [AgreementUpdateCallArgs]>();
+    loanAccountFindUniqueMock = jest.fn().mockResolvedValue(null);
+    emiScheduleFindManyMock = jest.fn().mockResolvedValue([]);
+    userFindUniqueMock = jest
+      .fn()
+      .mockResolvedValue({ fullName: 'Credit Manager One', email: 'cm@unati.com' });
     auditLogMock = jest.fn().mockResolvedValue(undefined);
+    notifyLegalDocumentGeneratedMock = jest.fn().mockResolvedValue(undefined);
+    notifyStudentDocumentReadyToSignMock = jest.fn().mockResolvedValue(undefined);
 
     const prisma = {
       loanApplication: { findUnique: applicationFindUniqueMock },
@@ -79,11 +106,18 @@ describe('DashboardDocumentsService', () => {
         findUnique: agreementFindUniqueMock,
         update: agreementUpdateMock,
       },
+      loanAccount: { findUnique: loanAccountFindUniqueMock },
+      emiScheduleEntry: { findMany: emiScheduleFindManyMock },
+      user: { findUnique: userFindUniqueMock },
     } as unknown as PrismaService;
 
     const audit = { log: auditLogMock } as unknown as AuditService;
+    const notifications = {
+      notifyLegalDocumentGenerated: notifyLegalDocumentGeneratedMock,
+      notifyStudentDocumentReadyToSign: notifyStudentDocumentReadyToSignMock,
+    } as unknown as NotificationsService;
 
-    service = new DashboardDocumentsService(prisma, audit);
+    service = new DashboardDocumentsService(prisma, audit, notifications);
   });
 
   describe('verifyOfferLetter', () => {
@@ -197,7 +231,7 @@ describe('DashboardDocumentsService', () => {
       ).rejects.toThrow(NotFoundException);
     });
 
-    it('auto-populates the template snapshot from the application and logs the action', async () => {
+    it('auto-populates the template snapshot from the application, logs the action, and notifies participants', async () => {
       agreementCreateMock.mockResolvedValueOnce({ id: 'agr-1' });
 
       await service.createAgreement('user-1', {
@@ -208,18 +242,30 @@ describe('DashboardDocumentsService', () => {
       const { data } = agreementCreateMock.mock.calls[0][0];
       expect(data.status).toBe('DRAFT');
       expect(data.generatedByUserId).toBe('user-1');
+      expect(data.generatedByName).toBe('Credit Manager One');
+      expect(data.documentNumber).toMatch(/^LGL-\d{4}-\d{5}$/);
       expect(data.templateSnapshot).toEqual(
-        expect.objectContaining({ borrower: 'Bikash Rai' }),
+        expect.objectContaining({
+          studentName: 'Bikash Rai',
+          applicationNumber: 'Unati-2026-00001',
+          collegeName: 'Kathmandu University',
+        }),
       );
       expect(auditLogMock).toHaveBeenCalledWith(
         'user-1',
         AuditAction.AGREEMENT_GENERATED,
-        {
+        expect.objectContaining({
           agreementId: 'agr-1',
           agreementType: GeneratedAgreementType.LOAN_AGREEMENT,
-        },
+        }),
         'app-1',
         AuditCategory.SYSTEM,
+      );
+      expect(notifyLegalDocumentGeneratedMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          documentLabel: 'Loan Agreement',
+          generatedByName: 'Credit Manager One',
+        }),
       );
     });
   });
@@ -241,15 +287,29 @@ describe('DashboardDocumentsService', () => {
       );
     });
 
-    it('moves a draft agreement to PENDING_SIGNATURE', async () => {
+    it('moves a draft agreement to PENDING_SIGNATURE and notifies the student', async () => {
       agreementFindUniqueMock.mockResolvedValueOnce({
         id: 'agr-1',
         status: 'DRAFT',
+        applicationId: 'app-1',
+        agreementType: GeneratedAgreementType.LOAN_AGREEMENT,
+        documentNumber: 'LGL-2026-00001',
       });
       await service.sendToSign('user-1', 'agr-1');
+
       const { data } = agreementUpdateMock.mock.calls[0][0];
       expect(data.status).toBe('PENDING_SIGNATURE');
       expect(data.sentToSignAt).toBeInstanceOf(Date);
+
+      expect(notifyStudentDocumentReadyToSignMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: 'student-1',
+          applicationId: 'app-1',
+          applicationNumber: 'Unati-2026-00001',
+          documentLabel: 'Loan Agreement',
+          documentNumber: 'LGL-2026-00001',
+        }),
+      );
     });
   });
 

@@ -145,6 +145,7 @@ enum AuditAction {
   APPLICATION_APPROVED
   APPLICATION_REJECTED
   APPLICATION_SENT_BACK
+  APPLICATION_RESUBMITTED
   LOAN_ACCOUNT_CREATED
   LOAN_CLEARED
   LOAN_SERVICING_CONFIGURED
@@ -474,6 +475,13 @@ model LoanApplication {
   sentBackAt       DateTime?
   sentBackByUserId String?
   sentBackToStage  ApplicationStage?
+  // True only when the Approver themself sent it back (Supporter/Checker/
+  // Credit Manager send-backs never set this). While true, the next
+  // support()/check() call routes the application straight to CHECKING
+  // (Approver-actionable) instead of its normal next stage, skipping
+  // whichever intermediate role(s) sit between the chosen target and the
+  // Approver — consumed (reset to false) the moment that happens.
+  sentBackByApprover Boolean @default(false)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1331,12 +1339,20 @@ model GeneratedAgreement {
   id            String @id @default(cuid())
   applicationId String
 
+  // Human-readable reference (e.g. LGL-2026-00042), shown on the document and
+  // in the Legal Documents list — distinct from the internal cuid id.
+  documentNumber String? @unique
+
   agreementType    GeneratedAgreementType
   status           GeneratedAgreementStatus @default(DRAFT)
   templateSnapshot Json?
   documentUrl      String?
 
   generatedByUserId String
+  // Denormalized snapshot of the generating staff member's display name at
+  // generation time, so the document remains stable even if the user's name
+  // changes later — same convention as templateSnapshot.
+  generatedByName   String?
   sentToSignAt      DateTime?
   signedAt          DateTime?
 
@@ -1422,4 +1438,139 @@ model CommissionEntry {
   @@index([partnerId])
   @@index([month])
   @@map("commission_entries")
+}
+
+// ─── RBAC: Permission Engine ────────────────────────────────────────────────
+// Role identity/authentication stays on the existing `User.role: UserRole`
+// enum (zero risk to JWT/guards) — `Role.code` mirrors those enum values 1:1
+// so this table is the *configuration* surface an Admin manages, without
+// touching how a user is authenticated. Adding a genuinely new role still
+// needs one additive `ALTER TYPE "UserRole" ADD VALUE` migration (Postgres
+// enums are additive-safe) plus a `Role` row — no guard/controller rewrite.
+
+model Role {
+  id          String  @id @default(cuid())
+  /// Mirrors UserRole enum value for system roles (e.g. "CREDIT_MANAGER").
+  /// Free-form for future custom roles once the enum is extended.
+  code        String  @unique
+  name        String
+  description String?
+  /// Seeded/core roles vs. future custom roles — informational only, does
+  /// not itself gate anything.
+  isSystem    Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  rolePermissions RolePermission[]
+  roleMenuItems   RoleMenuItem[]
+  roleWidgets     RoleWidget[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id          String  @id @default(cuid())
+  /// "<module>.<action>", e.g. "applications.create", "repayment.override".
+  key         String  @unique
+  /// Display grouping, e.g. "Applications", "Repayment".
+  module      String
+  action      String
+  description String?
+
+  createdAt DateTime @default(now())
+
+  rolePermissions RolePermission[]
+
+  @@index([module])
+  @@map("permissions")
+}
+
+model RolePermission {
+  id           String @id @default(cuid())
+  roleId       String
+  permissionId String
+
+  createdAt DateTime @default(now())
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permissionId])
+  @@index([permissionId])
+  @@map("role_permissions")
+}
+
+model MenuItem {
+  id    String @id @default(cuid())
+  /// Stable identifier independent of label text, e.g. "document-vault".
+  key   String @unique
+  label String
+  /// Role-relative path (e.g. "/document-vault", "/legal-documents") — the
+  /// frontend prepends useDashboardBasePath() exactly like every existing
+  /// hardcoded NAV_GROUPS array already does, so the same row works for
+  /// every role without per-role duplication.
+  href       String
+  /// Lucide icon component name, resolved client-side via a name→component
+  /// lookup map (icons cannot be serialized).
+  icon       String
+  groupLabel String?
+  order      Int     @default(0)
+  /// True = this route also has an API guarded by PermissionsGuard using
+  /// this same key (see RequireMenuKey()) — informational for the admin UI.
+  isApiGuarded Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  roleMenuItems RoleMenuItem[]
+
+  @@map("menu_items")
+}
+
+model RoleMenuItem {
+  id         String  @id @default(cuid())
+  roleId     String
+  menuItemId String
+  visible    Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  role     Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  menuItem MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, menuItemId])
+  @@index([menuItemId])
+  @@map("role_menu_items")
+}
+
+model DashboardWidget {
+  id          String  @id @default(cuid())
+  key         String  @unique
+  label       String
+  description String?
+
+  createdAt DateTime @default(now())
+
+  roleWidgets RoleWidget[]
+
+  @@map("dashboard_widgets")
+}
+
+model RoleWidget {
+  id        String  @id @default(cuid())
+  roleId    String
+  widgetId  String
+  visible   Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  role   Role            @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  widget DashboardWidget @relation(fields: [widgetId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, widgetId])
+  @@index([widgetId])
+  @@map("role_widgets")
 }
