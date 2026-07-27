@@ -46,8 +46,9 @@ export function assertIdentityDocumentsComplete(
     (d) => d.documentType === DocumentType.IDENTITY_FRONT,
   );
   const hasBack = documents.some(
-    (d) => d.documentType === DocumentType.IDENTITY_DOCUMENT ||
-           d.documentType === DocumentType.IDENTITY_BACK,
+    (d) =>
+      d.documentType === DocumentType.IDENTITY_DOCUMENT ||
+      d.documentType === DocumentType.IDENTITY_BACK,
   );
 
   if (!hasFront && !hasBack) {

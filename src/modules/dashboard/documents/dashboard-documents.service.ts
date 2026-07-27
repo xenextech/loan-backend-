@@ -4,6 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
+import { StorageService } from '../../storage/storage.service';
 import { AuditService } from '../../audit/audit.service';
 import { NotificationsService } from '../../notifications/notifications.service';
 import {
@@ -11,6 +12,12 @@ import {
   AuditCategory,
   GeneratedAgreementType,
 } from '../../../common/enums';
+import {
+  DOCUMENT_BUCKET,
+  ALLOWED_IMAGE_TYPES,
+  ALLOWED_DOCUMENT_TYPES,
+  MAX_DOCUMENT_SIZE,
+} from '../../storage/storage.constants';
 import {
   paginate,
   buildPaginatedResponse,
@@ -21,6 +28,7 @@ import { VerifyOfferLetterDto } from '../dto/offer-letter-verify.dto';
 import { DocumentVaultQueryDto } from '../dto/document-vault-query.dto';
 import {
   CreateGeneratedAgreementDto,
+  ForwardGeneratedAgreementDto,
   GeneratedAgreementQueryDto,
 } from '../dto/generated-agreement.dto';
 
@@ -35,6 +43,7 @@ const AGREEMENT_TYPE_LABEL: Record<GeneratedAgreementType, string> = {
 export class DashboardDocumentsService {
   constructor(
     private readonly prisma: PrismaService,
+    private readonly storage: StorageService,
     private readonly audit: AuditService,
     private readonly notifications: NotificationsService,
   ) {}
@@ -108,9 +117,82 @@ export class DashboardDocumentsService {
 
   async listAgreements(query: GeneratedAgreementQueryDto) {
     const { take, skip } = paginate(query.page, query.limit);
-    const where = query.applicationId
-      ? { applicationId: query.applicationId }
-      : {};
+
+    // Student and Academic filters both scope through the `application`
+    // relation — combined via AND-of-ORs so either filter alone still works,
+    // and both together narrow correctly instead of one clobbering the other.
+    const applicationConditions = [
+      ...(query.search
+        ? [
+            {
+              OR: [
+                {
+                  applicationNumber: {
+                    contains: query.search,
+                    mode: 'insensitive' as const,
+                  },
+                },
+                {
+                  fullName: {
+                    contains: query.search,
+                    mode: 'insensitive' as const,
+                  },
+                },
+              ],
+            },
+          ]
+        : []),
+      ...(query.academicSearch
+        ? [
+            {
+              OR: [
+                {
+                  collegeName: {
+                    contains: query.academicSearch,
+                    mode: 'insensitive' as const,
+                  },
+                },
+                {
+                  collegeVerification: {
+                    collegeName: {
+                      contains: query.academicSearch,
+                      mode: 'insensitive' as const,
+                    },
+                  },
+                },
+                {
+                  studyInformation: {
+                    courseName: {
+                      contains: query.academicSearch,
+                      mode: 'insensitive' as const,
+                    },
+                  },
+                },
+              ],
+            },
+          ]
+        : []),
+    ];
+
+    const where = {
+      ...(query.applicationId ? { applicationId: query.applicationId } : {}),
+      ...(query.forwardedToRole
+        ? { forwardedToRole: query.forwardedToRole }
+        : {}),
+      ...(query.agreementType ? { agreementType: query.agreementType } : {}),
+      ...(query.status ? { status: query.status } : {}),
+      ...(query.dateFrom || query.dateTo
+        ? {
+            createdAt: {
+              ...(query.dateFrom ? { gte: new Date(query.dateFrom) } : {}),
+              ...(query.dateTo ? { lte: new Date(query.dateTo) } : {}),
+            },
+          }
+        : {}),
+      ...(applicationConditions.length
+        ? { application: { AND: applicationConditions } }
+        : {}),
+    };
 
     const [data, total] = await Promise.all([
       this.prisma.generatedAgreement.findMany({
@@ -224,10 +306,12 @@ export class DashboardDocumentsService {
               dto.guarantorCitizenshipIssueDate?.trim() || null,
             citizenshipOffice: dto.guarantorCitizenshipOffice?.trim() || null,
             address: dto.guarantorAddress?.trim() || null,
-            fatherOrHusbandName: dto.guarantorFatherOrHusbandName?.trim() || null,
+            fatherOrHusbandName:
+              dto.guarantorFatherOrHusbandName?.trim() || null,
             grandfatherName: dto.guarantorGrandfatherName?.trim() || null,
             permanentDistrict: dto.guarantorPermanentDistrict?.trim() || null,
-            permanentMunicipality: dto.guarantorPermanentMunicipality?.trim() || null,
+            permanentMunicipality:
+              dto.guarantorPermanentMunicipality?.trim() || null,
             permanentWardNo: dto.guarantorPermanentWardNo?.trim() || null,
             age: dto.guarantorAge?.trim() || null,
           }
@@ -275,8 +359,7 @@ export class DashboardDocumentsService {
             dto.studentPermanentDistrict?.trim() || null,
           studentPermanentMunicipality:
             dto.studentPermanentMunicipality?.trim() || null,
-          studentPermanentWardNo:
-            dto.studentPermanentWardNo?.trim() || null,
+          studentPermanentWardNo: dto.studentPermanentWardNo?.trim() || null,
           branchManagerName: dto.branchManagerName?.trim() || null,
           collateralOwnerName: dto.collateralOwnerName?.trim() || null,
           collateralAddress: dto.collateralAddress?.trim() || null,
@@ -386,6 +469,99 @@ export class DashboardDocumentsService {
       userId,
       AuditAction.AGREEMENT_SIGNED,
       { agreementId: id },
+      agreement.applicationId,
+      AuditCategory.SYSTEM,
+    );
+
+    return updated;
+  }
+
+  // Role-level hand-off (not a specific user) — e.g. Credit Manager routes a
+  // document to Initiator so their staff can print it, get it physically
+  // signed by the borrower, and upload the signed scan back via
+  // uploadSignedDocument below.
+  async forwardAgreement(
+    userId: string,
+    id: string,
+    dto: ForwardGeneratedAgreementDto,
+  ) {
+    const agreement = await this.getAgreementOrThrow(id);
+
+    const [application, actor] = await Promise.all([
+      this.prisma.loanApplication.findUnique({
+        where: { id: agreement.applicationId },
+        select: { applicationNumber: true },
+      }),
+      this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { fullName: true, email: true },
+      }),
+    ]);
+
+    const updated = await this.prisma.generatedAgreement.update({
+      where: { id },
+      data: {
+        forwardedToRole: dto.toRole,
+        forwardedByUserId: userId,
+        forwardedAt: new Date(),
+        forwardNote: dto.note ?? null,
+      },
+    });
+
+    await this.audit.log(
+      userId,
+      AuditAction.AGREEMENT_FORWARDED,
+      { agreementId: id, toRole: dto.toRole },
+      agreement.applicationId,
+      AuditCategory.SYSTEM,
+    );
+
+    await this.notifications.notifyLegalDocumentForwarded({
+      toRole: dto.toRole,
+      documentLabel: AGREEMENT_TYPE_LABEL[agreement.agreementType],
+      documentNumber: agreement.documentNumber,
+      applicationNumber: application?.applicationNumber ?? null,
+      forwardedByName: actor?.fullName ?? actor?.email ?? 'A Credit Manager',
+      note: dto.note,
+    });
+
+    return updated;
+  }
+
+  // Uploads the scanned/photographed copy of the physically-signed document
+  // (the hand-to-hand counterpart of the student's own digital sendToSign
+  // flow above) and marks the record SIGNED with that file as proof.
+  async uploadSignedDocument(
+    userId: string,
+    id: string,
+    file: Express.Multer.File,
+  ) {
+    const agreement = await this.getAgreementOrThrow(id);
+    if (agreement.status === 'SIGNED' || agreement.status === 'ACTIVE') {
+      throw new BadRequestException('This document is already signed');
+    }
+
+    const uploadResult = await this.storage.uploadFile(
+      file,
+      DOCUMENT_BUCKET,
+      agreement.applicationId,
+      [...ALLOWED_IMAGE_TYPES, ...ALLOWED_DOCUMENT_TYPES],
+      MAX_DOCUMENT_SIZE,
+    );
+
+    const updated = await this.prisma.generatedAgreement.update({
+      where: { id },
+      data: {
+        documentUrl: uploadResult.publicUrl,
+        status: 'SIGNED',
+        signedAt: new Date(),
+      },
+    });
+
+    await this.audit.log(
+      userId,
+      AuditAction.AGREEMENT_SIGNED,
+      { agreementId: id, documentUrl: uploadResult.publicUrl },
       agreement.applicationId,
       AuditCategory.SYSTEM,
     );

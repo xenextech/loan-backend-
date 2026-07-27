@@ -169,6 +169,7 @@ enum AuditAction {
   COMMISSION_PARTNER_UPDATED
   AGREEMENT_GENERATED
   AGREEMENT_SIGNED
+  AGREEMENT_FORWARDED
   INSURANCE_POLICY_ADDED
   NOTIFICATION_TEMPLATE_UPDATED
   OFFER_LETTER_VERIFIED
@@ -1356,12 +1357,23 @@ model GeneratedAgreement {
   sentToSignAt      DateTime?
   signedAt          DateTime?
 
+  // Credit Manager -> another staff role hand-off, so that role's staff can
+  // print, get it physically signed, and upload the signed scan back
+  // (see uploadSignedDocument). Role-level, not a specific user — anyone
+  // with forwardedToRole can act on it, mirroring how no other entity in
+  // this app does per-user assignment either.
+  forwardedToRole   UserRole?
+  forwardedByUserId String?
+  forwardedAt       DateTime?
+  forwardNote       String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   application LoanApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
 
   @@index([applicationId])
+  @@index([forwardedToRole])
   @@map("generated_agreements")
 }
 

@@ -1,7 +1,11 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsEnum, IsOptional, IsString } from 'class-validator';
+import { IsDateString, IsEnum, IsOptional, IsString } from 'class-validator';
 import { PaginationDto } from '../../../common/dto/pagination.dto';
-import { GeneratedAgreementType } from '../../../common/enums';
+import {
+  GeneratedAgreementType,
+  GeneratedAgreementStatus,
+  UserRole,
+} from '../../../common/enums';
 
 export class CreateGeneratedAgreementDto {
   @ApiProperty()
@@ -38,42 +42,63 @@ export class CreateGeneratedAgreementDto {
   @IsString()
   studentAddress?: string;
 
-  @ApiPropertyOptional({ description: "Borrower's citizenship certificate number." })
+  @ApiPropertyOptional({
+    description: "Borrower's citizenship certificate number.",
+  })
   @IsOptional()
   @IsString()
   studentCitizenshipNo?: string;
 
-  @ApiPropertyOptional({ description: "District Administration Office that issued the borrower's citizenship certificate." })
+  @ApiPropertyOptional({
+    description:
+      "District Administration Office that issued the borrower's citizenship certificate.",
+  })
   @IsOptional()
   @IsString()
   studentCitizenshipOffice?: string;
 
-  @ApiPropertyOptional({ description: 'Name of the branch manager co-signing on behalf of the institution.' })
+  @ApiPropertyOptional({
+    description:
+      'Name of the branch manager co-signing on behalf of the institution.',
+  })
   @IsOptional()
   @IsString()
   branchManagerName?: string;
 
-  @ApiPropertyOptional({ description: "Guarantor's name — overrides the application's stored guarantor name if provided." })
+  @ApiPropertyOptional({
+    description:
+      "Guarantor's name — overrides the application's stored guarantor name if provided.",
+  })
   @IsOptional()
   @IsString()
   guarantorName?: string;
 
-  @ApiPropertyOptional({ description: "Guarantor's relationship to the borrower — overrides the application's stored value if provided." })
+  @ApiPropertyOptional({
+    description:
+      "Guarantor's relationship to the borrower — overrides the application's stored value if provided.",
+  })
   @IsOptional()
   @IsString()
   guarantorRelationship?: string;
 
-  @ApiPropertyOptional({ description: "Guarantor's citizenship certificate number." })
+  @ApiPropertyOptional({
+    description: "Guarantor's citizenship certificate number.",
+  })
   @IsOptional()
   @IsString()
   guarantorCitizenshipNo?: string;
 
-  @ApiPropertyOptional({ description: "Guarantor's citizenship certificate issue date." })
+  @ApiPropertyOptional({
+    description: "Guarantor's citizenship certificate issue date.",
+  })
   @IsOptional()
   @IsString()
   guarantorCitizenshipIssueDate?: string;
 
-  @ApiPropertyOptional({ description: "District Administration Office that issued the guarantor's citizenship certificate." })
+  @ApiPropertyOptional({
+    description:
+      "District Administration Office that issued the guarantor's citizenship certificate.",
+  })
   @IsOptional()
   @IsString()
   guarantorCitizenshipOffice?: string;
@@ -87,12 +112,16 @@ export class CreateGeneratedAgreementDto {
   // which (unlike LOAN_AGREEMENT) follow the traditional Nepali citizenship
   // parentage/permanent-address format on the paper original.
 
-  @ApiPropertyOptional({ description: "Borrower's citizenship certificate issue date." })
+  @ApiPropertyOptional({
+    description: "Borrower's citizenship certificate issue date.",
+  })
   @IsOptional()
   @IsString()
   studentCitizenshipIssueDate?: string;
 
-  @ApiPropertyOptional({ description: "Borrower's father's or husband's name." })
+  @ApiPropertyOptional({
+    description: "Borrower's father's or husband's name.",
+  })
   @IsOptional()
   @IsString()
   studentFatherOrHusbandName?: string;
@@ -102,22 +131,31 @@ export class CreateGeneratedAgreementDto {
   @IsString()
   studentGrandfatherName?: string;
 
-  @ApiPropertyOptional({ description: "Borrower's permanent address — district." })
+  @ApiPropertyOptional({
+    description: "Borrower's permanent address — district.",
+  })
   @IsOptional()
   @IsString()
   studentPermanentDistrict?: string;
 
-  @ApiPropertyOptional({ description: "Borrower's permanent address — municipality/rural municipality." })
+  @ApiPropertyOptional({
+    description:
+      "Borrower's permanent address — municipality/rural municipality.",
+  })
   @IsOptional()
   @IsString()
   studentPermanentMunicipality?: string;
 
-  @ApiPropertyOptional({ description: "Borrower's permanent address — ward number." })
+  @ApiPropertyOptional({
+    description: "Borrower's permanent address — ward number.",
+  })
   @IsOptional()
   @IsString()
   studentPermanentWardNo?: string;
 
-  @ApiPropertyOptional({ description: "Guarantor's father's or husband's name." })
+  @ApiPropertyOptional({
+    description: "Guarantor's father's or husband's name.",
+  })
   @IsOptional()
   @IsString()
   guarantorFatherOrHusbandName?: string;
@@ -127,17 +165,24 @@ export class CreateGeneratedAgreementDto {
   @IsString()
   guarantorGrandfatherName?: string;
 
-  @ApiPropertyOptional({ description: "Guarantor's permanent address — district." })
+  @ApiPropertyOptional({
+    description: "Guarantor's permanent address — district.",
+  })
   @IsOptional()
   @IsString()
   guarantorPermanentDistrict?: string;
 
-  @ApiPropertyOptional({ description: "Guarantor's permanent address — municipality/rural municipality." })
+  @ApiPropertyOptional({
+    description:
+      "Guarantor's permanent address — municipality/rural municipality.",
+  })
   @IsOptional()
   @IsString()
   guarantorPermanentMunicipality?: string;
 
-  @ApiPropertyOptional({ description: "Guarantor's permanent address — ward number." })
+  @ApiPropertyOptional({
+    description: "Guarantor's permanent address — ward number.",
+  })
   @IsOptional()
   @IsString()
   guarantorPermanentWardNo?: string;
@@ -155,29 +200,31 @@ export class CreateGeneratedAgreementDto {
   @IsString()
   collateralOwnerName?: string;
 
-  @ApiPropertyOptional({ description: "Collateral: property address." })
+  @ApiPropertyOptional({ description: 'Collateral: property address.' })
   @IsOptional()
   @IsString()
   collateralAddress?: string;
 
-  @ApiPropertyOptional({ description: "Collateral: plot/kitta number." })
+  @ApiPropertyOptional({ description: 'Collateral: plot/kitta number.' })
   @IsOptional()
   @IsString()
   collateralPlotNo?: string;
 
-  @ApiPropertyOptional({ description: "Collateral: area." })
+  @ApiPropertyOptional({ description: 'Collateral: area.' })
   @IsOptional()
   @IsString()
   collateralArea?: string;
 
-  @ApiPropertyOptional({ description: "Collateral: remarks." })
+  @ApiPropertyOptional({ description: 'Collateral: remarks.' })
   @IsOptional()
   @IsString()
   collateralRemarks?: string;
 
   // HYPOTHECATION only — कर्जा रकम निकासा अनुरोध पत्र specific fields.
 
-  @ApiPropertyOptional({ description: 'Date the loan approval/sanction letter was issued.' })
+  @ApiPropertyOptional({
+    description: 'Date the loan approval/sanction letter was issued.',
+  })
   @IsOptional()
   @IsString()
   approvalLetterDate?: string;
@@ -187,12 +234,17 @@ export class CreateGeneratedAgreementDto {
   @IsString()
   loanExpiryDate?: string;
 
-  @ApiPropertyOptional({ description: "Borrower's designation/position signing the request (e.g. Student)." })
+  @ApiPropertyOptional({
+    description:
+      "Borrower's designation/position signing the request (e.g. Student).",
+  })
   @IsOptional()
   @IsString()
   borrowerPosition?: string;
 
-  @ApiPropertyOptional({ description: 'Disbursement bank account holder name.' })
+  @ApiPropertyOptional({
+    description: 'Disbursement bank account holder name.',
+  })
   @IsOptional()
   @IsString()
   bankAccountName?: string;
@@ -208,4 +260,72 @@ export class GeneratedAgreementQueryDto extends PaginationDto {
   @IsOptional()
   @IsString()
   applicationId?: string;
+
+  @ApiPropertyOptional({
+    enum: UserRole,
+    description:
+      'Scope to documents forwarded to this role — used by a role\'s own "Legal Document Vault" queue.',
+  })
+  @IsOptional()
+  @IsEnum(UserRole)
+  forwardedToRole?: UserRole;
+
+  @ApiPropertyOptional({
+    enum: GeneratedAgreementType,
+    description: '"Legal" filter — the document type.',
+  })
+  @IsOptional()
+  @IsEnum(GeneratedAgreementType)
+  agreementType?: GeneratedAgreementType;
+
+  @ApiPropertyOptional({ enum: GeneratedAgreementStatus })
+  @IsOptional()
+  @IsEnum(GeneratedAgreementStatus)
+  status?: GeneratedAgreementStatus;
+
+  @ApiPropertyOptional({
+    description:
+      '"Student" filter — matches student name or application number.',
+  })
+  @IsOptional()
+  @IsString()
+  search?: string;
+
+  @ApiPropertyOptional({
+    description: '"Academic" filter — matches college name or course name.',
+  })
+  @IsOptional()
+  @IsString()
+  academicSearch?: string;
+
+  @ApiPropertyOptional({
+    description: 'Only documents created on/after this date.',
+  })
+  @IsOptional()
+  @IsDateString()
+  dateFrom?: string;
+
+  @ApiPropertyOptional({
+    description: 'Only documents created on/before this date.',
+  })
+  @IsOptional()
+  @IsDateString()
+  dateTo?: string;
+}
+
+export class ForwardGeneratedAgreementDto {
+  @ApiProperty({
+    enum: UserRole,
+    description: 'Role to forward this document to (e.g. INITIATOR).',
+  })
+  @IsEnum(UserRole)
+  toRole!: UserRole;
+
+  @ApiPropertyOptional({
+    description:
+      'Optional note for whoever picks this up (e.g. special instructions).',
+  })
+  @IsOptional()
+  @IsString()
+  note?: string;
 }

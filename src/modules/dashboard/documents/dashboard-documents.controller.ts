@@ -2,18 +2,31 @@ import {
   Body,
   Controller,
   Get,
+  MaxFileSizeValidator,
   Param,
+  ParseFilePipe,
   Patch,
   Post,
   Query,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
+import {
+  ApiBearerAuth,
+  ApiBody,
+  ApiConsumes,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
 import { DashboardDocumentsService } from './dashboard-documents.service';
 import { VerifyOfferLetterDto } from '../dto/offer-letter-verify.dto';
 import { DocumentVaultQueryDto } from '../dto/document-vault-query.dto';
 import {
   CreateGeneratedAgreementDto,
+  ForwardGeneratedAgreementDto,
   GeneratedAgreementQueryDto,
 } from '../dto/generated-agreement.dto';
 import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
@@ -21,6 +34,7 @@ import { RolesGuard } from '../../../common/guards/roles.guard';
 import { Roles } from '../../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import { JwtPayload } from '../../../common/interfaces/jwt-payload.interface';
+import { UserRole } from '../../../common/enums';
 import { DASHBOARD_STAFF_ROLES } from '../dashboard-roles.constant';
 
 @ApiTags('Dashboard: Document Center')
@@ -74,7 +88,9 @@ export class DashboardDocumentsController {
   }
 
   @Post('agreements/:id/send-to-sign')
-  @ApiOperation({ summary: 'Send a draft legal document to the borrower to sign' })
+  @ApiOperation({
+    summary: 'Send a draft legal document to the borrower to sign',
+  })
   sendToSign(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
     return this.dashboardDocumentsService.sendToSign(user.sub, id);
   }
@@ -86,5 +102,62 @@ export class DashboardDocumentsController {
   })
   markSigned(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
     return this.dashboardDocumentsService.markSigned(user.sub, id);
+  }
+
+  @Post('agreements/:id/forward')
+  @Roles(UserRole.CREDIT_MANAGER, UserRole.ADMIN)
+  @ApiOperation({
+    summary:
+      "Forward a legal document to another staff role's queue (e.g. Initiator) so they can get it physically signed and upload the signed scan.",
+  })
+  forwardAgreement(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+    @Body() dto: ForwardGeneratedAgreementDto,
+  ) {
+    return this.dashboardDocumentsService.forwardAgreement(user.sub, id, dto);
+  }
+
+  @Post('agreements/:id/upload-signed')
+  @Roles(
+    UserRole.INITIATOR,
+    UserRole.SUPPORTER,
+    UserRole.APPROVER,
+    UserRole.CREDIT_MANAGER,
+    UserRole.ADMIN,
+  )
+  @ApiOperation({
+    summary:
+      'Upload a scanned/photographed copy of the physically-signed legal document. Marks the document SIGNED.',
+  })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        file: {
+          type: 'string',
+          format: 'binary',
+          description: 'image/jpeg, image/png, image/webp, or application/pdf',
+        },
+      },
+    },
+  })
+  @UseInterceptors(FileInterceptor('file', { storage: memoryStorage() }))
+  uploadSignedDocument(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+    @UploadedFile(
+      new ParseFilePipe({
+        validators: [new MaxFileSizeValidator({ maxSize: 5 * 1024 * 1024 })],
+      }),
+    )
+    file: Express.Multer.File,
+  ) {
+    return this.dashboardDocumentsService.uploadSignedDocument(
+      user.sub,
+      id,
+      file,
+    );
   }
 }

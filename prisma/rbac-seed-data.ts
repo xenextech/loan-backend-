@@ -55,12 +55,13 @@ const MENU_ITEMS: {
   { key: 'repayment-monitoring', label: 'Repayment Monitoring', href: '/repayment-monitoring', icon: 'Activity', groupLabel: 'Repayment', order: 5 },
   { key: 'notifications', label: 'Inbox', href: '/notification', icon: 'Inbox', groupLabel: 'Repayment', order: 6 },
   { key: 'legal-documents', label: 'Legal Documents', href: '/legal-documents', icon: 'Scale', groupLabel: 'Document', order: 7 },
-  { key: 'document-center', label: 'Document Center', href: '/document-center', icon: 'FolderOpen', groupLabel: 'Document', order: 8 },
-  { key: 'document-vault', label: 'Document Vault', href: '/document-vault', icon: 'Archive', groupLabel: 'Document', order: 9, isApiGuarded: true },
-  { key: 'insurance-checker', label: 'Insurance Checker', href: '/insurance-checker', icon: 'ShieldCheck', groupLabel: 'Document', order: 10 },
-  { key: 'commission', label: 'Commission', href: '/commission', icon: 'Percent', groupLabel: 'Finance', order: 11 },
-  { key: 'audit-ledger', label: 'Audit Ledger', href: '/audit-ledger', icon: 'History', groupLabel: 'Finance', order: 12 },
-  { key: 'permissions', label: 'Role & Permission Management', href: '/permissions', icon: 'KeyRound', groupLabel: 'Administration', order: 13 },
+  { key: 'legal-document-vault', label: 'Legal Document Vault', href: '/legal-document-vault', icon: 'FileSignature', groupLabel: 'Document', order: 8 },
+  { key: 'document-center', label: 'Document Center', href: '/document-center', icon: 'FolderOpen', groupLabel: 'Document', order: 9 },
+  { key: 'document-vault', label: 'Document Vault', href: '/document-vault', icon: 'Archive', groupLabel: 'Document', order: 10, isApiGuarded: true },
+  { key: 'insurance-checker', label: 'Insurance Checker', href: '/insurance-checker', icon: 'ShieldCheck', groupLabel: 'Document', order: 11 },
+  { key: 'commission', label: 'Commission', href: '/commission', icon: 'Percent', groupLabel: 'Finance', order: 12 },
+  { key: 'audit-ledger', label: 'Audit Ledger', href: '/audit-ledger', icon: 'History', groupLabel: 'Finance', order: 13 },
+  { key: 'permissions', label: 'Role & Permission Management', href: '/permissions', icon: 'KeyRound', groupLabel: 'Administration', order: 14 },
 ];
 
 // Reproduces today's *actual* hardcoded NAV_GROUPS per role exactly, so
@@ -78,10 +79,10 @@ const STAFF_BASE_MENU = [
   'audit-ledger',
 ];
 const ROLE_MENU_KEYS: Partial<Record<UserRole, string[]>> = {
-  [UserRole.INITIATOR]: STAFF_BASE_MENU,
-  [UserRole.SUPPORTER]: STAFF_BASE_MENU,
+  [UserRole.INITIATOR]: [...STAFF_BASE_MENU, 'legal-document-vault'],
+  [UserRole.SUPPORTER]: [...STAFF_BASE_MENU, 'legal-document-vault'],
   [UserRole.CHECKER]: STAFF_BASE_MENU,
-  [UserRole.APPROVER]: STAFF_BASE_MENU,
+  [UserRole.APPROVER]: [...STAFF_BASE_MENU, 'legal-document-vault'],
   [UserRole.CREDIT_MANAGER]: [...STAFF_BASE_MENU, 'repayment-monitoring', 'legal-documents'],
   [UserRole.ADMIN]: ['dashboard', 'applications', 'permissions'],
   // STUDENT / PARENT / COLLEGE keep their own separate, unrelated sidebars —

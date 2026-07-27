@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { UserRole } from '../../common/enums';
 import { CreateRoleDto, UpdateRoleDto } from './dto/role.dto';
@@ -22,12 +26,19 @@ export class PermissionsService {
   // Drives the frontend's dynamic sidebar + permission checks — one call on
   // login, no per-page role branching needed downstream.
   async getMyAccess(role: UserRole) {
-    const roleRow = await this.prisma.role.findUnique({ where: { code: role } });
+    const roleRow = await this.prisma.role.findUnique({
+      where: { code: role },
+    });
     if (!roleRow) {
       // Role exists in the UserRole enum but has no configuration row yet
       // (e.g. freshly extended enum, seed not run) — fail open with zero
       // permissions/menu rather than 500, so login still works.
-      return { role, permissions: [] as string[], menu: [] as MenuGroup[], widgets: [] as string[] };
+      return {
+        role,
+        permissions: [] as string[],
+        menu: [] as MenuGroup[],
+        widgets: [] as string[],
+      };
     }
 
     const [permissionRows, menuRows, widgetRows] = await Promise.all([
@@ -49,7 +60,8 @@ export class PermissionsService {
     const groups = new Map<string | null, MenuGroup>();
     for (const row of menuRows) {
       const label = row.menuItem.groupLabel;
-      if (!groups.has(label)) groups.set(label, { groupLabel: label, items: [] });
+      if (!groups.has(label))
+        groups.set(label, { groupLabel: label, items: [] });
       groups.get(label)!.items.push({
         key: row.menuItem.key,
         label: row.menuItem.label,
@@ -73,10 +85,18 @@ export class PermissionsService {
   }
 
   async createRole(dto: CreateRoleDto) {
-    const existing = await this.prisma.role.findUnique({ where: { code: dto.code } });
-    if (existing) throw new BadRequestException(`Role code "${dto.code}" already exists`);
+    const existing = await this.prisma.role.findUnique({
+      where: { code: dto.code },
+    });
+    if (existing)
+      throw new BadRequestException(`Role code "${dto.code}" already exists`);
     return this.prisma.role.create({
-      data: { code: dto.code, name: dto.name, description: dto.description, isSystem: false },
+      data: {
+        code: dto.code,
+        name: dto.name,
+        description: dto.description,
+        isSystem: false,
+      },
     });
   }
 
@@ -95,22 +115,27 @@ export class PermissionsService {
   // ── Catalog (full permission/menu/widget list for the admin matrix UI) ────
   async getCatalog() {
     const [permissions, menuItems, widgets] = await Promise.all([
-      this.prisma.permission.findMany({ orderBy: [{ module: 'asc' }, { action: 'asc' }] }),
+      this.prisma.permission.findMany({
+        orderBy: [{ module: 'asc' }, { action: 'asc' }],
+      }),
       this.prisma.menuItem.findMany({ orderBy: { order: 'asc' } }),
       this.prisma.dashboardWidget.findMany({ orderBy: { key: 'asc' } }),
     ]);
 
     const permissionsByModule = new Map<string, typeof permissions>();
     for (const p of permissions) {
-      if (!permissionsByModule.has(p.module)) permissionsByModule.set(p.module, []);
+      if (!permissionsByModule.has(p.module))
+        permissionsByModule.set(p.module, []);
       permissionsByModule.get(p.module)!.push(p);
     }
 
     return {
-      permissionModules: Array.from(permissionsByModule.entries()).map(([module, items]) => ({
-        module,
-        permissions: items,
-      })),
+      permissionModules: Array.from(permissionsByModule.entries()).map(
+        ([module, items]) => ({
+          module,
+          permissions: items,
+        }),
+      ),
       menuItems,
       widgets,
     };
@@ -131,9 +156,13 @@ export class PermissionsService {
     const permissions = await this.prisma.permission.findMany({
       where: { key: { in: permissionKeys } },
     });
-    const unknown = permissionKeys.filter((k) => !permissions.some((p) => p.key === k));
+    const unknown = permissionKeys.filter(
+      (k) => !permissions.some((p) => p.key === k),
+    );
     if (unknown.length > 0) {
-      throw new BadRequestException(`Unknown permission key(s): ${unknown.join(', ')}`);
+      throw new BadRequestException(
+        `Unknown permission key(s): ${unknown.join(', ')}`,
+      );
     }
 
     await this.prisma.$transaction([
@@ -155,7 +184,9 @@ export class PermissionsService {
       this.prisma.menuItem.findMany({ orderBy: { order: 'asc' } }),
       this.prisma.roleMenuItem.findMany({ where: { roleId } }),
     ]);
-    const visibleByItemId = new Map(roleMenuItems.map((r) => [r.menuItemId, r.visible]));
+    const visibleByItemId = new Map(
+      roleMenuItems.map((r) => [r.menuItemId, r.visible]),
+    );
     return menuItems.map((item) => ({
       key: item.key,
       label: item.label,
@@ -173,9 +204,13 @@ export class PermissionsService {
   async setRoleMenu(roleId: string, visibleMenuItemKeys: string[]) {
     await this.getRoleOrThrow(roleId);
     const menuItems = await this.prisma.menuItem.findMany();
-    const unknown = visibleMenuItemKeys.filter((k) => !menuItems.some((m) => m.key === k));
+    const unknown = visibleMenuItemKeys.filter(
+      (k) => !menuItems.some((m) => m.key === k),
+    );
     if (unknown.length > 0) {
-      throw new BadRequestException(`Unknown menu key(s): ${unknown.join(', ')}`);
+      throw new BadRequestException(
+        `Unknown menu key(s): ${unknown.join(', ')}`,
+      );
     }
 
     const visibleSet = new Set(visibleMenuItemKeys);
@@ -184,7 +219,11 @@ export class PermissionsService {
         this.prisma.roleMenuItem.upsert({
           where: { roleId_menuItemId: { roleId, menuItemId: item.id } },
           update: { visible: visibleSet.has(item.key) },
-          create: { roleId, menuItemId: item.id, visible: visibleSet.has(item.key) },
+          create: {
+            roleId,
+            menuItemId: item.id,
+            visible: visibleSet.has(item.key),
+          },
         }),
       ),
     );
@@ -198,7 +237,9 @@ export class PermissionsService {
       this.prisma.dashboardWidget.findMany({ orderBy: { key: 'asc' } }),
       this.prisma.roleWidget.findMany({ where: { roleId } }),
     ]);
-    const visibleByWidgetId = new Map(roleWidgets.map((r) => [r.widgetId, r.visible]));
+    const visibleByWidgetId = new Map(
+      roleWidgets.map((r) => [r.widgetId, r.visible]),
+    );
     return widgets.map((w) => ({
       key: w.key,
       label: w.label,
@@ -210,9 +251,13 @@ export class PermissionsService {
   async setRoleWidgets(roleId: string, visibleWidgetKeys: string[]) {
     await this.getRoleOrThrow(roleId);
     const widgets = await this.prisma.dashboardWidget.findMany();
-    const unknown = visibleWidgetKeys.filter((k) => !widgets.some((w) => w.key === k));
+    const unknown = visibleWidgetKeys.filter(
+      (k) => !widgets.some((w) => w.key === k),
+    );
     if (unknown.length > 0) {
-      throw new BadRequestException(`Unknown widget key(s): ${unknown.join(', ')}`);
+      throw new BadRequestException(
+        `Unknown widget key(s): ${unknown.join(', ')}`,
+      );
     }
 
     const visibleSet = new Set(visibleWidgetKeys);

@@ -1,6 +1,7 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { DashboardDocumentsService } from './dashboard-documents.service';
 import { PrismaService } from '../../../prisma/prisma.service';
+import { StorageService } from '../../storage/storage.service';
 import { AuditService } from '../../audit/audit.service';
 import { NotificationsService } from '../../notifications/notifications.service';
 import {
@@ -8,6 +9,7 @@ import {
   AuditCategory,
   DocumentType,
   GeneratedAgreementType,
+  UserRole,
 } from '../../../common/enums';
 
 interface AgreementCreateCallArgs {
@@ -49,6 +51,8 @@ describe('DashboardDocumentsService', () => {
   let auditLogMock: jest.Mock;
   let notifyLegalDocumentGeneratedMock: jest.Mock;
   let notifyStudentDocumentReadyToSignMock: jest.Mock;
+  let notifyLegalDocumentForwardedMock: jest.Mock;
+  let storageUploadFileMock: jest.Mock;
   let service: DashboardDocumentsService;
 
   beforeEach(() => {
@@ -87,12 +91,25 @@ describe('DashboardDocumentsService', () => {
     agreementUpdateMock = jest.fn<unknown, [AgreementUpdateCallArgs]>();
     loanAccountFindUniqueMock = jest.fn().mockResolvedValue(null);
     emiScheduleFindManyMock = jest.fn().mockResolvedValue([]);
-    userFindUniqueMock = jest
-      .fn()
-      .mockResolvedValue({ fullName: 'Credit Manager One', email: 'cm@unati.com' });
+    userFindUniqueMock = jest.fn().mockResolvedValue({
+      fullName: 'Credit Manager One',
+      email: 'cm@unati.com',
+    });
     auditLogMock = jest.fn().mockResolvedValue(undefined);
     notifyLegalDocumentGeneratedMock = jest.fn().mockResolvedValue(undefined);
-    notifyStudentDocumentReadyToSignMock = jest.fn().mockResolvedValue(undefined);
+    notifyStudentDocumentReadyToSignMock = jest
+      .fn()
+      .mockResolvedValue(undefined);
+    notifyLegalDocumentForwardedMock = jest.fn().mockResolvedValue(undefined);
+    storageUploadFileMock = jest.fn().mockResolvedValue({
+      fileName: 'signed.pdf',
+      originalFileName: 'signed.pdf',
+      mimeType: 'application/pdf',
+      size: 1024,
+      bucketName: 'Private',
+      filePath: 'app-1/signed.pdf',
+      publicUrl: 'https://storage.example.com/app-1/signed.pdf',
+    });
 
     const prisma = {
       loanApplication: { findUnique: applicationFindUniqueMock },
@@ -111,13 +128,22 @@ describe('DashboardDocumentsService', () => {
       user: { findUnique: userFindUniqueMock },
     } as unknown as PrismaService;
 
+    const storage = {
+      uploadFile: storageUploadFileMock,
+    } as unknown as StorageService;
     const audit = { log: auditLogMock } as unknown as AuditService;
     const notifications = {
       notifyLegalDocumentGenerated: notifyLegalDocumentGeneratedMock,
       notifyStudentDocumentReadyToSign: notifyStudentDocumentReadyToSignMock,
+      notifyLegalDocumentForwarded: notifyLegalDocumentForwardedMock,
     } as unknown as NotificationsService;
 
-    service = new DashboardDocumentsService(prisma, audit, notifications);
+    service = new DashboardDocumentsService(
+      prisma,
+      storage,
+      audit,
+      notifications,
+    );
   });
 
   describe('verifyOfferLetter', () => {
@@ -341,6 +367,101 @@ describe('DashboardDocumentsService', () => {
         'user-1',
         AuditAction.AGREEMENT_SIGNED,
         { agreementId: 'agr-1' },
+        'app-1',
+        AuditCategory.SYSTEM,
+      );
+    });
+  });
+
+  describe('forwardAgreement', () => {
+    it('throws NotFoundException for an unknown agreement', async () => {
+      await expect(
+        service.forwardAgreement('user-1', 'missing', {
+          toRole: UserRole.INITIATOR,
+        }),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('sets forwarding fields, logs the action, and notifies the target role', async () => {
+      agreementFindUniqueMock.mockResolvedValueOnce({
+        id: 'agr-1',
+        applicationId: 'app-1',
+        agreementType: GeneratedAgreementType.LOAN_AGREEMENT,
+        documentNumber: 'LGL-2026-00001',
+      });
+      applicationFindUniqueMock.mockResolvedValueOnce({
+        applicationNumber: 'Unati-2026-00001',
+      });
+
+      await service.forwardAgreement('user-1', 'agr-1', {
+        toRole: UserRole.INITIATOR,
+        note: 'Please collect signature this week',
+      });
+
+      const { data } = agreementUpdateMock.mock.calls[0][0];
+      expect(data.forwardedToRole).toBe(UserRole.INITIATOR);
+      expect(data.forwardedByUserId).toBe('user-1');
+      expect(data.forwardedAt).toBeInstanceOf(Date);
+      expect(data.forwardNote).toBe('Please collect signature this week');
+
+      expect(auditLogMock).toHaveBeenCalledWith(
+        'user-1',
+        AuditAction.AGREEMENT_FORWARDED,
+        { agreementId: 'agr-1', toRole: UserRole.INITIATOR },
+        'app-1',
+        AuditCategory.SYSTEM,
+      );
+      expect(notifyLegalDocumentForwardedMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          toRole: UserRole.INITIATOR,
+          documentLabel: 'Loan Agreement',
+          documentNumber: 'LGL-2026-00001',
+          applicationNumber: 'Unati-2026-00001',
+        }),
+      );
+    });
+  });
+
+  describe('uploadSignedDocument', () => {
+    const file = { originalname: 'signed.pdf' } as Express.Multer.File;
+
+    it('rejects uploading to an already-signed agreement', async () => {
+      agreementFindUniqueMock.mockResolvedValueOnce({
+        id: 'agr-1',
+        status: 'SIGNED',
+      });
+      await expect(
+        service.uploadSignedDocument('user-1', 'agr-1', file),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('uploads the file, sets documentUrl, and marks the agreement SIGNED', async () => {
+      agreementFindUniqueMock.mockResolvedValueOnce({
+        id: 'agr-1',
+        applicationId: 'app-1',
+        status: 'PENDING_SIGNATURE',
+      });
+      agreementUpdateMock.mockResolvedValueOnce({
+        id: 'agr-1',
+        status: 'SIGNED',
+      });
+
+      await service.uploadSignedDocument('user-1', 'agr-1', file);
+
+      expect(storageUploadFileMock).toHaveBeenCalled();
+      const { data } = agreementUpdateMock.mock.calls[0][0] as {
+        data: { documentUrl: string; status: string; signedAt: Date };
+      };
+      expect(data.documentUrl).toBe(
+        'https://storage.example.com/app-1/signed.pdf',
+      );
+      expect(data.status).toBe('SIGNED');
+      expect(data.signedAt).toBeInstanceOf(Date);
+
+      expect(auditLogMock).toHaveBeenCalledWith(
+        'user-1',
+        AuditAction.AGREEMENT_SIGNED,
+        expect.objectContaining({ agreementId: 'agr-1' }),
         'app-1',
         AuditCategory.SYSTEM,
       );

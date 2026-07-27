@@ -27,7 +27,7 @@ async function bootstrap() {
     origin: [
       config.get<string>('app.frontendUrl') ?? 'http://localhost:3000',
       'http://localhost:3000',
-      'https://edu-loan-frontend.vercel.app'
+      'https://edu-loan-frontend.vercel.app',
     ],
     credentials: true,
   });
@@ -63,7 +63,10 @@ async function bootstrap() {
     .addTag('Applications', 'Student loan applications')
     .addTag('Documents', 'File uploads & document management')
     .addTag('Admin', 'Admin dashboard & exports')
-    .addTag('Permissions (RBAC)', 'Role & permission management — dynamic sidebar, widgets, and API authorization')
+    .addTag(
+      'Permissions (RBAC)',
+      'Role & permission management — dynamic sidebar, widgets, and API authorization',
+    )
     .addTag('Utils', 'EMI calculator & eligibility checker')
     .addTag('Credit Score', 'Credit score calculation & reporting')
     .build();

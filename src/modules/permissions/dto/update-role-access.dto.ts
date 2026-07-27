@@ -16,7 +16,8 @@ export class UpdateRolePermissionsDto {
 export class UpdateRoleMenuDto {
   @ApiProperty({
     type: [String],
-    description: 'Full replacement set of MenuItem.key values visible to this role.',
+    description:
+      'Full replacement set of MenuItem.key values visible to this role.',
     example: ['dashboard', 'applications', 'notifications'],
   })
   @IsArray()
@@ -27,7 +28,8 @@ export class UpdateRoleMenuDto {
 export class UpdateRoleWidgetsDto {
   @ApiProperty({
     type: [String],
-    description: 'Full replacement set of DashboardWidget.key values visible to this role.',
+    description:
+      'Full replacement set of DashboardWidget.key values visible to this role.',
     example: ['loan_statistics', 'notifications_widget'],
   })
   @IsArray()

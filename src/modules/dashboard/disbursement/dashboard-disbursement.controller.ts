@@ -68,7 +68,9 @@ export class DashboardDisbursementController {
 
   @Patch(':applicationId/conditions/:conditionId')
   @Roles(UserRole.CREDIT_MANAGER)
-  @ApiOperation({ summary: 'Update a disbursement condition status. Credit Manager only.' })
+  @ApiOperation({
+    summary: 'Update a disbursement condition status. Credit Manager only.',
+  })
   updateCondition(
     @CurrentUser() user: JwtPayload,
     @Param('applicationId') applicationId: string,

@@ -1,4 +1,13 @@
-import { Body, Controller, Get, Param, Patch, Post, Put, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Put,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { PermissionsService } from './permissions.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -66,7 +75,7 @@ export class PermissionsController {
 
   @Get('roles/:roleId/permissions')
   @Roles(UserRole.ADMIN)
-  @ApiOperation({ summary: "Permission keys currently granted to a role" })
+  @ApiOperation({ summary: 'Permission keys currently granted to a role' })
   getRolePermissions(@Param('roleId') roleId: string) {
     return this.permissionsService.getRolePermissionKeys(roleId);
   }
@@ -77,14 +86,21 @@ export class PermissionsController {
     summary:
       'Replace the full set of permissions granted to a role. Takes effect immediately for every subsequent request — no deploy, no restart.',
   })
-  setRolePermissions(@Param('roleId') roleId: string, @Body() dto: UpdateRolePermissionsDto) {
-    return this.permissionsService.setRolePermissions(roleId, dto.permissionKeys);
+  setRolePermissions(
+    @Param('roleId') roleId: string,
+    @Body() dto: UpdateRolePermissionsDto,
+  ) {
+    return this.permissionsService.setRolePermissions(
+      roleId,
+      dto.permissionKeys,
+    );
   }
 
   @Get('roles/:roleId/menu')
   @Roles(UserRole.ADMIN)
   @ApiOperation({
-    summary: 'Full menu catalog with this role\'s current visibility state per item',
+    summary:
+      "Full menu catalog with this role's current visibility state per item",
   })
   getRoleMenu(@Param('roleId') roleId: string) {
     return this.permissionsService.getRoleMenuState(roleId);
@@ -102,15 +118,25 @@ export class PermissionsController {
 
   @Get('roles/:roleId/widgets')
   @Roles(UserRole.ADMIN)
-  @ApiOperation({ summary: "Full widget catalog with this role's current visibility state" })
+  @ApiOperation({
+    summary: "Full widget catalog with this role's current visibility state",
+  })
   getRoleWidgets(@Param('roleId') roleId: string) {
     return this.permissionsService.getRoleWidgetState(roleId);
   }
 
   @Put('roles/:roleId/widgets')
   @Roles(UserRole.ADMIN)
-  @ApiOperation({ summary: 'Replace which dashboard widgets are visible to a role' })
-  setRoleWidgets(@Param('roleId') roleId: string, @Body() dto: UpdateRoleWidgetsDto) {
-    return this.permissionsService.setRoleWidgets(roleId, dto.visibleWidgetKeys);
+  @ApiOperation({
+    summary: 'Replace which dashboard widgets are visible to a role',
+  })
+  setRoleWidgets(
+    @Param('roleId') roleId: string,
+    @Body() dto: UpdateRoleWidgetsDto,
+  ) {
+    return this.permissionsService.setRoleWidgets(
+      roleId,
+      dto.visibleWidgetKeys,
+    );
   }
 }

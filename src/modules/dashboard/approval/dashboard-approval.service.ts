@@ -168,7 +168,9 @@ export class DashboardApprovalService {
     const updated = await this.prisma.loanApplication.update({
       where: { id: applicationId },
       data: {
-        stage: shortcut ? ApplicationStage.CHECKING : ApplicationStage.SUPPORTED,
+        stage: shortcut
+          ? ApplicationStage.CHECKING
+          : ApplicationStage.SUPPORTED,
         supporterUserId: actor.id,
         supporterName: actor.name,
         supporterDate: new Date(),
@@ -547,7 +549,11 @@ export class DashboardApprovalService {
         take,
         skip,
         orderBy: { createdAt: 'desc' },
-        include: { user: { select: { id: true, fullName: true, email: true, role: true } } },
+        include: {
+          user: {
+            select: { id: true, fullName: true, email: true, role: true },
+          },
+        },
       }),
       this.prisma.auditLog.count({ where: { applicationId } }),
     ]);
