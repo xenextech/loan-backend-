@@ -132,7 +132,13 @@ export class ApplicationInitiatorListController {
   }
 
   @Get('queue')
-  @Roles(UserRole.INITIATOR,UserRole.SUPPORTER,UserRole.CHECKER,UserRole.APPROVER,UserRole.CREDIT_MANAGER)
+  @Roles(
+    UserRole.INITIATOR,
+    UserRole.SUPPORTER,
+    UserRole.CHECKER,
+    UserRole.APPROVER,
+    UserRole.CREDIT_MANAGER,
+  )
   @ApiOperation({
     summary:
       'The Initiator work queue (paginated) — College-verified student applications plus Initiator-created applications, combined. Each row carries `source` (STUDENT | INITIATOR); `collegeVerification` is null for Initiator-sourced rows.',

@@ -8,4 +8,5 @@ export const PERMISSION_KEY = 'permission_key';
  * rows — the Admin-configurable replacement for scattering
  * `if (role === 'X')` checks through service methods.
  */
-export const RequirePermission = (key: string) => SetMetadata(PERMISSION_KEY, key);
+export const RequirePermission = (key: string) =>
+  SetMetadata(PERMISSION_KEY, key);

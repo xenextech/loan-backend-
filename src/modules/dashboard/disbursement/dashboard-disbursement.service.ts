@@ -104,15 +104,13 @@ export class DashboardDisbursementService {
   // for the legal document itself, so managing them (and disbursing) only
   // opens up once a signed Loan Agreement actually exists.
   private async assertSignedLoanAgreement(applicationId: string) {
-    const signedLoanAgreement = await this.prisma.generatedAgreement.findFirst(
-      {
-        where: {
-          applicationId,
-          agreementType: 'LOAN_AGREEMENT',
-          status: { in: ['SIGNED', 'ACTIVE'] },
-        },
+    const signedLoanAgreement = await this.prisma.generatedAgreement.findFirst({
+      where: {
+        applicationId,
+        agreementType: 'LOAN_AGREEMENT',
+        status: { in: ['SIGNED', 'ACTIVE'] },
       },
-    );
+    });
     if (!signedLoanAgreement) {
       throw new BadRequestException(
         'A signed Loan Agreement legal document is required before disbursement conditions can be managed — generate and complete signing in the Credit Manager Legal Documents module first.',

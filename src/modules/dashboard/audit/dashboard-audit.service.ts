@@ -44,7 +44,9 @@ export class DashboardAuditService {
         skip,
         orderBy: { createdAt: 'desc' },
         include: {
-          user: { select: { id: true, fullName: true, email: true, role: true } },
+          user: {
+            select: { id: true, fullName: true, email: true, role: true },
+          },
         },
       }),
       this.prisma.auditLog.count({ where }),
@@ -74,7 +76,9 @@ export class DashboardAuditService {
     const logs = await this.prisma.auditLog.findMany({
       where,
       orderBy: { createdAt: 'desc' },
-      include: { user: { select: { fullName: true, email: true, role: true } } },
+      include: {
+        user: { select: { fullName: true, email: true, role: true } },
+      },
     });
 
     const header = [

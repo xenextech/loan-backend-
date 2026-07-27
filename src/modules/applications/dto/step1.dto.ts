@@ -33,7 +33,7 @@ export class Step1Dto {
   @IsOptional()
   @IsString()
   collegeName?: string;
-  
+
   // Study Information
   @ApiPropertyOptional({ enum: StudyType })
   @IsOptional()

@@ -54,7 +54,9 @@ export class PermissionsGuard implements CanActivate {
     if (!role) throw new ForbiddenException('Authentication required');
 
     if (menuKey) {
-      const roleRow = await this.prisma.role.findUnique({ where: { code: role } });
+      const roleRow = await this.prisma.role.findUnique({
+        where: { code: role },
+      });
       if (roleRow) {
         const entry = await this.prisma.roleMenuItem.findFirst({
           where: { roleId: roleRow.id, menuItem: { key: menuKey } },
@@ -72,7 +74,9 @@ export class PermissionsGuard implements CanActivate {
         where: { key: permissionKey },
       });
       if (permission) {
-        const roleRow = await this.prisma.role.findUnique({ where: { code: role } });
+        const roleRow = await this.prisma.role.findUnique({
+          where: { code: role },
+        });
         const granted = roleRow
           ? await this.prisma.rolePermission.findFirst({
               where: { roleId: roleRow.id, permissionId: permission.id },

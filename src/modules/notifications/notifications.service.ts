@@ -7,6 +7,7 @@ import {
   NotificationType,
   NotificationChannel,
   NotificationDeliveryStatus,
+  UserRole,
 } from '../../common/enums';
 import { RepaymentFrequency } from '@prisma/client';
 
@@ -147,13 +148,61 @@ export class NotificationsService {
     documentNumber: string | null;
     generatedByName: string;
   }) {
-    const { application, documentLabel, documentNumber, generatedByName } = params;
+    const { application, documentLabel, documentNumber, generatedByName } =
+      params;
     const title = `${documentLabel} generated`;
     const message =
       `${generatedByName} generated the ${documentLabel}` +
       (documentNumber ? ` (${documentNumber})` : '') +
       ` for application ${application.applicationNumber ?? application.id}.`;
     await this.fanOutToParticipants(application, title, message);
+  }
+
+  // ── Legal document forwarded to a role's queue (e.g. Credit Manager -> Initiator) ─
+  // Unlike fanOutToParticipants (an application's specific participants), this
+  // broadcasts to every user currently holding the target role — there is no
+  // per-user assignment for forwarded documents, just a shared role queue.
+  async notifyLegalDocumentForwarded(params: {
+    toRole: UserRole;
+    documentLabel: string;
+    documentNumber: string | null;
+    applicationNumber: string | null;
+    forwardedByName: string;
+    note?: string;
+  }) {
+    const {
+      toRole,
+      documentLabel,
+      documentNumber,
+      applicationNumber,
+      forwardedByName,
+      note,
+    } = params;
+    const recipients = await this.prisma.user.findMany({
+      where: { role: toRole },
+      select: { id: true },
+    });
+    if (recipients.length === 0) return;
+
+    const title = `${documentLabel} forwarded to you`;
+    const message =
+      `${forwardedByName} forwarded the ${documentLabel}` +
+      (documentNumber ? ` (${documentNumber})` : '') +
+      ` for application ${applicationNumber ?? ''} to your queue for signature collection.` +
+      (note ? ` Note: ${note}` : '');
+
+    const results = await Promise.allSettled(
+      recipients.map((r) =>
+        this.createDatabaseNotification(r.id, title, message),
+      ),
+    );
+    results.forEach((result, i) => {
+      if (result.status === 'rejected') {
+        this.logger.warn(
+          `Failed to notify user ${recipients[i].id} about forwarded document "${title}": ${String(result.reason)}`,
+        );
+      }
+    });
   }
 
   // ── Legal document sent to sign (student only) ──────────────────────────────
@@ -172,7 +221,15 @@ export class NotificationsService {
     documentLabel: string;
     documentNumber: string | null;
   }) {
-    const { userId, applicationId, applicationNumber, fullName, phoneNumber, documentLabel, documentNumber } = params;
+    const {
+      userId,
+      applicationId,
+      applicationNumber,
+      fullName,
+      phoneNumber,
+      documentLabel,
+      documentNumber,
+    } = params;
     const title = `${documentLabel} ready for signature`;
     const message =
       `Dear ${fullName ?? 'borrower'}, your ${documentLabel}` +
@@ -181,7 +238,12 @@ export class NotificationsService {
       `Please visit the branch to sign it in person to proceed with disbursement.`;
 
     if (userId) {
-      await this.createDatabaseNotification(userId, title, message, applicationId);
+      await this.createDatabaseNotification(
+        userId,
+        title,
+        message,
+        applicationId,
+      );
     }
     if (phoneNumber) {
       await this.sendSms(phoneNumber, message);
@@ -550,7 +612,12 @@ export class NotificationsService {
     const title = 'Terms & Conditions Consent Required';
     const message = `Your Approver has sent terms & conditions for application ${applicationNumber} that require your consent before it can proceed. Open the application to review and consent.`;
 
-    await this.createDatabaseNotification(userId, title, message, applicationId);
+    await this.createDatabaseNotification(
+      userId,
+      title,
+      message,
+      applicationId,
+    );
     await this.sendStudentConsentLink(email, applicationNumber, consentLink);
   }
 
