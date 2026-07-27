@@ -1,11 +1,14 @@
+import { describe, it, expect, beforeEach, vi, type Mock } from 'vitest';
 import { NotFoundException } from '@nestjs/common';
-import { CreditScoreService } from './credit-score.service';
-import { PrismaService } from '../../prisma/prisma.service';
+import { CreditScoreService } from '../../src/modules/creditScore/credit-score.service';
+import { PrismaService } from '../../src/prisma/prisma.service';
 
 describe('CreditScoreService', () => {
-  let findUniqueMock: jest.Mock;
-  let updateMock: jest.Mock;
+  let findUniqueMock: Mock;
+  let updateMock: Mock;
   let service: CreditScoreService;
+
+  console.log('Credit score test running..');
 
   // A plain-object stand-in for a Prisma Decimal.js instance: not typeof
   // 'number', but converts correctly via Number(...) — exactly like the real
@@ -23,8 +26,8 @@ describe('CreditScoreService', () => {
   };
 
   beforeEach(() => {
-    findUniqueMock = jest.fn().mockResolvedValue(fullyScoredApplication);
-    updateMock = jest.fn().mockResolvedValue(fullyScoredApplication);
+    findUniqueMock = vi.fn().mockResolvedValue(fullyScoredApplication);
+    updateMock = vi.fn().mockResolvedValue(fullyScoredApplication);
 
     const prisma = {
       loanApplication: {
@@ -104,6 +107,23 @@ describe('CreditScoreService', () => {
       expect(result.overall.weight).toBe(27); // maxPossibleScore
       expect(result.overall.score).toBe(13);
       expect(result.overall.percentage).toBe(48.15);
+    });
+
+    it('scores the worst-case scenario (one condition per parameter) as exactly 22', async () => {
+      findUniqueMock.mockResolvedValueOnce({
+        id: 'app-1',
+        creditLimit: decimalLike('500000'), // Below Rs. 1M -> weight 2, point 1 -> 2
+        dsgir: 50, // Above 45% -> weight 3, point 3 -> 9
+        operationOfInstitution: 12, // More than 10 years -> weight 2, point 1 -> 2
+        satisfactoryPerformance: 0, // New / less than 1 year -> weight 1, point 3 -> 3
+        parentsBorrowingsWithBFIs: 'OTHER_BFIS', // Borrowing from >1 BFI -> weight 1, point 3 -> 3
+        sourceOfIncome: 'MIXED', // Mixed income -> weight 1, point 3 -> 3
+      });
+
+      const result = await service.calculateByApplicationId('app-1');
+
+      // totalWeightScore = 2 + 9 + 2 + 3 + 3 + 3 = 22
+      expect(result.overall.score).toBe(22);
     });
 
     it('returns a zero score without throwing when every field is null', async () => {
