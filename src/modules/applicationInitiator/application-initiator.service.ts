@@ -473,11 +473,11 @@ export class ApplicationInitiatorService {
       familyMembers,
       existingFacilities,
       personalGuarantee,
-      insuredAssets,
-      valueOfAssets,
-      sumOfInsurance,
-      insuranceCoverage,
-      insuranceRemarks,
+      insuredName,
+      insuranceCompanyName,
+      sumInsured,
+      maturityDate,
+      policyNo,
       repaymentCapacity,
       blacklistStatus,
       blacklistReason,
@@ -490,11 +490,11 @@ export class ApplicationInitiatorService {
     const approvalUpdate = this.buildApprovalUpdate(approval);
 
     const insurance = {
-      insuredAssets,
-      valueOfAssets,
-      sumOfInsurance,
-      insuranceCoverage,
-      insuranceRemarks,
+      insuredName,
+      insuranceCompanyName,
+      sumInsured,
+      maturityDate,
+      policyNo,
     };
     const hasInsuranceUpdate = Object.values(insurance).some(
       (value) => value !== undefined,

@@ -724,13 +724,11 @@ model Insurance {
   applicationId String          @unique
   application   LoanApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
 
-  insuredAssets String?
-
-  valueOfAssets  Decimal? @db.Decimal(18, 2)
-  sumOfInsurance Decimal? @db.Decimal(18, 2)
-
-  insuranceCoverage Decimal? @db.Decimal(5, 2)
-  insuranceRemarks  String?
+  insuredName          String?
+  insuranceCompanyName String?
+  sumInsured           Decimal? @db.Decimal(18, 2)
+  maturityDate         DateTime?
+  policyNo             String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

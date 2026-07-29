@@ -913,45 +913,44 @@ export class UpdateInitiatorApplicationDto {
   // =========================
 
   @ApiPropertyOptional({
-    description:
-      'Inventory of assets explicitly covered under insurance policies',
-    example: 'Commercial building structures',
+    description: 'Name of the person/entity the policy insures',
+    example: 'Ram Prasad Sharma',
   })
   @IsOptional()
   @IsString()
-  insuredAssets?: string;
+  insuredName?: string;
 
   @ApiPropertyOptional({
-    description: 'Book or calculated real asset values insured',
-    example: 8000000,
+    description: 'Insurance company underwriting the policy',
+    example: 'IME General Insurance',
   })
   @IsOptional()
-  @IsMoneyAmount()
-  valueOfAssets?: number;
+  @IsString()
+  insuranceCompanyName?: string;
 
   @ApiPropertyOptional({
-    description: 'Total accumulated sum insured value threshold',
+    description: 'Total sum insured under the policy',
     example: 8500000,
   })
   @IsOptional()
   @IsMoneyAmount()
-  sumOfInsurance?: number;
+  sumInsured?: number;
 
   @ApiPropertyOptional({
-    description: 'Collateralized asset insurance evaluation specific notes',
-    example: 'Policy renewed until end of fiscal year.',
+    description: 'Policy maturity / expiry date',
+    example: '2027-01-01T00:00:00.000Z',
+  })
+  @IsOptional()
+  @IsISO8601()
+  maturityDate?: string;
+
+  @ApiPropertyOptional({
+    description: 'Insurance policy number',
+    example: 'IMG-PROP-2080-092',
   })
   @IsOptional()
   @IsString()
-  insuranceRemarks?: string;
-
-  @ApiPropertyOptional({
-    description: 'Insurance coverage risk representation metric values',
-    example: 100,
-  })
-  @IsOptional()
-  @IsPercentage()
-  insuranceCoverage?: number;
+  policyNo?: string;
 
   // =========================
   // 8. Repayment Capacity
