@@ -177,6 +177,12 @@ enum AuditAction {
   APPROVER_TERMS_ACCEPTED
   STUDENT_CONSENT_SENT
   STUDENT_CONSENT_ACCEPTED
+  MARKETPLACE_COLLEGE_CREATED
+  MARKETPLACE_COLLEGE_UPDATED
+  MARKETPLACE_COLLEGE_DELETED
+  MARKETPLACE_COURSE_CREATED
+  MARKETPLACE_COURSE_UPDATED
+  MARKETPLACE_COURSE_DELETED
 }
 
 enum AuditCategory {
@@ -272,6 +278,28 @@ enum CommissionEntryStatus {
   PAID
 }
 
+enum DegreeLevel {
+  CERTIFICATE
+  DIPLOMA
+  BACHELOR
+  MASTER
+  PHD
+}
+
+enum CourseCategory {
+  ENGINEERING
+  MANAGEMENT
+  IT_COMPUTER_SCIENCE
+  MEDICINE_HEALTH_SCIENCE
+  SCIENCE
+  HUMANITIES_SOCIAL_SCIENCE
+  LAW
+  EDUCATION
+  HOSPITALITY_TOURISM
+  AGRICULTURE
+  OTHER
+}
+
 // ─── Models ───────────────────────────────────────────────────────────────────
 
 model User {
@@ -316,6 +344,13 @@ model LoanApplication {
   email       String?
   phoneNumber String?
   collegeName String?
+  // Optional link to a College Marketplace catalog entry — collegeName above
+  // stays the source of truth for everything downstream (verification, offer
+  // letters, PDFs); this FK is only for marketplace-originated applications.
+  // SetNull (not Cascade) so removing a catalog college never touches a
+  // submitted application's frozen record.
+  collegeId   String?
+  college     College? @relation(fields: [collegeId], references: [id], onDelete: SetNull)
 
   // Step 2: Identity
   identityType   IdentityType?
@@ -550,6 +585,7 @@ model LoanApplication {
   @@index([stage])
   @@index([source])
   @@index([submittedAt])
+  @@index([collegeId])
   @@map("loan_applications")
 }
 
@@ -562,11 +598,20 @@ model StudyInformation {
   boardUniversity String?
   courseDuration  String?
 
+  // Optional link to a College Marketplace course — courseName/boardUniversity/
+  // courseDuration above stay the source of truth for display; this FK is only
+  // for marketplace-originated applications. tuitionFee is a fee snapshot taken
+  // at application time (course pricing may change later without affecting it).
+  courseId   String?
+  course     Course?  @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  tuitionFee Decimal? @db.Decimal(12, 2)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   application LoanApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
 
+  @@index([courseId])
   @@map("study_information")
 }
 
@@ -724,13 +769,11 @@ model Insurance {
   applicationId String          @unique
   application   LoanApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
 
-  insuredAssets String?
-
-  valueOfAssets  Decimal? @db.Decimal(18, 2)
-  sumOfInsurance Decimal? @db.Decimal(18, 2)
-
-  insuranceCoverage Decimal? @db.Decimal(5, 2)
-  insuranceRemarks  String?
+  insuredName          String?
+  insuranceCompanyName String?
+  sumInsured           Decimal? @db.Decimal(18, 2)
+  maturityDate         DateTime?
+  policyNo             String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1450,6 +1493,130 @@ model CommissionEntry {
   @@index([partnerId])
   @@index([month])
   @@map("commission_entries")
+}
+
+// ─── College Marketplace ────────────────────────────────────────────────────
+// Student-facing catalog students browse to discover colleges/courses before
+// applying. Deliberately separate from CollegeVerification (a per-application
+// magic-link verification workflow) — this is a browsable directory instead.
+
+model University {
+  id        String  @id @default(uuid())
+  name      String  @unique
+  shortName String?
+  isActive  Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  colleges College[]
+
+  @@map("universities")
+}
+
+model College {
+  id          String  @id @default(uuid())
+  name        String
+  slug        String  @unique
+  description String?
+  // Long-form "About" content (multiple paragraphs) for a future richer
+  // About section — distinct from `description`, which stays the short
+  // card/summary blurb. Frontend rendering is deferred; schema only for now.
+  aboutContent String?
+  logoUrl     String?
+  bannerUrl   String?
+
+  address      String?
+  province     String?
+  district     String?
+  municipality String?
+
+  universityId String?
+  university   University? @relation(fields: [universityId], references: [id], onDelete: SetNull)
+
+  website      String?
+  contactEmail String?
+  contactPhone String?
+  eligibility  String?
+  requiredDocs String?
+
+  // e.g. "UGC Accredited", "AACSB" — free text, shown as a trust chip on the
+  // card/detail page; isFeatured drives the marketplace "Featured" badge.
+  accreditation String?
+  isFeatured    Boolean @default(false)
+
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  courses          Course[]
+  loanApplications LoanApplication[]
+
+  @@index([province, district])
+  @@index([universityId])
+  @@map("colleges")
+}
+
+model Course {
+  id        String  @id @default(uuid())
+  collegeId String
+  college   College @relation(fields: [collegeId], references: [id], onDelete: Cascade)
+
+  name           String
+  slug           String
+  category       CourseCategory
+  degreeLevel    DegreeLevel
+  // Matches the fixed vocabulary already hardcoded in the frontend apply
+  // form's duration dropdown ("6 Months" … "6 Years") so a selected course
+  // slots straight into that <Select> with no frontend validation changes.
+  duration       String
+  durationMonths Int?
+  description    String?
+  // Long-form "About this course" content — distinct from `description`
+  // (the short card/summary blurb). Frontend rendering is deferred; schema
+  // only for now, same convention as College.aboutContent.
+  aboutContent   String?
+  eligibility    String?
+  seatsAvailable Int?
+
+  tuitionFee   Decimal  @db.Decimal(12, 2)
+  admissionFee Decimal? @db.Decimal(12, 2)
+  totalFee     Decimal  @db.Decimal(12, 2)
+  // Line-item fee breakdown ([{label, amount}]) — e.g. Semester Fee, Exam
+  // Fee, Other Charges — shown on the Course Detail page's Fee Structure
+  // section instead of adding a dedicated column per fee type.
+  feeBreakdown Json?
+
+  bannerUrl String?
+  // Course Detail page content — all optional so a course with none of these
+  // set still renders a complete page, just without that section.
+  learningOutcomes String[] @default([])
+  // [{ title, description?, salaryRange? }]
+  careerOutcomes   Json?
+  // [{ semester: string, subjects: string[] }]
+  curriculum       Json?
+  industryDemand   String?
+  intake           String?
+  credits          Int?
+  medium           String?
+  attendanceType   String?
+  isFeatured       Boolean @default(false)
+  isPopular        Boolean @default(false)
+
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  studyInformation StudyInformation[]
+
+  @@unique([collegeId, slug])
+  @@index([collegeId])
+  @@index([category])
+  @@index([degreeLevel])
+  @@index([tuitionFee])
+  @@map("courses")
 }
 
 // ─── RBAC: Permission Engine ────────────────────────────────────────────────
