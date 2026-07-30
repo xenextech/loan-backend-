@@ -4,6 +4,7 @@ import { PrismaClient, UserRole } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { seedRbac } from './rbac-seed-data';
+import { seedMarketplace } from './marketplace-seed-data';
 const adapter = new PrismaPg({
   connectionString: process.env.DATABASE_URL ?? '',
 });
@@ -52,6 +53,7 @@ async function main() {
   }
 
   await seedRbac(prisma);
+  await seedMarketplace(prisma);
 
   console.log(' Seed completed successfully.');
   console.log('Default Password:', password);

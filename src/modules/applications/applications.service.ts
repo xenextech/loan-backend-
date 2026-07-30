@@ -242,24 +242,69 @@ export class ApplicationsService {
       boardUniversity,
       courseDuration,
       loanAmount,
+      courseId,
       ...personalData
     } = dto;
+
+    let resolvedCourseName = courseName;
+    let resolvedBoardUniversity = boardUniversity;
+    let resolvedCourseDuration = courseDuration;
+    let resolvedCollegeName = personalData.collegeName;
+    let tuitionFee: number | undefined;
+
+    // College Marketplace anti-tamper boundary: when a courseId is present,
+    // re-derive every display string from the catalog instead of trusting the
+    // client-supplied text — a student editing collegeName/courseName in
+    // devtools while keeping a valid courseId gets overwritten here.
+    if (courseId) {
+      const course = await this.prisma.course.findUnique({
+        where: { id: courseId },
+        include: { college: { include: { university: true } } },
+      });
+      if (!course || !course.isActive || !course.college.isActive) {
+        throw new BadRequestException('Selected course is unavailable');
+      }
+      if (
+        personalData.collegeId &&
+        course.collegeId !== personalData.collegeId
+      ) {
+        throw new BadRequestException(
+          'Course does not belong to the selected college',
+        );
+      }
+      personalData.collegeId = course.collegeId;
+      resolvedCollegeName = course.college.name;
+      resolvedCourseName = course.name;
+      resolvedBoardUniversity =
+        course.college.university?.name ?? resolvedBoardUniversity;
+      resolvedCourseDuration = course.duration;
+      tuitionFee = Number(course.tuitionFee);
+    }
 
     await this.prisma.$transaction([
       this.prisma.loanApplication.update({
         where: { id },
-        data: personalData,
+        data: { ...personalData, collegeName: resolvedCollegeName },
       }),
       this.prisma.studyInformation.upsert({
         where: { applicationId: id },
         create: {
           applicationId: id,
           studyType,
-          courseName,
-          boardUniversity,
-          courseDuration,
+          courseName: resolvedCourseName,
+          boardUniversity: resolvedBoardUniversity,
+          courseDuration: resolvedCourseDuration,
+          courseId,
+          tuitionFee,
         },
-        update: { studyType, courseName, boardUniversity, courseDuration },
+        update: {
+          studyType,
+          courseName: resolvedCourseName,
+          boardUniversity: resolvedBoardUniversity,
+          courseDuration: resolvedCourseDuration,
+          courseId,
+          tuitionFee,
+        },
       }),
       this.prisma.loanInformation.upsert({
         where: { applicationId: id },

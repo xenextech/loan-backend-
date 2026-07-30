@@ -17,6 +17,7 @@ import { CreditScoreModule } from './modules/creditScore/credit-score.module';
 import { ApplicationInitiatorModule } from './modules/applicationInitiator/application-initiator.module';
 import { ParentsModule } from './modules/parents/parents.module';
 import { CollegeModule } from './modules/college/college.module';
+import { MarketplaceModule } from './modules/marketplace/marketplace.module';
 import { ParentPublicModule } from './modules/parent-public/parent-public.module';
 import { OfferLetterModule } from './modules/offer-letter/offer-letter.module';
 import { AgreementModule } from './modules/agreement/agreement.module';
@@ -45,6 +46,7 @@ import { PermissionsModule } from './modules/permissions/permissions.module';
     UtilsModule,
     ParentsModule,
     CollegeModule,
+    MarketplaceModule,
     ParentPublicModule,
     OfferLetterModule,
     AgreementModule,

@@ -6,6 +6,7 @@ import {
   Matches,
   IsEnum,
   IsNumber,
+  IsUUID,
   Min,
   Max,
 } from 'class-validator';
@@ -33,6 +34,25 @@ export class Step1Dto {
   @IsOptional()
   @IsString()
   collegeName?: string;
+
+  // College Marketplace linkage — when set, the service re-derives
+  // collegeName/courseName/boardUniversity/courseDuration/tuitionFee from the
+  // catalog instead of trusting the client-supplied text for those fields.
+  @ApiPropertyOptional({
+    description:
+      'College Marketplace college UUID (only when applying via the marketplace)',
+  })
+  @IsOptional()
+  @IsUUID()
+  collegeId?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'College Marketplace course UUID (only when applying via the marketplace)',
+  })
+  @IsOptional()
+  @IsUUID()
+  courseId?: string;
 
   // Study Information
   @ApiPropertyOptional({ enum: StudyType })

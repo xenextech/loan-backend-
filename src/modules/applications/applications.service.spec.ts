@@ -159,4 +159,150 @@ describe('ApplicationsService', () => {
       expect(createMock).not.toHaveBeenCalled();
     });
   });
+
+  describe('saveStep1 — College Marketplace prefill anti-tamper', () => {
+    const draftApplication = {
+      id: 'app-1',
+      userId: 'student-1',
+      status: 'DRAFT',
+      dateOfBirth: null,
+      dobBs: null,
+    };
+
+    const activeCourse = {
+      id: 'course-1',
+      collegeId: 'college-1',
+      name: 'Bachelor of Information Management',
+      duration: '4 Years',
+      tuitionFee: { toString: () => '340000' } as unknown as number, // Decimal-like
+      isActive: true,
+      college: {
+        id: 'college-1',
+        name: 'Pokhara College of IT',
+        isActive: true,
+        university: { name: 'Pokhara University' },
+      },
+    };
+
+    let findUniqueApplicationMock: jest.Mock;
+    let findUniqueCourseMock: jest.Mock;
+    let updateMock: jest.Mock;
+    let studyUpsertMock: jest.Mock;
+    let loanUpsertMock: jest.Mock;
+    let transactionMock: jest.Mock;
+    let stepService: ApplicationsService;
+
+    beforeEach(() => {
+      findUniqueApplicationMock = jest.fn().mockResolvedValue(draftApplication);
+      findUniqueCourseMock = jest.fn().mockResolvedValue(activeCourse);
+      updateMock = jest.fn().mockResolvedValue({});
+      studyUpsertMock = jest.fn().mockResolvedValue({});
+      loanUpsertMock = jest.fn().mockResolvedValue({});
+      transactionMock = jest.fn((ops: Promise<unknown>[]) => Promise.all(ops));
+
+      const prisma = {
+        loanApplication: {
+          findUnique: findUniqueApplicationMock,
+          update: updateMock,
+        },
+        course: { findUnique: findUniqueCourseMock },
+        studyInformation: { upsert: studyUpsertMock },
+        loanInformation: { upsert: loanUpsertMock },
+        $transaction: transactionMock,
+      } as unknown as PrismaService;
+      const audit = {
+        log: jest.fn().mockResolvedValue(undefined),
+      } as unknown as AuditService;
+      const notifications = {} as unknown as NotificationsService;
+      const config = { get: jest.fn() } as unknown as ConfigService;
+
+      stepService = new ApplicationsService(
+        prisma,
+        audit,
+        notifications,
+        config,
+      );
+    });
+
+    it('re-derives collegeName/courseName/boardUniversity/duration/tuitionFee from the catalog when courseId is present, ignoring client-supplied text', async () => {
+      await stepService.saveStep1('app-1', 'student-1', {
+        collegeName: 'Some Tampered College Name',
+        courseName: 'Tampered Course Name',
+        boardUniversity: 'Tampered University',
+        courseDuration: '99 Years',
+        collegeId: 'college-1',
+        courseId: 'course-1',
+        loanAmount: 300000,
+      });
+
+      expect(updateMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            collegeName: 'Pokhara College of IT',
+            collegeId: 'college-1',
+          }) as unknown,
+        }),
+      );
+      expect(studyUpsertMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          update: expect.objectContaining({
+            courseName: 'Bachelor of Information Management',
+            boardUniversity: 'Pokhara University',
+            courseDuration: '4 Years',
+            courseId: 'course-1',
+            tuitionFee: 340000,
+          }) as unknown,
+        }),
+      );
+    });
+
+    it('rejects when the course does not belong to the selected college', async () => {
+      await expect(
+        stepService.saveStep1('app-1', 'student-1', {
+          collegeId: 'a-different-college',
+          courseId: 'course-1',
+        }),
+      ).rejects.toThrow(BadRequestException);
+      expect(updateMock).not.toHaveBeenCalled();
+    });
+
+    it('rejects when the course is inactive or not found', async () => {
+      findUniqueCourseMock.mockResolvedValueOnce(null);
+      await expect(
+        stepService.saveStep1('app-1', 'student-1', {
+          collegeId: 'college-1',
+          courseId: 'missing-course',
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('leaves free-text fields untouched when no courseId is supplied (direct /apply path)', async () => {
+      await stepService.saveStep1('app-1', 'student-1', {
+        collegeName: 'Hand-typed College',
+        courseName: 'Hand-typed Course',
+        boardUniversity: 'Hand-typed University',
+        courseDuration: '3 Years',
+        loanAmount: 200000,
+      });
+
+      expect(findUniqueCourseMock).not.toHaveBeenCalled();
+      expect(updateMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            collegeName: 'Hand-typed College',
+          }) as unknown,
+        }),
+      );
+      expect(studyUpsertMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          update: expect.objectContaining({
+            courseName: 'Hand-typed Course',
+            boardUniversity: 'Hand-typed University',
+            courseDuration: '3 Years',
+            courseId: undefined,
+          }) as unknown,
+        }),
+      );
+    });
+  });
 });
