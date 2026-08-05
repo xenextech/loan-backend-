@@ -4,31 +4,96 @@ import { PrismaClient, UserRole } from '@prisma/client';
 // PermissionsGuard/PermissionsService can resolve a JWT's role straight to
 // its configuration row (`Role.code === UserRole` value). ─────────────────
 const ROLES: { code: UserRole; name: string; description: string }[] = [
-  { code: UserRole.ADMIN, name: 'Administrator', description: 'Full platform control, including Role & Permission Management.' },
-  { code: UserRole.STUDENT, name: 'Student', description: 'Applies for and tracks their own education loan.' },
-  { code: UserRole.PARENT, name: 'Parent', description: "Verifies a student's application as guarantor/co-applicant." },
-  { code: UserRole.COLLEGE, name: 'College', description: "Verifies a student's enrollment and issues offer/enrollment documents." },
-  { code: UserRole.INITIATOR, name: 'Initiator', description: 'First-line loan officer who creates and prepares applications.' },
-  { code: UserRole.SUPPORTER, name: 'Supporter', description: 'Reviews applications in the approval chain.' },
-  { code: UserRole.CHECKER, name: 'Checker', description: 'Reviews applications in the approval chain (deprecated in favor of Credit Manager).' },
-  { code: UserRole.APPROVER, name: 'Approver', description: 'Gives final approval on a loan application.' },
-  { code: UserRole.CREDIT_MANAGER, name: 'Credit Manager', description: 'Configures final loan terms, generates legal documents, manages repayment.' },
+  {
+    code: UserRole.ADMIN,
+    name: 'Administrator',
+    description:
+      'Full platform control, including Role & Permission Management.',
+  },
+  {
+    code: UserRole.STUDENT,
+    name: 'Student',
+    description: 'Applies for and tracks their own education loan.',
+  },
+  {
+    code: UserRole.PARENT,
+    name: 'Parent',
+    description: "Verifies a student's application as guarantor/co-applicant.",
+  },
+  {
+    code: UserRole.COLLEGE,
+    name: 'College',
+    description:
+      "Verifies a student's enrollment and issues offer/enrollment documents.",
+  },
+  {
+    code: UserRole.INITIATOR,
+    name: 'Initiator',
+    description:
+      'First-line loan officer who creates and prepares applications.',
+  },
+  {
+    code: UserRole.SUPPORTER,
+    name: 'Supporter',
+    description: 'Reviews applications in the approval chain.',
+  },
+  {
+    code: UserRole.CHECKER,
+    name: 'Checker',
+    description:
+      'Reviews applications in the approval chain (deprecated in favor of Credit Manager).',
+  },
+  {
+    code: UserRole.APPROVER,
+    name: 'Approver',
+    description: 'Gives final approval on a loan application.',
+  },
+  {
+    code: UserRole.CREDIT_MANAGER,
+    name: 'Credit Manager',
+    description:
+      'Configures final loan terms, generates legal documents, manages repayment.',
+  },
 ];
 
 // ─── Permissions — module/action matrix from the RBAC brief's Permission
 // Categories, key = "<module_slug>.<action>". ──────────────────────────────
 const PERMISSION_MODULES: { module: string; actions: string[] }[] = [
-  { module: 'dashboard', actions: ['view_dashboard', 'view_analytics', 'view_widgets'] },
-  { module: 'applications', actions: ['create', 'read', 'update', 'delete', 'approve', 'reject', 'export'] },
-  { module: 'documents', actions: ['view', 'generate', 'upload', 'download', 'delete'] },
+  {
+    module: 'dashboard',
+    actions: ['view_dashboard', 'view_analytics', 'view_widgets'],
+  },
+  {
+    module: 'applications',
+    actions: [
+      'create',
+      'read',
+      'update',
+      'delete',
+      'approve',
+      'reject',
+      'export',
+    ],
+  },
+  {
+    module: 'documents',
+    actions: ['view', 'generate', 'upload', 'download', 'delete'],
+  },
   { module: 'repayment', actions: ['view', 'configure', 'edit', 'override'] },
   { module: 'emi_schedule', actions: ['view', 'generate', 'download'] },
   { module: 'student_tracker', actions: ['view'] },
   { module: 'document_vault', actions: ['view', 'upload', 'download'] },
   { module: 'notifications', actions: ['view', 'send', 'delete'] },
   { module: 'reports', actions: ['view', 'export'] },
-  { module: 'user_management', actions: ['view', 'create', 'update', 'delete'] },
-  { module: 'role_management', actions: ['view', 'create', 'update', 'delete'] },
+  {
+    module: 'user_management',
+    actions: ['view', 'create', 'update', 'delete'],
+  },
+  {
+    module: 'role_management',
+    actions: ['view', 'create', 'update', 'delete'],
+  },
+  { module: 'marketplace', actions: ['manage'] },
 ];
 
 function permKey(module: string, action: string) {
@@ -47,21 +112,135 @@ const MENU_ITEMS: {
   order: number;
   isApiGuarded?: boolean;
 }[] = [
-  { key: 'dashboard', label: 'Dashboard', href: '', icon: 'LayoutDashboard', groupLabel: 'Overview', order: 0 },
-  { key: 'applications', label: 'Applications', href: '/applications', icon: 'FileText', groupLabel: 'Lending', order: 1 },
-  { key: 'approval-workflow', label: 'Approval Work Flow', href: '/approval', icon: 'GitBranch', groupLabel: 'Lending', order: 2 },
-  { key: 'disbursement', label: 'Disbursement', href: '/disbursment', icon: 'Wallet', groupLabel: 'Lending', order: 3 },
-  { key: 'emi-schedule', label: 'EMI Schedule', href: '/emi-schedule', icon: 'Calendar', groupLabel: 'Repayment', order: 4 },
-  { key: 'repayment-monitoring', label: 'Repayment Monitoring', href: '/repayment-monitoring', icon: 'Activity', groupLabel: 'Repayment', order: 5 },
-  { key: 'notifications', label: 'Inbox', href: '/notification', icon: 'Inbox', groupLabel: 'Repayment', order: 6 },
-  { key: 'legal-documents', label: 'Legal Documents', href: '/legal-documents', icon: 'Scale', groupLabel: 'Document', order: 7 },
-  { key: 'legal-document-vault', label: 'Legal Document Vault', href: '/legal-document-vault', icon: 'FileSignature', groupLabel: 'Document', order: 8 },
-  { key: 'document-center', label: 'Document Center', href: '/document-center', icon: 'FolderOpen', groupLabel: 'Document', order: 9 },
-  { key: 'document-vault', label: 'Document Vault', href: '/document-vault', icon: 'Archive', groupLabel: 'Document', order: 10, isApiGuarded: true },
-  { key: 'insurance-checker', label: 'Insurance Checker', href: '/insurance-checker', icon: 'ShieldCheck', groupLabel: 'Document', order: 11 },
-  { key: 'commission', label: 'Commission', href: '/commission', icon: 'Percent', groupLabel: 'Finance', order: 12 },
-  { key: 'audit-ledger', label: 'Audit Ledger', href: '/audit-ledger', icon: 'History', groupLabel: 'Finance', order: 13 },
-  { key: 'permissions', label: 'Role & Permission Management', href: '/permissions', icon: 'KeyRound', groupLabel: 'Administration', order: 14 },
+  {
+    key: 'dashboard',
+    label: 'Dashboard',
+    href: '',
+    icon: 'LayoutDashboard',
+    groupLabel: 'Overview',
+    order: 0,
+  },
+  {
+    key: 'applications',
+    label: 'Applications',
+    href: '/applications',
+    icon: 'FileText',
+    groupLabel: 'Lending',
+    order: 1,
+  },
+  {
+    key: 'approval-workflow',
+    label: 'Approval Work Flow',
+    href: '/approval',
+    icon: 'GitBranch',
+    groupLabel: 'Lending',
+    order: 2,
+  },
+  {
+    key: 'disbursement',
+    label: 'Disbursement',
+    href: '/disbursment',
+    icon: 'Wallet',
+    groupLabel: 'Lending',
+    order: 3,
+  },
+  {
+    key: 'emi-schedule',
+    label: 'EMI Schedule',
+    href: '/emi-schedule',
+    icon: 'Calendar',
+    groupLabel: 'Repayment',
+    order: 4,
+  },
+  {
+    key: 'repayment-monitoring',
+    label: 'Repayment Monitoring',
+    href: '/repayment-monitoring',
+    icon: 'Activity',
+    groupLabel: 'Repayment',
+    order: 5,
+  },
+  {
+    key: 'notifications',
+    label: 'Inbox',
+    href: '/notification',
+    icon: 'Inbox',
+    groupLabel: 'Repayment',
+    order: 6,
+  },
+  {
+    key: 'legal-documents',
+    label: 'Legal Documents',
+    href: '/legal-documents',
+    icon: 'Scale',
+    groupLabel: 'Document',
+    order: 7,
+  },
+  {
+    key: 'legal-document-vault',
+    label: 'Legal Document Vault',
+    href: '/legal-document-vault',
+    icon: 'FileSignature',
+    groupLabel: 'Document',
+    order: 8,
+  },
+  {
+    key: 'document-center',
+    label: 'Document Center',
+    href: '/document-center',
+    icon: 'FolderOpen',
+    groupLabel: 'Document',
+    order: 9,
+  },
+  {
+    key: 'document-vault',
+    label: 'Document Vault',
+    href: '/document-vault',
+    icon: 'Archive',
+    groupLabel: 'Document',
+    order: 10,
+    isApiGuarded: true,
+  },
+  {
+    key: 'insurance-checker',
+    label: 'Insurance Checker',
+    href: '/insurance-checker',
+    icon: 'ShieldCheck',
+    groupLabel: 'Document',
+    order: 11,
+  },
+  {
+    key: 'commission',
+    label: 'Commission',
+    href: '/commission',
+    icon: 'Percent',
+    groupLabel: 'Finance',
+    order: 12,
+  },
+  {
+    key: 'audit-ledger',
+    label: 'Audit Ledger',
+    href: '/audit-ledger',
+    icon: 'History',
+    groupLabel: 'Finance',
+    order: 13,
+  },
+  {
+    key: 'permissions',
+    label: 'Role & Permission Management',
+    href: '/permissions',
+    icon: 'KeyRound',
+    groupLabel: 'Administration',
+    order: 14,
+  },
+  {
+    key: 'college-marketplace',
+    label: 'College Marketplace',
+    href: '/college-marketplace',
+    icon: 'Landmark',
+    groupLabel: 'Administration',
+    order: 15,
+  },
 ];
 
 // Reproduces today's *actual* hardcoded NAV_GROUPS per role exactly, so
@@ -83,8 +262,17 @@ const ROLE_MENU_KEYS: Partial<Record<UserRole, string[]>> = {
   [UserRole.SUPPORTER]: [...STAFF_BASE_MENU, 'legal-document-vault'],
   [UserRole.CHECKER]: STAFF_BASE_MENU,
   [UserRole.APPROVER]: [...STAFF_BASE_MENU, 'legal-document-vault'],
-  [UserRole.CREDIT_MANAGER]: [...STAFF_BASE_MENU, 'repayment-monitoring', 'legal-documents'],
-  [UserRole.ADMIN]: ['dashboard', 'applications', 'permissions'],
+  [UserRole.CREDIT_MANAGER]: [
+    ...STAFF_BASE_MENU,
+    'repayment-monitoring',
+    'legal-documents',
+  ],
+  [UserRole.ADMIN]: [
+    'dashboard',
+    'applications',
+    'permissions',
+    'college-marketplace',
+  ],
   // STUDENT / PARENT / COLLEGE keep their own separate, unrelated sidebars —
   // intentionally left unconfigured (no rows) rather than force-fit into
   // this staff-oriented menu catalog.
@@ -95,44 +283,67 @@ const ROLE_MENU_KEYS: Partial<Record<UserRole, string[]>> = {
 // equivalent existed), so these are Admin-adjustable defaults, not a
 // behavior contract to preserve byte-for-byte like the menu mirror above. ──
 const ROLE_PERMISSION_KEYS: Partial<Record<UserRole, string[]>> = {
-  [UserRole.ADMIN]: PERMISSION_MODULES.flatMap((m) => m.actions.map((a) => permKey(m.module, a))),
+  [UserRole.ADMIN]: PERMISSION_MODULES.flatMap((m) =>
+    m.actions.map((a) => permKey(m.module, a)),
+  ),
   [UserRole.INITIATOR]: [
     'dashboard.view_dashboard',
-    'applications.create', 'applications.read', 'applications.update', 'applications.export',
-    'documents.view', 'documents.upload',
-    'document_vault.view', 'document_vault.upload',
+    'applications.create',
+    'applications.read',
+    'applications.update',
+    'applications.export',
+    'documents.view',
+    'documents.upload',
+    'document_vault.view',
+    'document_vault.upload',
     'notifications.view',
   ],
   [UserRole.SUPPORTER]: [
     'dashboard.view_dashboard',
-    'applications.read', 'applications.export',
+    'applications.read',
+    'applications.export',
     'documents.view',
     'document_vault.view',
     'notifications.view',
   ],
   [UserRole.CHECKER]: [
     'dashboard.view_dashboard',
-    'applications.read', 'applications.export',
+    'applications.read',
+    'applications.export',
     'documents.view',
     'document_vault.view',
     'notifications.view',
   ],
   [UserRole.APPROVER]: [
     'dashboard.view_dashboard',
-    'applications.read', 'applications.approve', 'applications.reject', 'applications.export',
+    'applications.read',
+    'applications.approve',
+    'applications.reject',
+    'applications.export',
     'documents.view',
     'document_vault.view',
     'notifications.view',
   ],
   [UserRole.CREDIT_MANAGER]: [
-    'dashboard.view_dashboard', 'dashboard.view_analytics', 'dashboard.view_widgets',
-    'applications.read', 'applications.export',
-    'documents.view', 'documents.generate',
-    'repayment.view', 'repayment.configure', 'repayment.edit', 'repayment.override',
-    'emi_schedule.view', 'emi_schedule.generate', 'emi_schedule.download',
+    'dashboard.view_dashboard',
+    'dashboard.view_analytics',
+    'dashboard.view_widgets',
+    'applications.read',
+    'applications.export',
+    'documents.view',
+    'documents.generate',
+    'repayment.view',
+    'repayment.configure',
+    'repayment.edit',
+    'repayment.override',
+    'emi_schedule.view',
+    'emi_schedule.generate',
+    'emi_schedule.download',
     'document_vault.view',
-    'notifications.view', 'notifications.send',
-    'reports.view', 'reports.export',
+    'notifications.view',
+    'notifications.send',
+    'reports.view',
+    'reports.export',
   ],
 };
 
@@ -140,11 +351,31 @@ const ROLE_PERMISSION_KEYS: Partial<Record<UserRole, string[]>> = {
 // into dashboard pages yet (out of this task's scope), all visible by
 // default so nothing regresses. ─────────────────────────────────────────
 const WIDGETS = [
-  { key: 'loan_statistics', label: 'Loan Statistics', description: 'Summary counts of applications by stage.' },
-  { key: 'emi_summary', label: 'EMI Summary', description: 'Upcoming and overdue EMI counts.' },
-  { key: 'repayment_chart', label: 'Repayment Chart', description: 'Collections trend over time.' },
-  { key: 'notifications_widget', label: 'Notifications', description: 'Recent notification feed.' },
-  { key: 'disbursement_summary', label: 'Disbursement Summary', description: 'Pending and completed disbursement counts.' },
+  {
+    key: 'loan_statistics',
+    label: 'Loan Statistics',
+    description: 'Summary counts of applications by stage.',
+  },
+  {
+    key: 'emi_summary',
+    label: 'EMI Summary',
+    description: 'Upcoming and overdue EMI counts.',
+  },
+  {
+    key: 'repayment_chart',
+    label: 'Repayment Chart',
+    description: 'Collections trend over time.',
+  },
+  {
+    key: 'notifications_widget',
+    label: 'Notifications',
+    description: 'Recent notification feed.',
+  },
+  {
+    key: 'disbursement_summary',
+    label: 'Disbursement Summary',
+    description: 'Pending and completed disbursement counts.',
+  },
 ];
 
 export async function seedRbac(prisma: PrismaClient) {
@@ -154,7 +385,12 @@ export async function seedRbac(prisma: PrismaClient) {
     const row = await prisma.role.upsert({
       where: { code: r.code },
       update: { name: r.name, description: r.description },
-      create: { code: r.code, name: r.name, description: r.description, isSystem: true },
+      create: {
+        code: r.code,
+        name: r.name,
+        description: r.description,
+        isSystem: true,
+      },
     });
     roleByCode.set(r.code, row);
   }
@@ -219,7 +455,9 @@ export async function seedRbac(prisma: PrismaClient) {
       const menuItem = menuItemByKey.get(key);
       if (!menuItem) continue;
       await prisma.roleMenuItem.upsert({
-        where: { roleId_menuItemId: { roleId: role.id, menuItemId: menuItem.id } },
+        where: {
+          roleId_menuItemId: { roleId: role.id, menuItemId: menuItem.id },
+        },
         update: { visible: true },
         create: { roleId: role.id, menuItemId: menuItem.id, visible: true },
       });
@@ -234,7 +472,9 @@ export async function seedRbac(prisma: PrismaClient) {
       const permission = permissionByKey.get(key);
       if (!permission) continue;
       await prisma.rolePermission.upsert({
-        where: { roleId_permissionId: { roleId: role.id, permissionId: permission.id } },
+        where: {
+          roleId_permissionId: { roleId: role.id, permissionId: permission.id },
+        },
         update: {},
         create: { roleId: role.id, permissionId: permission.id },
       });

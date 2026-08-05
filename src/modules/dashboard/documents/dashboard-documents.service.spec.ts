@@ -294,6 +294,90 @@ describe('DashboardDocumentsService', () => {
         }),
       );
     });
+
+    it('maps the borrower identity details already held on the application so they are not reprinted as blanks', async () => {
+      agreementCreateMock.mockResolvedValueOnce({ id: 'agr-1' });
+      applicationFindUniqueMock.mockResolvedValueOnce({
+        ...(await applicationFindUniqueMock()),
+        correspondenceAddress: 'Lalitpur-14, Bagmati',
+        permanentAddress: 'Sindhuli-3, Bagmati',
+        citizenshipNumber: '27-01-75-01893',
+        citizenshipIssuedPlace: 'Kathmandu',
+        citizenshipIssuedDate: new Date(Date.UTC(2018, 10, 20)),
+        fatherName: 'Ram Bahadur Rai',
+        grandfatherName: 'Hari Bahadur Rai',
+        district: 'Sindhuli',
+        municipality: 'Kamalamai',
+        ward: '3',
+        personalGuarantee: {
+          nameOfGuarantor: 'Ram Bahadur Rai',
+          relationship: 'Father',
+          age: 54,
+          netWorth: null,
+        },
+      });
+
+      await service.createAgreement('user-1', {
+        applicationId: 'app-1',
+        agreementType: GeneratedAgreementType.GUARANTEE_DEED,
+      });
+
+      const { data } = agreementCreateMock.mock.calls[0][0];
+      expect(data.templateSnapshot).toEqual(
+        expect.objectContaining({
+          // Correspondence address wins over permanent address.
+          studentAddress: 'Lalitpur-14, Bagmati',
+          studentCitizenshipNo: '27-01-75-01893',
+          studentCitizenshipOffice: 'Kathmandu',
+          // Stored as an AD date, printed on the Nepali deed in BS.
+          studentCitizenshipIssueDate: '2075-08-04',
+          studentFatherOrHusbandName: 'Ram Bahadur Rai',
+          studentGrandfatherName: 'Hari Bahadur Rai',
+          studentPermanentDistrict: 'Sindhuli',
+          studentPermanentMunicipality: 'Kamalamai',
+          studentPermanentWardNo: '3',
+        }),
+      );
+      expect(data.templateSnapshot.guarantor).toEqual(
+        expect.objectContaining({
+          name: 'Ram Bahadur Rai',
+          relationship: 'Father',
+          age: '54',
+        }),
+      );
+    });
+
+    it('lets a Credit Manager override application data, and treats a blank input as "not provided"', async () => {
+      agreementCreateMock.mockResolvedValueOnce({ id: 'agr-1' });
+      applicationFindUniqueMock.mockResolvedValueOnce({
+        ...(await applicationFindUniqueMock()),
+        correspondenceAddress: 'Lalitpur-14, Bagmati',
+        citizenshipNumber: '27-01-75-01893',
+        district: 'Sindhuli',
+      });
+
+      await service.createAgreement('user-1', {
+        applicationId: 'app-1',
+        agreementType: GeneratedAgreementType.GUARANTEE_DEED,
+        studentAddress: 'Bhaktapur-9, Bagmati',
+        // Whitespace-only: an untouched form field must not blank out the
+        // value the application already holds.
+        studentCitizenshipNo: '   ',
+      });
+
+      const { data } = agreementCreateMock.mock.calls[0][0];
+      expect(data.templateSnapshot).toEqual(
+        expect.objectContaining({
+          studentAddress: 'Bhaktapur-9, Bagmati',
+          studentCitizenshipNo: '27-01-75-01893',
+          studentPermanentDistrict: 'Sindhuli',
+          // Genuinely absent everywhere — stays null so the document renders a
+          // ruled blank rather than placeholder text.
+          studentGrandfatherName: null,
+          branchManagerName: null,
+        }),
+      );
+    });
   });
 
   describe('sendToSign', () => {

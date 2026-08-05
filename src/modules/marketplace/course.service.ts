@@ -3,9 +3,14 @@ import { Course, Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { AuditAction } from '../../common/enums';
+import {
+  paginate,
+  buildPaginatedResponse,
+} from '../../common/dto/pagination.dto';
 import { slugify } from '../../common/utils/slugify.util';
 import { CreateCourseDto } from './dto/create-course.dto';
 import { UpdateCourseDto } from './dto/update-course.dto';
+import { QueryCoursesAdminDto } from './dto/query-courses-admin.dto';
 
 export function serializeCourseFees<
   T extends Pick<Course, 'tuitionFee' | 'admissionFee' | 'totalFee'>,
@@ -89,6 +94,44 @@ export class CourseService {
     return [...sameCategory, ...sameDegree].map(serializeCourseFees);
   }
 
+  // Admin catalog listing — courses joined with their college + university
+  // (so the admin table can show "which college" without a second round
+  // trip), unfiltered by isActive unless the caller opts out via
+  // includeInactive, so a soft-deleted course can still be found/reactivated.
+  async findAllForAdmin(query: QueryCoursesAdminDto) {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 20;
+    const { skip, take } = paginate(page, limit);
+
+    const where: Prisma.CourseWhereInput = {
+      ...(!query.includeInactive && { isActive: true }),
+      ...(query.search && {
+        name: { contains: query.search, mode: 'insensitive' },
+      }),
+      ...(query.collegeId && { collegeId: query.collegeId }),
+      ...(query.category && { category: query.category }),
+      ...(query.degreeLevel && { degreeLevel: query.degreeLevel }),
+    };
+
+    const [courses, total] = await this.prisma.$transaction([
+      this.prisma.course.findMany({
+        where,
+        include: { college: { include: { university: true } } },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take,
+      }),
+      this.prisma.course.count({ where }),
+    ]);
+
+    return buildPaginatedResponse(
+      courses.map(serializeCourseFees),
+      total,
+      page,
+      limit,
+    );
+  }
+
   private async uniqueSlug(
     collegeId: string,
     name: string,
@@ -125,6 +168,7 @@ export class CourseService {
         slug,
         careerOutcomes: toJsonInput(dto.careerOutcomes),
         curriculum: toJsonInput(dto.curriculum),
+        feeBreakdown: toJsonInput(dto.feeBreakdown),
       },
     });
     await this.audit.log(actorUserId, AuditAction.MARKETPLACE_COURSE_CREATED, {
@@ -132,7 +176,7 @@ export class CourseService {
       collegeId: course.collegeId,
       name: course.name,
     });
-    return course;
+    return serializeCourseFees(course);
   }
 
   async update(id: string, dto: UpdateCourseDto, actorUserId: string) {
@@ -155,12 +199,13 @@ export class CourseService {
         ...(slug && { slug }),
         careerOutcomes: toJsonInput(dto.careerOutcomes),
         curriculum: toJsonInput(dto.curriculum),
+        feeBreakdown: toJsonInput(dto.feeBreakdown),
       },
     });
     await this.audit.log(actorUserId, AuditAction.MARKETPLACE_COURSE_UPDATED, {
       courseId: id,
     });
-    return course;
+    return serializeCourseFees(course);
   }
 
   async remove(id: string, actorUserId: string) {

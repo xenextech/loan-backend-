@@ -24,6 +24,7 @@ import {
 } from '../../../common/dto/pagination.dto';
 import { resolveEffectiveLoanTerms } from '../../../common/utils/loan-principal.util';
 import { generateLegalDocumentNumber } from '../../../common/utils/legal-document-number.util';
+import { convertAdToBs } from '../../../common/utils/bs-ad-date.util';
 import { VerifyOfferLetterDto } from '../dto/offer-letter-verify.dto';
 import { DocumentVaultQueryDto } from '../dto/document-vault-query.dto';
 import {
@@ -31,6 +32,33 @@ import {
   ForwardGeneratedAgreementDto,
   GeneratedAgreementQueryDto,
 } from '../dto/generated-agreement.dto';
+
+/**
+ * Picks the first value that actually carries content, so a Credit Manager's
+ * typed-in override always wins over the stored application data, and the
+ * stored data in turn wins over leaving the field blank on the document.
+ * Empty strings count as "not provided" — an untouched form input submits ""
+ * and must not blank out a field the application already knows.
+ */
+function firstFilled(
+  ...values: (string | null | undefined)[]
+): string | null {
+  for (const value of values) {
+    const trimmed = value?.trim();
+    if (trimmed) return trimmed;
+  }
+  return null;
+}
+
+/** Formats a stored AD date as a BS date string for the Nepali documents. */
+function bsDateOrNull(date: Date | null | undefined): string | null {
+  if (!date) return null;
+  try {
+    return convertAdToBs(date);
+  } catch {
+    return null;
+  }
+}
 
 const AGREEMENT_TYPE_LABEL: Record<GeneratedAgreementType, string> = {
   [GeneratedAgreementType.LOAN_AGREEMENT]: 'Loan Agreement',
@@ -280,20 +308,73 @@ export class DashboardDocumentsService {
     const generatedByName = actor?.fullName ?? actor?.email ?? 'Unknown';
     const documentNumber = generateLegalDocumentNumber();
 
-    // Citizenship no./issue office, addresses, and the branch manager's name
-    // aren't captured anywhere in the application data — they're blanks on
-    // the paper Loan Agreement that the Credit Manager fills in by hand.
+    // The borrower's citizenship, parentage and permanent address are already
+    // captured during application intake (Credit Appraisal "Basic Information"
+    // first, then the Step 2/3 identity + family fields as a fallback), so the
+    // document is populated from those rather than reprinted as blanks the
+    // Credit Manager has to retype. Anything typed into the generator form
+    // still takes precedence — that's the override path for corrections and
+    // for the handful of fields the application genuinely never collects
+    // (branch manager, collateral, disbursement request details).
+    const borrower = {
+      address: firstFilled(
+        dto.studentAddress,
+        application.correspondenceAddress,
+        application.permanentAddress,
+      ),
+      citizenshipNo: firstFilled(
+        dto.studentCitizenshipNo,
+        application.citizenshipNumber,
+        application.identityNumber,
+      ),
+      citizenshipOffice: firstFilled(
+        dto.studentCitizenshipOffice,
+        application.citizenshipIssuedPlace,
+        application.issuedDistrict,
+      ),
+      citizenshipIssueDate: firstFilled(
+        dto.studentCitizenshipIssueDate,
+        bsDateOrNull(application.citizenshipIssuedDate),
+        bsDateOrNull(application.issuedDate),
+      ),
+      // Nepali deeds name the father or, for a married woman, the husband —
+      // spouseName is only consulted when no father's name is on file.
+      fatherOrHusbandName: firstFilled(
+        dto.studentFatherOrHusbandName,
+        application.fatherName,
+        application.spouseName,
+      ),
+      grandfatherName: firstFilled(
+        dto.studentGrandfatherName,
+        application.grandfatherName,
+      ),
+      permanentDistrict: firstFilled(
+        dto.studentPermanentDistrict,
+        application.district,
+      ),
+      permanentMunicipality: firstFilled(
+        dto.studentPermanentMunicipality,
+        application.municipality,
+      ),
+      permanentWardNo: firstFilled(
+        dto.studentPermanentWardNo,
+        application.ward,
+      ),
+    };
+
     // `guarantorName`/`guarantorRelationship` also let the Credit Manager
     // override or supply the guarantor when personalGuarantee wasn't
-    // collected on the application.
-    const guarantorName =
-      dto.guarantorName?.trim() ||
-      application.personalGuarantee?.nameOfGuarantor ||
-      null;
-    const guarantorRelationship =
-      dto.guarantorRelationship?.trim() ||
-      application.personalGuarantee?.relationship ||
-      null;
+    // collected on the application. The guarantor's own citizenship and
+    // address are not captured anywhere on the application, so those remain
+    // manual entry; age falls back to the recorded PersonalGuarantee.age.
+    const guarantorName = firstFilled(
+      dto.guarantorName,
+      application.personalGuarantee?.nameOfGuarantor,
+    );
+    const guarantorRelationship = firstFilled(
+      dto.guarantorRelationship,
+      application.personalGuarantee?.relationship,
+    );
     const guarantor =
       guarantorName || application.personalGuarantee
         ? {
@@ -301,19 +382,23 @@ export class DashboardDocumentsService {
             relationship: guarantorRelationship,
             netWorth:
               application.personalGuarantee?.netWorth?.toString() ?? null,
-            citizenshipNo: dto.guarantorCitizenshipNo?.trim() || null,
-            citizenshipIssueDate:
-              dto.guarantorCitizenshipIssueDate?.trim() || null,
-            citizenshipOffice: dto.guarantorCitizenshipOffice?.trim() || null,
-            address: dto.guarantorAddress?.trim() || null,
-            fatherOrHusbandName:
-              dto.guarantorFatherOrHusbandName?.trim() || null,
-            grandfatherName: dto.guarantorGrandfatherName?.trim() || null,
-            permanentDistrict: dto.guarantorPermanentDistrict?.trim() || null,
-            permanentMunicipality:
-              dto.guarantorPermanentMunicipality?.trim() || null,
-            permanentWardNo: dto.guarantorPermanentWardNo?.trim() || null,
-            age: dto.guarantorAge?.trim() || null,
+            citizenshipNo: firstFilled(dto.guarantorCitizenshipNo),
+            citizenshipIssueDate: firstFilled(
+              dto.guarantorCitizenshipIssueDate,
+            ),
+            citizenshipOffice: firstFilled(dto.guarantorCitizenshipOffice),
+            address: firstFilled(dto.guarantorAddress),
+            fatherOrHusbandName: firstFilled(dto.guarantorFatherOrHusbandName),
+            grandfatherName: firstFilled(dto.guarantorGrandfatherName),
+            permanentDistrict: firstFilled(dto.guarantorPermanentDistrict),
+            permanentMunicipality: firstFilled(
+              dto.guarantorPermanentMunicipality,
+            ),
+            permanentWardNo: firstFilled(dto.guarantorPermanentWardNo),
+            age: firstFilled(
+              dto.guarantorAge,
+              application.personalGuarantee?.age?.toString(),
+            ),
           }
         : null;
 
@@ -342,35 +427,30 @@ export class DashboardDocumentsService {
           emiAmount,
           totalRepayment,
           guarantor,
-          remarks: dto.remarks ?? null,
+          remarks: firstFilled(dto.remarks),
           generatedByName,
           generatedAt: new Date().toISOString(),
-          institutionName: dto.institutionName?.trim() || 'Unnati',
-          studentAddress: dto.studentAddress?.trim() || null,
-          studentCitizenshipNo: dto.studentCitizenshipNo?.trim() || null,
-          studentCitizenshipOffice:
-            dto.studentCitizenshipOffice?.trim() || null,
-          studentCitizenshipIssueDate:
-            dto.studentCitizenshipIssueDate?.trim() || null,
-          studentFatherOrHusbandName:
-            dto.studentFatherOrHusbandName?.trim() || null,
-          studentGrandfatherName: dto.studentGrandfatherName?.trim() || null,
-          studentPermanentDistrict:
-            dto.studentPermanentDistrict?.trim() || null,
-          studentPermanentMunicipality:
-            dto.studentPermanentMunicipality?.trim() || null,
-          studentPermanentWardNo: dto.studentPermanentWardNo?.trim() || null,
-          branchManagerName: dto.branchManagerName?.trim() || null,
-          collateralOwnerName: dto.collateralOwnerName?.trim() || null,
-          collateralAddress: dto.collateralAddress?.trim() || null,
-          collateralPlotNo: dto.collateralPlotNo?.trim() || null,
-          collateralArea: dto.collateralArea?.trim() || null,
-          collateralRemarks: dto.collateralRemarks?.trim() || null,
-          approvalLetterDate: dto.approvalLetterDate?.trim() || null,
-          loanExpiryDate: dto.loanExpiryDate?.trim() || null,
-          borrowerPosition: dto.borrowerPosition?.trim() || null,
-          bankAccountName: dto.bankAccountName?.trim() || null,
-          bankAccountNumber: dto.bankAccountNumber?.trim() || null,
+          institutionName: firstFilled(dto.institutionName) ?? 'Unnati',
+          studentAddress: borrower.address,
+          studentCitizenshipNo: borrower.citizenshipNo,
+          studentCitizenshipOffice: borrower.citizenshipOffice,
+          studentCitizenshipIssueDate: borrower.citizenshipIssueDate,
+          studentFatherOrHusbandName: borrower.fatherOrHusbandName,
+          studentGrandfatherName: borrower.grandfatherName,
+          studentPermanentDistrict: borrower.permanentDistrict,
+          studentPermanentMunicipality: borrower.permanentMunicipality,
+          studentPermanentWardNo: borrower.permanentWardNo,
+          branchManagerName: firstFilled(dto.branchManagerName),
+          collateralOwnerName: firstFilled(dto.collateralOwnerName),
+          collateralAddress: firstFilled(dto.collateralAddress),
+          collateralPlotNo: firstFilled(dto.collateralPlotNo),
+          collateralArea: firstFilled(dto.collateralArea),
+          collateralRemarks: firstFilled(dto.collateralRemarks),
+          approvalLetterDate: firstFilled(dto.approvalLetterDate),
+          loanExpiryDate: firstFilled(dto.loanExpiryDate),
+          borrowerPosition: firstFilled(dto.borrowerPosition),
+          bankAccountName: firstFilled(dto.bankAccountName),
+          bankAccountNumber: firstFilled(dto.bankAccountNumber),
         },
       },
     });

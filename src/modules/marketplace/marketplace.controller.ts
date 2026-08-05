@@ -5,20 +5,36 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  MaxFileSizeValidator,
   Param,
+  ParseFilePipe,
   Patch,
   Post,
   Query,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { FileInterceptor } from '@nestjs/platform-express';
+import {
+  ApiBearerAuth,
+  ApiBody,
+  ApiConsumes,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
+import { memoryStorage } from 'multer';
 import { CollegeService } from './college.service';
 import { CourseService } from './course.service';
+import { UniversityService } from './university.service';
 import { QueryCollegesDto } from './dto/query-colleges.dto';
 import { CreateCollegeDto } from './dto/create-college.dto';
 import { UpdateCollegeDto } from './dto/update-college.dto';
 import { CreateCourseDto } from './dto/create-course.dto';
 import { UpdateCourseDto } from './dto/update-course.dto';
+import { QueryCoursesAdminDto } from './dto/query-courses-admin.dto';
+import { CreateUniversityDto } from './dto/create-university.dto';
+import { UpdateUniversityDto } from './dto/update-university.dto';
 import { PrefillQueryDto } from './dto/prefill-query.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
@@ -26,6 +42,12 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { JwtPayload } from '../../common/interfaces/jwt-payload.interface';
 import { UserRole } from '../../common/enums';
+import { StorageService } from '../storage/storage.service';
+import {
+  ALLOWED_IMAGE_TYPES,
+  MAX_IMAGE_SIZE,
+  STORAGE_BUCKETS,
+} from '../storage/storage.constants';
 
 // Browsing endpoints are open to any authenticated user (the marketplace lives
 // inside the student dashboard, always behind login); create/update/delete are
@@ -40,14 +62,53 @@ export class MarketplaceController {
   constructor(
     private readonly collegeService: CollegeService,
     private readonly courseService: CourseService,
+    private readonly universityService: UniversityService,
+    private readonly storageService: StorageService,
   ) {}
+
+  @Post('uploads/image')
+  @Roles(UserRole.ADMIN)
+  @ApiOperation({
+    summary: 'Upload a college/course logo or banner image (admin)',
+    description:
+      'Returns the resulting public URL — the caller stores it into logoUrl/bannerUrl ' +
+      'on a subsequent create/update call. Not tied to an existing college/course id, ' +
+      'so it also works while filling out a brand-new "create" form.',
+  })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: { file: { type: 'string', format: 'binary' } },
+    },
+  })
+  @UseInterceptors(FileInterceptor('file', { storage: memoryStorage() }))
+  async uploadImage(
+    @UploadedFile(
+      new ParseFilePipe({
+        validators: [new MaxFileSizeValidator({ maxSize: MAX_IMAGE_SIZE })],
+      }),
+    )
+    file: Express.Multer.File,
+  ) {
+    const result = await this.storageService.uploadFile(
+      file,
+      STORAGE_BUCKETS.PUBLIC_IMAGES,
+      'marketplace',
+      ALLOWED_IMAGE_TYPES,
+      MAX_IMAGE_SIZE,
+    );
+    return { url: result.publicUrl };
+  }
 
   @Get('universities')
   @ApiOperation({
-    summary: 'List active universities (filter dropdown source)',
+    summary: 'List universities (filter dropdown source)',
+    description:
+      'Active only by default; admin catalog view passes includeInactive=true.',
   })
-  getUniversities() {
-    return this.collegeService.getUniversities();
+  getUniversities(@Query('includeInactive') includeInactive?: string) {
+    return this.universityService.findAll(includeInactive === 'true');
   }
 
   @Get('colleges')
@@ -66,6 +127,18 @@ export class MarketplaceController {
   @ApiOperation({ summary: 'Get college detail with its active courses' })
   getCollege(@Param('id') id: string) {
     return this.collegeService.findOne(id);
+  }
+
+  @Get('courses')
+  @Roles(UserRole.ADMIN)
+  @ApiOperation({
+    summary: 'Search/filter/paginate the course catalog (admin)',
+    description:
+      'Each row includes its parent college + affiliated university. ' +
+      'Filters: search, collegeId, category, degreeLevel, includeInactive.',
+  })
+  getCoursesAdmin(@Query() query: QueryCoursesAdminDto) {
+    return this.courseService.findAllForAdmin(query);
   }
 
   @Get('courses/:id')
@@ -126,6 +199,35 @@ export class MarketplaceController {
   @ApiOperation({ summary: 'Deactivate a college (admin, soft-delete)' })
   deleteCollege(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
     return this.collegeService.remove(id, user.sub);
+  }
+
+  @Post('universities')
+  @Roles(UserRole.ADMIN)
+  @ApiOperation({ summary: 'Create a university (admin)' })
+  createUniversity(
+    @CurrentUser() user: JwtPayload,
+    @Body() dto: CreateUniversityDto,
+  ) {
+    return this.universityService.create(dto, user.sub);
+  }
+
+  @Patch('universities/:id')
+  @Roles(UserRole.ADMIN)
+  @ApiOperation({ summary: 'Update a university (admin)' })
+  updateUniversity(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+    @Body() dto: UpdateUniversityDto,
+  ) {
+    return this.universityService.update(id, dto, user.sub);
+  }
+
+  @Delete('universities/:id')
+  @HttpCode(HttpStatus.OK)
+  @Roles(UserRole.ADMIN)
+  @ApiOperation({ summary: 'Deactivate a university (admin, soft-delete)' })
+  deleteUniversity(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
+    return this.universityService.remove(id, user.sub);
   }
 
   @Post('courses')
