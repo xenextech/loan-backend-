@@ -528,42 +528,54 @@ export class UpdateInitiatorApplicationDto {
   // =========================
 
   @ApiPropertyOptional({
-    description: 'Basel classification category',
-    example: 'Regulatory Retail Claims',
+    description:
+      'Basel classification category. Fixed education-loan mapping: ' +
+      '"Regulatory Retail Portfolio (RRP)" (credit limit up to NPR 25M, 75% risk weight), ' +
+      '"Claims on domestic corporate (Unrated)" (above NPR 25M, 100%), or ' +
+      '"Past due claims" (150%). Free text so a bank-assigned override can still be saved.',
+    example: 'Regulatory Retail Portfolio (RRP)',
   })
   @IsOptional()
   @IsString()
   baselClassification?: string;
 
   @ApiPropertyOptional({
-    description: 'Basel risk weight percentage value',
+    description:
+      'Basel risk weight percentage value. Derived from baselClassification (75 / 100 / 150) ' +
+      'but editable/overridable.',
     example: 75,
   })
   @IsOptional()
   @IsInt()
   @Min(0)
-  @Max(100, { message: 'baselRiskWeight must be between 0 and 100' })
+  @Max(150, { message: 'baselRiskWeight must be between 0 and 150' })
   baselRiskWeight?: number;
 
   @ApiPropertyOptional({
-    description: 'NRB Directive 9.3 Sector Code',
-    example: 'SEC-12',
+    description:
+      'NRB Directive 9.3 Sector Code. Fixed education-loan coding: "NF Education Loan". ' +
+      'Free text so a bank-assigned override can still be saved.',
+    example: 'NF Education Loan',
   })
   @IsOptional()
   @IsString()
   nrb93SectorCode?: string;
 
   @ApiPropertyOptional({
-    description: 'NRB Directive 9.3 Product Code',
-    example: 'PROD-05',
+    description:
+      'NRB Directive 9.3(Ka) Product Code. Fixed education-loan coding: "KB Education Loan". ' +
+      'Free text so a bank-assigned override can still be saved.',
+    example: 'KB Education Loan',
   })
   @IsOptional()
   @IsString()
   nrb93KaProductCode?: string;
 
   @ApiPropertyOptional({
-    description: 'NRB Directive 9.4 Security Type Code',
-    example: 'SEC-TYP-01',
+    description:
+      'NRB Directive 9.4 Security Type Code. Fixed education-loan coding: "JC Personal Guarantee". ' +
+      'Free text so a bank-assigned override can still be saved.',
+    example: 'JC Personal Guarantee',
   })
   @IsOptional()
   @IsString()
@@ -578,32 +590,40 @@ export class UpdateInitiatorApplicationDto {
   sis0IndustrialClassification?: string;
 
   @ApiPropertyOptional({
-    description: 'SIS Product Type identifier',
-    example: 'SIS-PT-02',
+    description:
+      'SIS 1 Product Type identifier. Fixed education-loan coding: "A4 Long Term Loan – Others". ' +
+      'Free text so a bank-assigned override can still be saved.',
+    example: 'A4 Long Term Loan – Others',
   })
   @IsOptional()
   @IsString()
   sis1ProductType?: string;
 
   @ApiPropertyOptional({
-    description: 'SIS Sector specification',
-    example: 'Private Sector',
+    description:
+      'SIS 2 Sector specification. Fixed education-loan coding: "PB Education Loan". ' +
+      'Free text so a bank-assigned override can still be saved.',
+    example: 'PB Education Loan',
   })
   @IsOptional()
   @IsString()
   sis2Sector?: string;
 
   @ApiPropertyOptional({
-    description: 'SIS Security details tag',
-    example: 'Real Estate Mortgage',
+    description:
+      'SIS 3 Security details tag. Fixed education-loan coding: "EA Personal Guarantee". ' +
+      'Free text so a bank-assigned override can still be saved.',
+    example: 'EA Personal Guarantee',
   })
   @IsOptional()
   @IsString()
   sis3Security?: string;
 
   @ApiPropertyOptional({
-    description: 'SIS Institutional Grouping of Borrower classification',
-    example: 'Non-Financial Corporation',
+    description:
+      'SIS 4 Institutional Grouping of Borrower classification. Fixed coding: "FA (Male)" or ' +
+      '"FB (Female)". Free text so a bank-assigned override can still be saved.',
+    example: 'FA (Male)',
   })
   @IsOptional()
   @IsString()

@@ -104,7 +104,7 @@ export class CollegeService {
       query.maxFee !== undefined;
 
     const where: Prisma.CollegeWhereInput = {
-      isActive: true,
+      ...(!query.includeInactive && { isActive: true }),
       ...(query.search && {
         name: { contains: query.search, mode: 'insensitive' },
       }),
@@ -150,13 +150,6 @@ export class CollegeService {
     }
 
     return buildPaginatedResponse(cards, total, page, limit);
-  }
-
-  async getUniversities() {
-    return this.prisma.university.findMany({
-      where: { isActive: true },
-      orderBy: { name: 'asc' },
-    });
   }
 
   async findOne(id: string) {

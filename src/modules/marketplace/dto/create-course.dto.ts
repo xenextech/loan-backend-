@@ -41,6 +41,18 @@ export class CurriculumSemesterDto {
   subjects!: string[];
 }
 
+export class FeeBreakdownItemDto {
+  @ApiProperty({ example: 'Tuition Fee' })
+  @IsString()
+  label!: string;
+
+  @ApiProperty({ example: 350000 })
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  amount!: number;
+}
+
 export class CreateCourseDto {
   @ApiProperty({ description: 'College UUID this course belongs to' })
   @IsUUID()
@@ -146,6 +158,13 @@ export class CreateCourseDto {
   @ValidateNested({ each: true })
   @Type(() => CurriculumSemesterDto)
   curriculum?: CurriculumSemesterDto[];
+
+  @ApiPropertyOptional({ type: [FeeBreakdownItemDto] })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => FeeBreakdownItemDto)
+  feeBreakdown?: FeeBreakdownItemDto[];
 
   @ApiPropertyOptional()
   @IsOptional()

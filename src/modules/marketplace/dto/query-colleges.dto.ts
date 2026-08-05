@@ -1,5 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import {
+  IsBoolean,
   IsEnum,
   IsInt,
   IsOptional,
@@ -7,7 +8,7 @@ import {
   IsUUID,
   Min,
 } from 'class-validator';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import { PaginationDto } from '../../../common/dto/pagination.dto';
 import { CourseCategory, DegreeLevel } from '../../../common/enums';
 
@@ -76,4 +77,13 @@ export class QueryCollegesDto extends PaginationDto {
   @IsOptional()
   @IsEnum(['asc', 'desc'])
   sortOrder?: 'asc' | 'desc';
+
+  @ApiPropertyOptional({
+    default: false,
+    description: 'Admin-only: include soft-deleted (inactive) colleges',
+  })
+  @IsOptional()
+  @Transform(({ value }) => value === true || value === 'true' || value === 1)
+  @IsBoolean()
+  includeInactive?: boolean;
 }
