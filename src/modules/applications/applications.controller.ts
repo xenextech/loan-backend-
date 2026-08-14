@@ -13,6 +13,7 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import type { Request } from 'express';
+import { ThrottlerGuard, Throttle } from '@nestjs/throttler';
 import {
   ApiTags,
   ApiOperation,
@@ -21,10 +22,12 @@ import {
 } from '@nestjs/swagger';
 import { ApplicationsService } from './applications.service';
 import { ApplicationTrackerService } from './application-tracker.service';
+import { VerificationInvitationService } from '../verification/verification-invitation.service';
 import { Step1Dto } from './dto/step1.dto';
 import { Step2Dto } from './dto/step2.dto';
 import { Step3Dto } from './dto/step3.dto';
 import { Step4Dto } from './dto/step4.dto';
+import { SendVerificationDto } from './dto/send-verification.dto';
 import { QueryApplicationDto } from './dto/query-application.dto';
 import { ApplicationTrackerResponseDto } from './dto/application-tracker.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -42,6 +45,7 @@ export class ApplicationsController {
   constructor(
     private readonly applicationsService: ApplicationsService,
     private readonly applicationTrackerService: ApplicationTrackerService,
+    private readonly verificationInvitationService: VerificationInvitationService,
   ) {}
 
   @Post()
@@ -134,6 +138,83 @@ export class ApplicationsController {
     @Body() dto: Step4Dto,
   ) {
     return this.applicationsService.submit(id, user.sub, dto);
+  }
+
+  @Get(':id/verification')
+  @Roles(UserRole.STUDENT)
+  @ApiOperation({
+    summary:
+      'Parent/college verification status — never includes the raw token',
+  })
+  getVerificationStatus(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+  ) {
+    return this.verificationInvitationService.getStatus(id, user.sub);
+  }
+
+  @Post(':id/verification/parent')
+  @HttpCode(HttpStatus.OK)
+  @Roles(UserRole.STUDENT)
+  @ApiOperation({ summary: 'Send a parent verification invitation' })
+  sendParentVerification(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+    @Body() dto: SendVerificationDto,
+  ) {
+    return this.verificationInvitationService.send(
+      id,
+      user.sub,
+      'PARENT',
+      dto.email,
+    );
+  }
+
+  @Post(':id/verification/parent/resend')
+  @HttpCode(HttpStatus.OK)
+  @Roles(UserRole.STUDENT)
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ default: { limit: 3, ttl: 60_000 } })
+  @ApiOperation({
+    summary: 'Resend the parent verification invitation (rate-limited)',
+  })
+  resendParentVerification(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+  ) {
+    return this.verificationInvitationService.resend(id, user.sub, 'PARENT');
+  }
+
+  @Post(':id/verification/college')
+  @HttpCode(HttpStatus.OK)
+  @Roles(UserRole.STUDENT)
+  @ApiOperation({ summary: 'Send a college verification invitation' })
+  sendCollegeVerification(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+    @Body() dto: SendVerificationDto,
+  ) {
+    return this.verificationInvitationService.send(
+      id,
+      user.sub,
+      'COLLEGE',
+      dto.email,
+    );
+  }
+
+  @Post(':id/verification/college/resend')
+  @HttpCode(HttpStatus.OK)
+  @Roles(UserRole.STUDENT)
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ default: { limit: 3, ttl: 60_000 } })
+  @ApiOperation({
+    summary: 'Resend the college verification invitation (rate-limited)',
+  })
+  resendCollegeVerification(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+  ) {
+    return this.verificationInvitationService.resend(id, user.sub, 'COLLEGE');
   }
 
   @Delete(':id')

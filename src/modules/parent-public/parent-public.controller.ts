@@ -6,6 +6,7 @@ import {
   Patch,
   Body,
   Param,
+  Query,
   UseInterceptors,
   UploadedFile,
   UploadedFiles,
@@ -19,6 +20,7 @@ import {
   ApiTags,
   ApiOperation,
   ApiParam,
+  ApiQuery,
   ApiConsumes,
   ApiBody,
 } from '@nestjs/swagger';
@@ -46,8 +48,17 @@ export class ParentPublicController {
   @Get(':token')
   @ApiOperation({ summary: 'View application details via parent access link' })
   @ApiParam(TOKEN_PARAM)
-  getApplication(@Param('token') token: string) {
-    return this.parentPublicService.getApplicationByToken(token);
+  @ApiQuery({
+    name: 'email',
+    required: false,
+    description:
+      'Email that received the invitation — required to confirm invitations that captured a recipient email',
+  })
+  getApplication(
+    @Param('token') token: string,
+    @Query('email') email?: string,
+  ) {
+    return this.parentPublicService.getApplicationByToken(token, email);
   }
 
   @Put(':token/profile')
@@ -56,8 +67,9 @@ export class ParentPublicController {
   submitProfile(
     @Param('token') token: string,
     @Body() dto: ParentVerificationDto,
+    @Query('email') email?: string,
   ) {
-    return this.parentPublicService.submitParentProfile(token, dto);
+    return this.parentPublicService.submitParentProfile(token, dto, email);
   }
 
   @Post(':token/salary-sheet')
@@ -109,9 +121,15 @@ export class ParentPublicController {
     @UploadedFiles()
     uploaded: { file?: Express.Multer.File[]; files?: Express.Multer.File[] },
     @Body('label') label?: string,
+    @Query('email') email?: string,
   ) {
     const files = [...(uploaded?.file ?? []), ...(uploaded?.files ?? [])];
-    return this.parentPublicService.uploadSalarySheets(token, files, label);
+    return this.parentPublicService.uploadSalarySheets(
+      token,
+      files,
+      label,
+      email,
+    );
   }
 
   @Post(':token/documents/:documentType')
@@ -148,20 +166,22 @@ export class ParentPublicController {
     documentType: ParentIdentityDocumentType,
     @UploadedFile() file: Express.Multer.File,
     @Body('label') label?: string,
+    @Query('email') email?: string,
   ) {
     return this.parentPublicService.uploadIdentityDocument(
       token,
       documentType,
       file,
       label,
+      email,
     );
   }
 
   @Get(':token/documents')
   @ApiOperation({ summary: 'List all documents uploaded by the parent' })
   @ApiParam(TOKEN_PARAM)
-  getDocuments(@Param('token') token: string) {
-    return this.parentPublicService.getDocuments(token);
+  getDocuments(@Param('token') token: string, @Query('email') email?: string) {
+    return this.parentPublicService.getDocuments(token, email);
   }
 
   @Patch(':token/documents/:documentId/label')
@@ -172,11 +192,13 @@ export class ParentPublicController {
     @Param('token') token: string,
     @Param('documentId') documentId: string,
     @Body() dto: UpdateParentDocumentLabelDto,
+    @Query('email') email?: string,
   ) {
     return this.parentPublicService.updateDocumentLabel(
       token,
       documentId,
       dto.label,
+      email,
     );
   }
 }

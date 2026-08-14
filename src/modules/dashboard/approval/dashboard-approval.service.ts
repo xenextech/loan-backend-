@@ -22,10 +22,14 @@ import {
 } from '../../../common/dto/pagination.dto';
 import { PaginationDto } from '../../../common/dto/pagination.dto';
 import {
+  SupportApplicationDto,
+  CheckApplicationDto,
+  ApproveApplicationDto,
   RejectApplicationDto,
   SendBackApplicationDto,
   PepScreeningDto,
   SendStudentConsentDto,
+  RoleAttestationDto,
 } from '../dto/approval-transition.dto';
 
 // Valid predecessor stage(s) for each transition — null means "no prior
@@ -108,9 +112,33 @@ export class DashboardApprovalService {
     userId: string | null,
     name: string | null,
     approvedAt: Date | null,
+    post?: string | null,
+    branch?: string | null,
   ) {
     if (!approvedAt) return null;
-    return { id: userId, name, approvedAt };
+    return { id: userId, name, approvedAt, post: post ?? null, branch: branch ?? null };
+  }
+
+  // The Branch Name/Designation the acting role recorded for their own
+  // decision, written to that role's own *Post/*Branch columns — same
+  // role→column-prefix mapping as approvalStatusColumnForRole (CREDIT_MANAGER
+  // reuses checker*). Only includes keys the caller actually sent, so an
+  // omitted field never clobbers a previously-recorded value.
+  private attestationFields(role: UserRole, dto: RoleAttestationDto) {
+    const prefix =
+      role === UserRole.SUPPORTER
+        ? 'supporter'
+        : role === UserRole.CHECKER || role === UserRole.CREDIT_MANAGER
+          ? 'checker'
+          : role === UserRole.APPROVER
+            ? 'approver'
+            : null;
+    if (!prefix) return {};
+    return {
+      ...(dto.designation !== undefined && { [`${prefix}Post`]: dto.designation }),
+      ...(dto.branchName !== undefined && { [`${prefix}Branch`]: dto.branchName }),
+      ...(dto.signature !== undefined && { [`${prefix}Signature`]: dto.signature }),
+    };
   }
 
   // The Initiator has no formal stage in the approval chain — no
@@ -154,7 +182,11 @@ export class DashboardApprovalService {
     return updated;
   }
 
-  async support(userId: string, applicationId: string) {
+  async support(
+    userId: string,
+    applicationId: string,
+    dto: SupportApplicationDto = {},
+  ) {
     const application = await this.getApplicationOrThrow(applicationId);
     this.assertTransitionAllowed('support', application.stage);
     const actor = await this.resolveActingUser(userId);
@@ -175,6 +207,7 @@ export class DashboardApprovalService {
         supporterName: actor.name,
         supporterDate: new Date(),
         supporterStatus: ApprovalEntryStatus.APPROVED,
+        ...this.attestationFields(actor.role, dto),
         ...(shortcut && { sentBackByApprover: false }),
       },
     });
@@ -189,7 +222,11 @@ export class DashboardApprovalService {
     return updated;
   }
 
-  async check(userId: string, applicationId: string) {
+  async check(
+    userId: string,
+    applicationId: string,
+    dto: CheckApplicationDto = {},
+  ) {
     const application = await this.getApplicationOrThrow(applicationId);
     this.assertTransitionAllowed('check', application.stage);
     const actor = await this.resolveActingUser(userId);
@@ -203,6 +240,7 @@ export class DashboardApprovalService {
         checkerName: actor.name,
         checkerDate: new Date(),
         checkerStatus: ApprovalEntryStatus.APPROVED,
+        ...this.attestationFields(actor.role, dto),
         ...(shortcut && { sentBackByApprover: false }),
       },
     });
@@ -217,7 +255,11 @@ export class DashboardApprovalService {
     return updated;
   }
 
-  async approve(userId: string, applicationId: string) {
+  async approve(
+    userId: string,
+    applicationId: string,
+    dto: ApproveApplicationDto = {},
+  ) {
     const application = await this.getApplicationOrThrow(applicationId);
     this.assertTransitionAllowed('approve', application.stage);
     const actor = await this.resolveActingUser(userId);
@@ -231,6 +273,7 @@ export class DashboardApprovalService {
           approverName: actor.name,
           approverDate: new Date(),
           approverStatus: ApprovalEntryStatus.APPROVED,
+          ...this.attestationFields(actor.role, dto),
         },
       }),
       this.prisma.loanAccount.create({
@@ -278,6 +321,7 @@ export class DashboardApprovalService {
         rejectedAt: new Date(),
         rejectedByUserId: userId,
         ...(statusColumn && { [statusColumn]: ApprovalEntryStatus.REJECTED }),
+        ...this.attestationFields(actor.role, dto),
       },
     });
 
@@ -318,6 +362,7 @@ export class DashboardApprovalService {
         ...(statusColumn && {
           [statusColumn]: ApprovalEntryStatus.SENT_BACK,
         }),
+        ...this.attestationFields(actor.role, dto),
       },
     });
 
@@ -455,26 +500,36 @@ export class DashboardApprovalService {
           application.initiatorUserId,
           application.initiatorName,
           application.initiatorDate,
+          application.initiatorPost,
+          application.branch,
         ),
         supporter: this.stageApprovalInfo(
           application.supporterUserId,
           application.supporterName,
           application.supporterDate,
+          application.supporterPost,
+          application.supporterBranch,
         ),
         checker: this.stageApprovalInfo(
           application.checkerUserId,
           application.checkerName,
           application.checkerDate,
+          application.checkerPost,
+          application.checkerBranch,
         ),
         approver: this.stageApprovalInfo(
           application.approverUserId,
           application.approverName,
           application.approverDate,
+          application.approverPost,
+          application.approverBranch,
         ),
         creditManager: this.stageApprovalInfo(
           application.checkerUserId,
           application.checkerName,
           application.checkerDate,
+          application.checkerPost,
+          application.checkerBranch,
         ),
       },
     };

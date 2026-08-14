@@ -8,6 +8,7 @@ import {
   Max,
   Min,
 } from 'class-validator';
+import { IsMoneyAmount } from '../../../common/decorators/numeric-range.decorators';
 
 export class CreateInitiatorApplicationDto {
   @ApiPropertyOptional({ description: 'Name of the Customer' })
@@ -97,6 +98,27 @@ export class CreateInitiatorApplicationDto {
   @IsOptional()
   @IsString()
   bankingRelationship?: string;
+
+  // Collected only when bankingRelationship is "EXISTING".
+  @ApiPropertyOptional({ description: 'Name of the bank for the existing account' })
+  @IsOptional()
+  @IsString()
+  existingBankName?: string;
+
+  @ApiPropertyOptional({ description: 'Existing account number' })
+  @IsOptional()
+  @IsString()
+  existingBankAccountNumber?: string;
+
+  @ApiPropertyOptional({ description: 'Existing savings account balance' })
+  @IsOptional()
+  @IsMoneyAmount()
+  existingBankSavingsAmount?: number;
+
+  @ApiPropertyOptional({ description: 'Existing outstanding loan amount at the bank' })
+  @IsOptional()
+  @IsMoneyAmount()
+  existingBankLoanAmount?: number;
 
   @ApiPropertyOptional({ description: 'Is Blacklisted' })
   @IsOptional()

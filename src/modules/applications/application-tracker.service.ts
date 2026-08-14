@@ -5,7 +5,12 @@ import {
 } from '@nestjs/common';
 import { RepaymentFrequency } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
-import { AuditAction, ApplicationStage, UserRole } from '../../common/enums';
+import {
+  AuditAction,
+  ApplicationStage,
+  BankAccountOpeningStatus,
+  UserRole,
+} from '../../common/enums';
 import { DashboardRepaymentService } from '../dashboard/repayment/dashboard-repayment.service';
 import { resolveEffectiveLoanTerms } from '../../common/utils/loan-principal.util';
 import {
@@ -60,6 +65,10 @@ type TrackerApplication = {
   collegeVerification: {
     submittedAt: Date | null;
     isApplicationVerified: boolean;
+  } | null;
+  bankAccountOpening: {
+    status: BankAccountOpeningStatus;
+    completedAt: Date | null;
   } | null;
   loanInformation: { loanAmount: unknown } | null;
   loanAccount: {
@@ -159,6 +168,20 @@ const STAGE_DEFINITIONS: StageDefinition[] = [
       completed: !!app.collegeVerification?.submittedAt,
       completedAt: app.collegeVerification?.submittedAt ?? null,
       completedBy: app.collegeVerification?.submittedAt ? 'College' : null,
+    }),
+  },
+  {
+    key: TrackerStageKey.BANK_ACCOUNT,
+    label: 'Bank Account Opening',
+    role: UserRole.STUDENT,
+    resolve: (app) => ({
+      completed:
+        app.bankAccountOpening?.status === BankAccountOpeningStatus.COMPLETED,
+      completedAt: app.bankAccountOpening?.completedAt ?? null,
+      completedBy:
+        app.bankAccountOpening?.status === BankAccountOpeningStatus.COMPLETED
+          ? (app.user?.email ?? 'Student')
+          : null,
     }),
   },
   {
@@ -289,6 +312,9 @@ export class ApplicationTrackerService {
         parentVerification: { select: { submittedAt: true } },
         collegeVerification: {
           select: { submittedAt: true, isApplicationVerified: true },
+        },
+        bankAccountOpening: {
+          select: { status: true, completedAt: true },
         },
         loanInformation: { select: { loanAmount: true } },
         loanAccount: {

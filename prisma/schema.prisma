@@ -177,6 +177,8 @@ enum AuditAction {
   APPROVER_TERMS_ACCEPTED
   STUDENT_CONSENT_SENT
   STUDENT_CONSENT_ACCEPTED
+  BANK_ACCOUNT_OPENING_REQUIRED
+  BANK_ACCOUNT_OPENING_COMPLETED
   MARKETPLACE_COLLEGE_CREATED
   MARKETPLACE_COLLEGE_UPDATED
   MARKETPLACE_COLLEGE_DELETED
@@ -186,6 +188,11 @@ enum AuditAction {
   MARKETPLACE_UNIVERSITY_CREATED
   MARKETPLACE_UNIVERSITY_UPDATED
   MARKETPLACE_UNIVERSITY_DELETED
+  VERIFICATION_INVITATION_CREATED
+  VERIFICATION_INVITATION_RESENT
+  VERIFICATION_INVITATION_REVOKED
+  VERIFICATION_LINK_ACCESSED
+  VERIFICATION_FAILED
 }
 
 enum AuditCategory {
@@ -200,6 +207,17 @@ enum ApplicationLinkType {
   PARENT
   COLLEGE
   STUDENT_CONSENT
+}
+
+// Lifecycle of a PARENT/COLLEGE verification invitation (ApplicationLink).
+// EXPIRED is not stored — it's derived by comparing expiresAt to now, so it's
+// always accurate without a background job to flip a stale status.
+enum VerificationStatus {
+  SENT
+  FAILED
+  OPENED
+  VERIFIED
+  REVOKED
 }
 
 enum NotificationChannel {
@@ -455,6 +473,12 @@ model LoanApplication {
   waiver                      String?
   termsAndConditions          String?
   bankingRelationship         String?
+  // Collected only when bankingRelationship is "EXISTING" — details of the
+  // applicant's existing account at the bank (see Step1ApplicantInfo.tsx).
+  existingBankName            String?
+  existingBankAccountNumber   String?
+  existingBankSavingsAmount   Decimal? @db.Decimal(18, 2)
+  existingBankLoanAmount      Decimal? @db.Decimal(18, 2)
   bankingRelationshipRemarks  String?
   keyCreditRiskMitigation     String?
   justificationOfLoan         String?
@@ -483,6 +507,12 @@ model LoanApplication {
   supporterUserId    String?
   supporterName      String?
   supporterPost      String?
+  // Branch the Supporter recorded for their own decision — distinct from the
+  // single application-wide `branch` field below, which is the Initiator's.
+  // Same pattern for checkerBranch/approverBranch. Written by the real
+  // support/check/approve/reject/send-back actions (DashboardApprovalService),
+  // not just the Initiator wizard's Step 9 like *Post originally was.
+  supporterBranch    String?
   supporterDate      DateTime?
   supporterSignature String?
   supporterRemarks   String?
@@ -491,6 +521,7 @@ model LoanApplication {
   checkerUserId    String?
   checkerName      String?
   checkerPost      String?
+  checkerBranch    String?
   checkerDate      DateTime?
   checkerSignature String?
   checkerRemarks   String?
@@ -499,6 +530,7 @@ model LoanApplication {
   approverUserId    String?
   approverName      String?
   approverPost      String?
+  approverBranch    String?
   approverDate      DateTime?
   approverSignature String?
   approverRemarks   String?
@@ -536,6 +568,7 @@ model LoanApplication {
   collegeVerification CollegeVerification?
   parentVerification  ParentVerification?
   studentConsent      StudentConsent?
+  bankAccountOpening  BankAccountOpening?
 
   // College-generated document templates, optionally linked from their side
   // (applicationId is nullable there) — see OfferLetter/Agreement/EnrollmentCertificate.
@@ -563,6 +596,7 @@ model LoanApplication {
   insurancePolicies         InsurancePolicy[]
   commissionEntries         CommissionEntry[]
   creditLimit               Decimal?                @db.Decimal(18, 2)
+  income                    Decimal?                @db.Decimal(18, 2)
   dsgir                     Int?
   operationOfInstitution    Int?
   satisfactoryPerformance   Int?
@@ -872,19 +906,35 @@ model AuditLog {
 
 model ApplicationLink {
   id             String              @id @default(uuid())
-  token          String              @unique
-  applicationId  String
-  linkType       ApplicationLinkType
-  recipientEmail String?
-  expiresAt      DateTime
-  accessedAt     DateTime?
-  createdAt      DateTime            @default(now())
+  // Raw token, kept ONLY while the invitation is still SENT/OPENED so the
+  // authenticated college "My Verifications" dashboard can re-link to it
+  // (CollegeService.getMyVerifications). It is never used to authenticate a
+  // request — resolution always hashes the incoming URL token and looks up
+  // tokenHash. Nulled out once the invitation is VERIFIED or REVOKED, so a
+  // database leak can no longer yield a working link for anything already
+  // resolved (most of an application's lifetime).
+  token            String?             @unique
+  // Nullable so the 81 pre-existing rows in this table (created before this
+  // field existed) don't need a backfill — every row created by the new
+  // invitation flow always sets both. Resolution falls back to the legacy
+  // raw-token lookup when tokenHash is absent, so old links keep working.
+  tokenHash        String?             @unique
+  verificationCode String?             @unique
+  applicationId    String
+  linkType         ApplicationLinkType
+  recipientEmail   String?
+  status           VerificationStatus  @default(SENT)
+  expiresAt        DateTime
+  accessedAt       DateTime?
+  verifiedAt       DateTime?
+  revokedAt        DateTime?
+  createdAt        DateTime            @default(now())
 
   application LoanApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
 
-  @@index([token])
   @@index([recipientEmail])
   @@index([applicationId])
+  @@index([applicationId, linkType, status])
   @@map("application_links")
 }
 
@@ -908,6 +958,38 @@ model StudentConsent {
   application LoanApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
 
   @@map("student_consents")
+}
+
+enum BankAccountOpeningStatus {
+  PENDING
+  COMPLETED
+}
+
+// Inserted after Parent + College verification, before the application
+// becomes eligible for the Initiator's queue (see
+// BankAccountOpeningService.ensureRequirementIfBothVerified and
+// ApplicationInitiatorService.getInitiatorQueue). `bankUrl` is snapshotted
+// at creation time from config so a later change to the configured URL
+// doesn't retroactively alter an already-issued link. `completedAt` is an
+// MVP stand-in for a future real bank webhook/callback — see
+// BankAccountOpeningService for how that swap is isolated.
+model BankAccountOpening {
+  id            String                    @id @default(uuid())
+  applicationId String                    @unique
+  status        BankAccountOpeningStatus  @default(PENDING)
+
+  bankUrl String
+
+  notifiedAt  DateTime?
+  clickedAt   DateTime?
+  completedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  application LoanApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@map("bank_account_openings")
 }
 
 model CollegeVerification {

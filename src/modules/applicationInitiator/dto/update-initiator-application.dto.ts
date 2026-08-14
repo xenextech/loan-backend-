@@ -12,11 +12,12 @@ import {
   ValidateIf,
   ValidateNested,
 } from 'class-validator';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsMoneyAmount,
   IsPercentage,
+  IsRatioPercentage,
 } from '../../../common/decorators/numeric-range.decorators';
 import {
   ApprovalEntryStatus,
@@ -287,6 +288,14 @@ export class ApprovalEntryDto {
   @IsOptional()
   @IsString()
   signature?: string;
+
+  @ApiPropertyOptional({
+    description: "This role's designation/job title within the approval chain",
+    example: 'ARO (Assistant Relationship Officer) - Initiator',
+  })
+  @IsOptional()
+  @IsString()
+  designation?: string;
 }
 
 export class InitiatorApprovalEntryDto extends ApprovalEntryDto {
@@ -299,14 +308,6 @@ export class InitiatorApprovalEntryDto extends ApprovalEntryDto {
   @IsOptional()
   @IsString()
   branchName?: string;
-
-  @ApiPropertyOptional({
-    description: "The initiator's designation/job title",
-    example: 'Branch Manager',
-  })
-  @IsOptional()
-  @IsString()
-  designation?: string;
 }
 
 export class ApprovalChainDto {
@@ -469,6 +470,39 @@ export class UpdateInitiatorApplicationDto {
   @IsOptional()
   @IsString()
   bankingRelationship?: string;
+
+  // Collected only when bankingRelationship is "EXISTING".
+  @ApiPropertyOptional({
+    description: 'Name of the bank for the existing account',
+    example: 'Nepal Bank Limited',
+  })
+  @IsOptional()
+  @IsString()
+  existingBankName?: string;
+
+  @ApiPropertyOptional({
+    description: 'Existing account number',
+    example: '0123456789012',
+  })
+  @IsOptional()
+  @IsString()
+  existingBankAccountNumber?: string;
+
+  @ApiPropertyOptional({
+    description: 'Existing savings account balance',
+    example: 150000,
+  })
+  @IsOptional()
+  @IsMoneyAmount()
+  existingBankSavingsAmount?: number;
+
+  @ApiPropertyOptional({
+    description: 'Existing outstanding loan amount at the bank',
+    example: 200000,
+  })
+  @IsOptional()
+  @IsMoneyAmount()
+  existingBankLoanAmount?: number;
 
   @ApiPropertyOptional({
     description: 'Flag indicating if the customer is blacklisted by CICL/NRB',
@@ -674,19 +708,41 @@ export class UpdateInitiatorApplicationDto {
   creditLimit?: number;
 
   @ApiPropertyOptional({
-    description: 'Loan-to-Value (LTV) ratio calculation',
+    description:
+      "Customer's assessed income, used alongside Credit Limit for underwriting",
+    example: 800000,
+  })
+  @IsOptional()
+  @IsMoneyAmount()
+  income?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Loan-to-Income ratio, %: (Credit Limit ÷ annual income) × 100. Can ' +
+      "legitimately exceed 100 when the facility is larger than the applicant's " +
+      'annual income — that is a real affordability signal, not invalid input.',
     example: 65.5,
   })
   @IsOptional()
-  @IsPercentage()
+  @IsRatioPercentage()
   loanToValueRatio?: number;
 
   @ApiPropertyOptional({
-    description: 'Debt Service Gross Income Ratio (DSGIR) percentage',
-    example: 35.2,
+    description:
+      'Debt Service to Gross Income Ratio (DSGIR), %: (total monthly debt ' +
+      'obligations ÷ gross monthly income) × 100. Can legitimately exceed 100 ' +
+      "— that signals the facility is unaffordable against the applicant's " +
+      'income, not invalid data. Rounded to a whole percent on save (the ' +
+      'column has no fractional precision).',
+    example: 35,
   })
   @IsOptional()
-  @IsPercentage()
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'number' ? Math.round(value) : value,
+  )
+  @IsInt({ message: 'dsgir must be a whole number' })
+  @Min(0, { message: 'dsgir cannot be negative' })
+  @Max(9999, { message: 'dsgir is unrealistically large' })
   dsgir?: number;
 
   @ApiPropertyOptional({

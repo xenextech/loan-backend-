@@ -5,6 +5,7 @@ import {
   Post,
   Body,
   Param,
+  Query,
   UseInterceptors,
   UploadedFile,
   UseGuards,
@@ -16,6 +17,7 @@ import {
   ApiTags,
   ApiOperation,
   ApiParam,
+  ApiQuery,
   ApiConsumes,
   ApiBody,
   ApiBearerAuth,
@@ -57,8 +59,17 @@ export class CollegeController {
     name: 'token',
     description: '64-char hex token from the college link',
   })
-  getApplication(@Param('token') token: string) {
-    return this.collegeService.getApplicationByToken(token);
+  @ApiQuery({
+    name: 'email',
+    required: false,
+    description:
+      'Email that received the invitation — required to confirm invitations that captured a recipient email',
+  })
+  getApplication(
+    @Param('token') token: string,
+    @Query('email') email?: string,
+  ) {
+    return this.collegeService.getApplicationByToken(token, email);
   }
 
   @Put(':token/form')
@@ -71,8 +82,12 @@ export class CollegeController {
     name: 'token',
     description: '64-char hex token from the college link',
   })
-  submitForm(@Param('token') token: string, @Body() dto: CollegeFormDto) {
-    return this.collegeService.submitCollegeForm(token, dto);
+  submitForm(
+    @Param('token') token: string,
+    @Body() dto: CollegeFormDto,
+    @Query('email') email?: string,
+  ) {
+    return this.collegeService.submitCollegeForm(token, dto, email);
   }
 
   @Post(':token/offer-letter')
@@ -98,8 +113,9 @@ export class CollegeController {
       }),
     )
     file: Express.Multer.File,
+    @Query('email') email?: string,
   ) {
-    return this.collegeService.uploadOfferLetter(token, file);
+    return this.collegeService.uploadOfferLetter(token, file, email);
   }
 
   @Post(':token/enrollment-docs')
@@ -125,7 +141,8 @@ export class CollegeController {
       }),
     )
     file: Express.Multer.File,
+    @Query('email') email?: string,
   ) {
-    return this.collegeService.uploadEnrollmentDocs(token, file);
+    return this.collegeService.uploadEnrollmentDocs(token, file, email);
   }
 }

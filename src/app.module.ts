@@ -26,6 +26,7 @@ import { DocumentVaultModule } from './modules/document-vault/document-vault.mod
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { DashboardJobsModule } from './modules/dashboard/jobs/dashboard-jobs.module';
 import { PermissionsModule } from './modules/permissions/permissions.module';
+import { BankAccountOpeningModule } from './modules/bank-account/bank-account-opening.module';
 
 @Module({
   imports: [
@@ -55,6 +56,7 @@ import { PermissionsModule } from './modules/permissions/permissions.module';
     DashboardModule,
     DashboardJobsModule,
     PermissionsModule,
+    BankAccountOpeningModule,
   ],
 })
 export class AppModule {}

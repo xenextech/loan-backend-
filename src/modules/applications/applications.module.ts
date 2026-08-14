@@ -5,9 +5,15 @@ import { ApplicationTrackerService } from './application-tracker.service';
 import { AuditModule } from '../audit/audit.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { DashboardModule } from '../dashboard/dashboard.module';
+import { VerificationModule } from '../verification/verification.module';
 
 @Module({
-  imports: [AuditModule, NotificationsModule, DashboardModule],
+  imports: [
+    AuditModule,
+    NotificationsModule,
+    DashboardModule,
+    VerificationModule,
+  ],
   controllers: [ApplicationsController],
   providers: [ApplicationsService, ApplicationTrackerService],
   exports: [ApplicationsService],
