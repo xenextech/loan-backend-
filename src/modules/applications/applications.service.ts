@@ -1,4 +1,3 @@
-import * as crypto from 'crypto';
 import {
   Injectable,
   NotFoundException,
@@ -14,12 +13,7 @@ import { Step2Dto } from './dto/step2.dto';
 import { Step3Dto } from './dto/step3.dto';
 import { Step4Dto } from './dto/step4.dto';
 import { QueryApplicationDto } from './dto/query-application.dto';
-import {
-  ApplicationStatus,
-  AuditAction,
-  ApplicationLinkType,
-  ApplicationSource,
-} from '../../common/enums';
+import { ApplicationStatus, AuditAction, ApplicationSource } from '../../common/enums';
 import {
   paginate,
   buildPaginatedResponse,
@@ -34,9 +28,6 @@ import {
   convertBsToAd,
   calculateAge,
 } from '../../common/utils/bs-ad-date.util';
-
-// 3-day token TTL — enough for college/parent to complete verification
-const LINK_TTL_MS = 3 * 24 * 60 * 60 * 1000;
 
 @Injectable()
 export class ApplicationsService {
@@ -70,16 +61,7 @@ export class ApplicationsService {
     return application;
   }
 
-  // ── Create a complete application in one shot (Initiator-sourced) ─────────
-  // Reuses the exact same field shape (Step1/2/3Dto) and DOB-resolution logic
-  // as the student's own step-by-step flow — the only differences are that
-  // everything is supplied and persisted in a single call, `source` is
-  // tagged, and `userId` (the student-owner FK) stays whatever the caller
-  // passes, which is intentionally absent when the Initiator originates the
-  // record. Called by ApplicationInitiatorService.createNewApplication() —
-  // kept here, not duplicated there, since this is the one place that knows
-  // how a LoanApplication + its StudyInformation/LoanInformation rows are
-  // built from step-shaped form data.
+
   async createComplete(
     actorUserId: string,
     dto: Step1Dto & Step2Dto & Step3Dto,
@@ -467,41 +449,19 @@ export class ApplicationsService {
       identityDocuments,
     );
 
-    const expiresAt = new Date(Date.now() + LINK_TTL_MS);
-    const parentToken = crypto.randomBytes(32).toString('hex');
-    const collegeToken = crypto.randomBytes(32).toString('hex');
-
-    // Persist application status change + both access tokens atomically
-    const [updated] = await this.prisma.$transaction([
-      this.prisma.loanApplication.update({
-        where: { id },
-        data: {
-          informationAccurate: dto.informationAccurate,
-          authorizeVerification: dto.authorizeVerification,
-          status: ApplicationStatus.SUBMITTED,
-          submittedAt: new Date(),
-        },
-        include: { studyInformation: true, loanInformation: true },
-      }),
-      this.prisma.applicationLink.create({
-        data: {
-          token: parentToken,
-          applicationId: id,
-          linkType: ApplicationLinkType.PARENT,
-          expiresAt,
-          recipientEmail: dto.parentContactEmail ?? null,
-        },
-      }),
-      this.prisma.applicationLink.create({
-        data: {
-          token: collegeToken,
-          applicationId: id,
-          linkType: ApplicationLinkType.COLLEGE,
-          expiresAt,
-          recipientEmail: dto.collegeContactEmail ?? null,
-        },
-      }),
-    ]);
+    // Parent/college verification invitations are handled separately by
+    // VerificationInvitationService — sent independently from Step 4 (each
+    // recipient gets its own secure token, never generated or exposed here).
+    const updated = await this.prisma.loanApplication.update({
+      where: { id },
+      data: {
+        informationAccurate: dto.informationAccurate,
+        authorizeVerification: dto.authorizeVerification,
+        status: ApplicationStatus.SUBMITTED,
+        submittedAt: new Date(),
+      },
+      include: { studyInformation: true, loanInformation: true },
+    });
 
     await this.audit.log(
       userId,
@@ -511,18 +471,6 @@ export class ApplicationsService {
       },
       id,
     );
-    await this.audit.log(
-      userId,
-      AuditAction.APPLICATION_LINK_GENERATED,
-      {
-        applicationNumber: application.applicationNumber,
-      },
-      id,
-    );
-
-    const frontendUrl = this.config.get<string>('app.frontendUrl');
-    const parentLink = `${frontendUrl}/parent-verify/${parentToken}`;
-    const collegeLink = `${frontendUrl}/college-verify/${collegeToken}`;
 
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (user) {
@@ -530,28 +478,10 @@ export class ApplicationsService {
         userId,
         application.applicationNumber,
         user.email,
-        parentLink,
-        collegeLink,
       );
     }
 
-    // Email magic links directly to contacts if the student provided their addresses
-    if (dto.parentContactEmail) {
-      await this.notifications.sendParentVerificationLink(
-        dto.parentContactEmail,
-        application.applicationNumber,
-        parentLink,
-      );
-    }
-    if (dto.collegeContactEmail) {
-      await this.notifications.sendCollegeVerificationLink(
-        dto.collegeContactEmail,
-        application.applicationNumber,
-        collegeLink,
-      );
-    }
-
-    return { ...updated, parentLink, collegeLink };
+    return updated;
   }
 
   // ── Delete draft ───────────────────────────────────────────────────────────

@@ -1,11 +1,51 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsDateString, IsEnum, IsOptional, IsString } from 'class-validator';
+import {
+  IsArray,
+  IsDateString,
+  IsEnum,
+  IsOptional,
+  IsString,
+  ValidateNested,
+} from 'class-validator';
+import { Type } from 'class-transformer';
 import { PaginationDto } from '../../../common/dto/pagination.dto';
 import {
   GeneratedAgreementType,
   GeneratedAgreementStatus,
   UserRole,
 } from '../../../common/enums';
+
+/** One रोहबर साक्षी (witness) line on PROMISSORY_NOTE — "१) <district> जिल्ला
+ *  <municipality> वडा नं. <wardNo> बस्ने वर्ष <age> को <name>". All optional;
+ *  anything omitted prints as a ruled blank on the document. */
+export class WitnessDto {
+  @ApiPropertyOptional({ description: "Witness's permanent district." })
+  @IsOptional()
+  @IsString()
+  district?: string;
+
+  @ApiPropertyOptional({
+    description: "Witness's municipality/rural municipality.",
+  })
+  @IsOptional()
+  @IsString()
+  municipality?: string;
+
+  @ApiPropertyOptional({ description: "Witness's ward number." })
+  @IsOptional()
+  @IsString()
+  wardNo?: string;
+
+  @ApiPropertyOptional({ description: "Witness's age (years)." })
+  @IsOptional()
+  @IsString()
+  age?: string;
+
+  @ApiPropertyOptional({ description: "Witness's name." })
+  @IsOptional()
+  @IsString()
+  name?: string;
+}
 
 export class CreateGeneratedAgreementDto {
   @ApiProperty()
@@ -219,6 +259,17 @@ export class CreateGeneratedAgreementDto {
   @IsOptional()
   @IsString()
   collateralRemarks?: string;
+
+  @ApiPropertyOptional({
+    type: [WitnessDto],
+    description:
+      'PROMISSORY_NOTE only — रोहबर साक्षी (witnesses) listed on the document. Each entry renders as a numbered line, numbered in order; omit or send an empty array to fall back to a single blank witness line.',
+  })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => WitnessDto)
+  witnesses?: WitnessDto[];
 
   // HYPOTHECATION only — कर्जा रकम निकासा अनुरोध पत्र specific fields.
 

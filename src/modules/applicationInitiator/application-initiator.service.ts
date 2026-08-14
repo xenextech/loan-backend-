@@ -11,7 +11,9 @@ import {
   AuditAction,
   ApplicationSource,
   ApplicationStatus,
+  ApplicationStage,
   BlacklistStatus,
+  BankAccountOpeningStatus,
 } from '../../common/enums';
 import {
   paginate,
@@ -39,6 +41,31 @@ export class ApplicationInitiatorService {
     });
     if (!application) throw new NotFoundException('Application not found');
     return application;
+  }
+
+  // Once the Initiator has handed the application off (stage moves past
+  // INITIATED — Support/Checker/Approver have started acting on it), the
+  // Initiator's own wizard must stop accepting edits: changing the appraisal
+  // underneath a review already in progress would leave whatever the other
+  // roles already signed off on silently stale. The one exception is a
+  // send-back that specifically targets the Initiator (sentBackToStage ===
+  // INITIATED) — that's the "corrections requested" path, and editing is the
+  // whole point of it. `stage === null` is a fresh application that has never
+  // been through the workflow at all, so it's editable same as INITIATED.
+  private assertInitiatorCanEdit(application: {
+    stage: ApplicationStage | null;
+    sentBackToStage: ApplicationStage | null;
+  }) {
+    const stillWithInitiator =
+      application.stage === null ||
+      application.stage === ApplicationStage.INITIATED ||
+      (application.stage === ApplicationStage.SENT_BACK &&
+        application.sentBackToStage === ApplicationStage.INITIATED);
+    if (!stillWithInitiator) {
+      throw new BadRequestException(
+        'This application has moved past the Initiator stage and can no longer be edited. It can only be updated again if it is sent back for review.',
+      );
+    }
   }
 
   // Validates the blacklist section against the *merged* state (existing DB
@@ -154,14 +181,17 @@ export class ApplicationInitiatorService {
         ...(entry.signature !== undefined && {
           [`${prefix}Signature`]: entry.signature,
         }),
+        // Every role's designation lands on that role's own *Post column —
+        // only the Initiator additionally has a branch (handled separately
+        // below, since branch is a single application-wide field, not per-role).
+        ...(entry.designation !== undefined && {
+          [`${prefix}Post`]: entry.designation,
+        }),
       };
     };
 
     return {
       ...entryFields(initiator, 'initiator'),
-      ...(initiator?.designation !== undefined && {
-        initiatorPost: initiator.designation,
-      }),
       ...(initiator?.branchName !== undefined && {
         branch: initiator.branchName,
       }),
@@ -309,19 +339,23 @@ export class ApplicationInitiatorService {
   }
 
   // The Initiator's unified work queue — everything ready for the Initiator
-  // to act on, regardless of how it arrived: college-verified student
-  // applications (existing flow, unchanged) plus Initiator-sourced
-  // applications, which are ready the instant they're created since they
-  // never wait on a college or student step. Deliberately a *new*, additive
-  // endpoint rather than broadening getCollegeVerifiedApplications() above —
-  // that one's name and response shape (always a non-null collegeVerification)
-  // are a real contract existing callers rely on; this one's shape says
-  // upfront that collegeVerification can be null.
+  // to act on, regardless of how it arrived: student applications that have
+  // completed Parent verification -> College verification -> Bank Account
+  // Opening (bankAccountOpening.status can only reach COMPLETED once both of
+  // those are done — see BankAccountOpeningService.ensureRequirementIfBothVerified
+  // — so gating on it alone transitively enforces all three) plus
+  // Initiator-sourced applications, which are ready the instant they're
+  // created since they never wait on a college, parent, or bank step.
+  // Deliberately a *new*, additive endpoint rather than broadening
+  // getCollegeVerifiedApplications() above — that one's name and response
+  // shape (always a non-null collegeVerification) are a real contract
+  // existing callers rely on; this one's shape says upfront that
+  // collegeVerification can be null.
   async getInitiatorQueue(query: QueryCollegeVerifiedDto) {
     const { take, skip } = paginate(query.page, query.limit);
     const where = {
       OR: [
-        { collegeVerification: { isApplicationVerified: true } },
+        { bankAccountOpening: { status: BankAccountOpeningStatus.COMPLETED } },
         { source: ApplicationSource.INITIATOR },
       ],
     };
@@ -468,6 +502,7 @@ export class ApplicationInitiatorService {
     dto: UpdateInitiatorApplicationDto,
   ) {
     const application = await this.assertApplicationExists(applicationId);
+    this.assertInitiatorCanEdit(application);
 
     const {
       familyMembers,
@@ -512,6 +547,9 @@ export class ApplicationInitiatorService {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       data: {
         ...rest,
+        ...(rest.dsgir !== undefined && {
+          dsgir: rest.dsgir !== null ? Math.round(Number(rest.dsgir)) : null,
+        }),
         ...blacklistUpdate,
         ...approvalUpdate,
         ...(familyMembers && {

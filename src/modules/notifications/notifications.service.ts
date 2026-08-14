@@ -250,6 +250,49 @@ export class NotificationsService {
     }
   }
 
+  // ── Bank account opening required (Parent + College both verified) ─────────
+  // Student-only — this is a self-service action on the applicant's own
+  // dashboard, not something staff act on. DB notification always; email
+  // additionally carries a clickable link since Notification has no
+  // dedicated action-URL column (any CTA link only ever lives in the
+  // message/email body — see BankAccountOpeningService for the in-app card
+  // that renders the actual "Open Bank Account" button).
+  async notifyBankAccountOpeningRequired(params: {
+    userId?: string | null;
+    email?: string | null;
+    applicationId: string;
+    applicationNumber: string | null;
+    fullName?: string | null;
+    bankUrl: string;
+  }) {
+    const {
+      userId,
+      email,
+      applicationId,
+      applicationNumber,
+      fullName,
+      bankUrl,
+    } = params;
+    const title = 'Bank Account Opening Required';
+    const message =
+      `Dear ${fullName ?? 'applicant'}, your application ${applicationNumber ?? applicationId} ` +
+      `has been successfully verified by your parent and college. Before we proceed to the ` +
+      `next stage, you need to open a bank account with our partner bank: ${bankUrl}`;
+
+    if (userId) {
+      await this.createDatabaseNotification(
+        userId,
+        title,
+        message,
+        applicationId,
+      );
+    }
+    if (email) {
+      const html = `<p>${message.replace(bankUrl, `<a href="${bankUrl}">${bankUrl}</a>`)}</p>`;
+      await this.sendEmail(email, title, html);
+    }
+  }
+
   // ── Application rejected ───────────────────────────────────────────────────
   async notifyApplicationRejected(applicationId: string) {
     const application = await this.prisma.loanApplication.findUnique({
@@ -288,19 +331,12 @@ export class NotificationsService {
     userId: string,
     applicationNumber: string,
     email: string,
-    parentLink: string,
-    collegeLink: string,
   ) {
     const title = 'Application Submitted Successfully';
     const message = `Your education loan application ${applicationNumber} has been successfully submitted. Our team will review it within 3-5 business days.`;
 
     await this.createDatabaseNotification(userId, title, message);
-    await this.sendApplicationSubmittedEmail(
-      email,
-      applicationNumber,
-      parentLink,
-      collegeLink,
-    );
+    await this.sendApplicationSubmittedEmail(email, applicationNumber);
   }
 
   // ── Loan servicing finalized (student + parent) ─────────────────────────────
@@ -520,8 +556,6 @@ export class NotificationsService {
   async sendApplicationSubmittedEmail(
     email: string,
     applicationNumber: string,
-    parentLink: string,
-    collegeLink: string,
   ) {
     await this.sendEmail(
       email,
@@ -530,32 +564,32 @@ export class NotificationsService {
       <h2>Application Submitted!</h2>
       <p>Your education loan application <strong>${applicationNumber}</strong> has been successfully submitted.</p>
       <p>Our loan officers will review your application within 3-5 business days. You will be notified of any updates.</p>
-      <hr />
-      <h3>Share these links</h3>
-      <p><strong>Parent verification link</strong> — share this with your parent/guardian so they can view the application:</p>
-      <a href="${parentLink}" style="background:#4F46E5;color:#fff;padding:10px 20px;border-radius:6px;text-decoration:none;display:inline-block;margin-bottom:12px;">Parent Verification Link</a>
-      <p><strong>College verification link</strong> — share this with your institution so they can upload the required documents:</p>
-      <a href="${collegeLink}" style="background:#0D9488;color:#fff;padding:10px 20px;border-radius:6px;text-decoration:none;display:inline-block;">College Verification Link</a>
-      <p style="margin-top:16px;font-size:13px;color:#6B7280;">Both links are valid for 3 days. Keep them confidential.</p>
+      <p>If you sent parent or college verification invitations, you can track their status from your application dashboard.</p>
       <p>Thank you for choosing Unnati Loan.</p>
     `,
     );
   }
 
+  // Returns whether the email dispatched successfully, so callers (the
+  // verification invitation service) can mark the invitation FAILED and
+  // surface that to the Initiator instead of silently losing the failure.
   async sendParentVerificationLink(
     email: string,
-    applicationNumber?: string,
-    parentLink?: string,
-  ) {
-    await this.sendEmail(
+    applicationNumber: string,
+    parentLink: string,
+    verificationCode: string,
+    expiresAt: Date,
+  ): Promise<boolean> {
+    return this.sendEmail(
       email,
       `Action required: Verify loan application ${applicationNumber}`,
       `
       <h2>Education Loan Application — Parent/Guardian Verification</h2>
-      <p>A student has submitted an education loan application <strong>${applicationNumber}</strong> and has listed you as their parent or guardian.</p>
-      <p>Please click the button below to view the application details:</p>
-      <a href="${parentLink}" style="background:#4F46E5;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;display:inline-block;">View Application</a>
-      <p style="margin-top:16px;font-size:13px;color:#6B7280;">This link is valid for 3 days. If you were not expecting this email, you can safely ignore it.</p>
+      <p>A student has submitted an education loan application <strong>${applicationNumber}</strong> and has listed you as their parent or guardian. We need you to verify some information before the application can proceed.</p>
+      <p style="margin:16px 0;padding:12px 16px;background:#F3F4F6;border-radius:8px;">Verification ID: <strong>${verificationCode}</strong></p>
+      <p>Please click the button below to complete verification:</p>
+      <a href="${parentLink}" style="background:#4F46E5;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;display:inline-block;">Complete Parent Verification</a>
+      <p style="margin-top:16px;font-size:13px;color:#6B7280;">This link expires on ${expiresAt.toUTCString()}. If you were not expecting this email, please ignore it or contact the institution — do not share this link with anyone else.</p>
       <p>Thank you,<br/>Unnati Loan Team</p>
     `,
     );
@@ -565,16 +599,19 @@ export class NotificationsService {
     email: string,
     applicationNumber: string,
     collegeLink: string,
-  ) {
-    await this.sendEmail(
+    verificationCode: string,
+    expiresAt: Date,
+  ): Promise<boolean> {
+    return this.sendEmail(
       email,
       `Action required: Education loan verification for application ${applicationNumber}`,
       `
       <h2>Education Loan — College/Institution Verification</h2>
-      <p>A student has submitted an education loan application <strong>${applicationNumber}</strong> and has listed your institution.</p>
+      <p>A student has submitted an education loan application <strong>${applicationNumber}</strong> and has listed your institution. We need your institution to verify enrollment before the application can proceed.</p>
+      <p style="margin:16px 0;padding:12px 16px;background:#F3F4F6;border-radius:8px;">Verification ID: <strong>${verificationCode}</strong></p>
       <p>Please click the button below to complete the verification — you will need to upload the offer letter and enrollment documents:</p>
       <a href="${collegeLink}" style="background:#0D9488;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;display:inline-block;">Complete College Verification</a>
-      <p style="margin-top:16px;font-size:13px;color:#6B7280;">This link is valid for 3 days. If you were not expecting this email, you can safely ignore it.</p>
+      <p style="margin-top:16px;font-size:13px;color:#6B7280;">This link expires on ${expiresAt.toUTCString()}. If you were not expecting this email, please ignore it or contact the institution — do not share this link with anyone else.</p>
       <p>Thank you,<br/>Unnati Loan Team</p>
     `,
     );
@@ -621,7 +658,11 @@ export class NotificationsService {
     await this.sendStudentConsentLink(email, applicationNumber, consentLink);
   }
 
-  private async sendEmail(to: string, subject: string, html: string) {
+  private async sendEmail(
+    to: string,
+    subject: string,
+    html: string,
+  ): Promise<boolean> {
     try {
       await this.transporter.sendMail({
         from: this.config.get<string>('smtp.from'),
@@ -629,8 +670,10 @@ export class NotificationsService {
         subject,
         html,
       });
+      return true;
     } catch (err) {
       this.logger.warn(`Failed to send email to ${to}: ${String(err)}`);
+      return false;
     }
   }
 

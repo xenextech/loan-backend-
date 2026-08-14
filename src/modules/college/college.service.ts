@@ -1,12 +1,9 @@
-import {
-  Injectable,
-  NotFoundException,
-  ForbiddenException,
-  BadRequestException,
-} from '@nestjs/common';
+import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
 import { AuditService } from '../audit/audit.service';
+import { VerificationInvitationService } from '../verification/verification-invitation.service';
+import { BankAccountOpeningService } from '../bank-account/bank-account-opening.service';
 import { CollegeFormDto } from './dto/college-form.dto';
 import { ApplicationLinkType, AuditAction } from '../../common/enums';
 import {
@@ -22,40 +19,22 @@ export class CollegeService {
     private readonly prisma: PrismaService,
     private readonly storage: StorageService,
     private readonly audit: AuditService,
+    private readonly verificationInvitation: VerificationInvitationService,
+    private readonly bankAccountOpening: BankAccountOpeningService,
   ) {}
 
-  // ── Validate college token and return the link record ─────────────────────
-  private async resolveCollegeToken(token: string) {
-    const link = await this.prisma.applicationLink.findUnique({
-      where: { token },
-      include: {
-        application: {
-          include: { studyInformation: true, loanInformation: true },
-        },
-      },
-    });
-
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-enum-comparison
-    if (!link || link.linkType !== ApplicationLinkType.COLLEGE) {
-      throw new NotFoundException('Invalid link');
-    }
-    if (link.expiresAt < new Date()) {
-      throw new BadRequestException('This verification link has expired');
-    }
-
-    return link;
+  // ── Validate college token (+ email, when the invitation captured one) ────
+  private async resolveCollegeToken(token: string, email?: string) {
+    return this.verificationInvitation.resolveInvitation(
+      token,
+      email,
+      'COLLEGE',
+    );
   }
 
   // ── GET: application overview + current college form state ────────────────
-  async getApplicationByToken(token: string) {
-    const link = await this.resolveCollegeToken(token);
-
-    if (!link.accessedAt) {
-      await this.prisma.applicationLink.update({
-        where: { id: link.id },
-        data: { accessedAt: new Date() },
-      });
-    }
+  async getApplicationByToken(token: string, email?: string) {
+    const link = await this.resolveCollegeToken(token, email);
 
     const app = link.application;
     const verification = await this.prisma.collegeVerification.findUnique({
@@ -64,6 +43,7 @@ export class CollegeService {
 
     return {
       applicationNumber: app.applicationNumber,
+      verificationCode: link.verificationCode,
       studentName: app.fullName,
       studentEmail: app.email,
       studentPhone: app.phoneNumber,
@@ -81,8 +61,8 @@ export class CollegeService {
   }
 
   // ── POST/PUT: submit/update the college verification form ─────────────────
-  async submitCollegeForm(token: string, dto: CollegeFormDto) {
-    const link = await this.resolveCollegeToken(token);
+  async submitCollegeForm(token: string, dto: CollegeFormDto, email?: string) {
+    const link = await this.resolveCollegeToken(token, email);
 
     const record = await this.prisma.collegeVerification.upsert({
       where: { applicationId: link.applicationId },
@@ -103,13 +83,24 @@ export class CollegeService {
       { collegeName: dto.collegeName, applicationId: link.applicationId },
       link.applicationId,
     );
+    await this.verificationInvitation.markVerified(link.id);
+
+    // No-ops unless Parent verification is also already complete — see
+    // BankAccountOpeningService for the actual gating logic.
+    await this.bankAccountOpening.ensureRequirementIfBothVerified(
+      link.applicationId,
+    );
 
     return record;
   }
 
   // ── POST: upload offer letter ─────────────────────────────────────────────
-  async uploadOfferLetter(token: string, file: Express.Multer.File) {
-    const link = await this.resolveCollegeToken(token);
+  async uploadOfferLetter(
+    token: string,
+    file: Express.Multer.File,
+    email?: string,
+  ) {
+    const link = await this.resolveCollegeToken(token, email);
 
     const existing = await this.prisma.collegeVerification.findUnique({
       where: { applicationId: link.applicationId },
@@ -201,8 +192,12 @@ export class CollegeService {
   }
 
   // ── POST: upload enrollment docs ──────────────────────────────────────────
-  async uploadEnrollmentDocs(token: string, file: Express.Multer.File) {
-    const link = await this.resolveCollegeToken(token);
+  async uploadEnrollmentDocs(
+    token: string,
+    file: Express.Multer.File,
+    email?: string,
+  ) {
+    const link = await this.resolveCollegeToken(token, email);
 
     const existing = await this.prisma.collegeVerification.findUnique({
       where: { applicationId: link.applicationId },

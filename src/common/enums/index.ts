@@ -97,6 +97,7 @@ export {
   FacilityStatus,
   DegreeLevel,
   CourseCategory,
+  BankAccountOpeningStatus,
 } from '@prisma/client';
 
 // NRB digital lending cap per borrower (NPR), used by the commission

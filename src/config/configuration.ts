@@ -36,4 +36,21 @@ export default () => ({
     url: process.env.APP_URL ?? 'http://localhost:3001',
     frontendUrl: process.env.FRONTEND_URL ?? 'http://localhost:3000',
   },
+
+  verification: {
+    // Parent/college verification invitation TTL. Same 3-day default the
+    // links have always used (previously hardcoded as LINK_TTL_MS in
+    // applications.service.ts) — now configurable via env instead.
+    linkTtlMs: parseInt(
+      process.env.VERIFICATION_LINK_TTL_MS ?? String(3 * 24 * 60 * 60 * 1000),
+      10,
+    ),
+  },
+
+  bankAccountOpening: {
+    // MVP placeholder for the partner bank's account-opening portal — swap
+    // via env once the real integration/URL is available. Read once here so
+    // the rest of the app never hardcodes it (see BankAccountOpeningService).
+    url: process.env.BANK_ACCOUNT_OPENING_URL ?? 'https://bestfinance.com.np/',
+  },
 });

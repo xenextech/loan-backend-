@@ -6,13 +6,11 @@ import {
 import { PrismaService } from '../../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
 import { AuditService } from '../audit/audit.service';
+import { VerificationInvitationService } from '../verification/verification-invitation.service';
+import { BankAccountOpeningService } from '../bank-account/bank-account-opening.service';
 import { ParentVerificationDto } from './dto/parent-verification.dto';
 import { ParentIdentityDocumentType } from './dto/parent-document.dto';
-import {
-  ApplicationLinkType,
-  AuditAction,
-  ParentDocumentType,
-} from '../../common/enums';
+import { AuditAction, ParentDocumentType } from '../../common/enums';
 import {
   DOCUMENT_BUCKET,
   ALLOWED_IDENTITY_DOCUMENT_TYPES,
@@ -31,39 +29,22 @@ export class ParentPublicService {
     private readonly prisma: PrismaService,
     private readonly storage: StorageService,
     private readonly audit: AuditService,
+    private readonly verificationInvitation: VerificationInvitationService,
+    private readonly bankAccountOpening: BankAccountOpeningService,
   ) {}
 
-  // ── Validate parent token and return the link record ──────────────────────
-  private async resolveParentToken(token: string) {
-    const link = await this.prisma.applicationLink.findUnique({
-      where: { token },
-      include: {
-        application: {
-          include: { studyInformation: true, loanInformation: true },
-        },
-      },
-    });
-
-    if (!link || link.linkType !== ApplicationLinkType.PARENT) {
-      throw new NotFoundException('Invalid link');
-    }
-    if (link.expiresAt < new Date()) {
-      throw new BadRequestException('This verification link has expired');
-    }
-
-    return link;
+  // ── Validate parent token (+ email, when the invitation captured one) ─────
+  private async resolveParentToken(token: string, email?: string) {
+    return this.verificationInvitation.resolveInvitation(
+      token,
+      email,
+      'PARENT',
+    );
   }
 
   // ── GET: application overview + current parent form state ─────────────────
-  async getApplicationByToken(token: string) {
-    const link = await this.resolveParentToken(token);
-
-    if (!link.accessedAt) {
-      await this.prisma.applicationLink.update({
-        where: { id: link.id },
-        data: { accessedAt: new Date() },
-      });
-    }
+  async getApplicationByToken(token: string, email?: string) {
+    const link = await this.resolveParentToken(token, email);
 
     const app = link.application;
     const verification = await this.prisma.parentVerification.findUnique({
@@ -86,6 +67,7 @@ export class ParentPublicService {
 
     return {
       applicationNumber: app.applicationNumber,
+      verificationCode: link.verificationCode,
       studentName: app.fullName,
       email: app.email,
       phoneNumber: app.phoneNumber,
@@ -110,8 +92,12 @@ export class ParentPublicService {
   }
 
   // ── PUT: submit/update the parent profile form ────────────────────────────
-  async submitParentProfile(token: string, dto: ParentVerificationDto) {
-    const link = await this.resolveParentToken(token);
+  async submitParentProfile(
+    token: string,
+    dto: ParentVerificationDto,
+    email?: string,
+  ) {
+    const link = await this.resolveParentToken(token, email);
 
     const record = await this.prisma.parentVerification.upsert({
       where: { applicationId: link.applicationId },
@@ -130,6 +116,13 @@ export class ParentPublicService {
       link?.application?.userId || '',
       AuditAction.PARENT_FORM_SUBMITTED,
       { name: dto.name, applicationId: link.applicationId },
+      link.applicationId,
+    );
+    await this.verificationInvitation.markVerified(link.id);
+
+    // No-ops unless College verification is also already complete — see
+    // BankAccountOpeningService for the actual gating logic.
+    await this.bankAccountOpening.ensureRequirementIfBothVerified(
       link.applicationId,
     );
 
@@ -207,6 +200,7 @@ export class ParentPublicService {
     token: string,
     files: Express.Multer.File[],
     label?: string,
+    email?: string,
   ) {
     if (!files?.length) {
       throw new BadRequestException(
@@ -215,7 +209,7 @@ export class ParentPublicService {
     }
     files.forEach((f) => this.assertAllowedDocument(f));
 
-    const link = await this.resolveParentToken(token);
+    const link = await this.resolveParentToken(token, email);
 
     // Sequential (not Promise.all) so each upload safely reuses the same
     // ParentVerification row without racing its upsert.
@@ -242,9 +236,10 @@ export class ParentPublicService {
     identityType: ParentIdentityDocumentType,
     file: Express.Multer.File,
     label?: string,
+    email?: string,
   ) {
     this.assertAllowedDocument(file);
-    const link = await this.resolveParentToken(token);
+    const link = await this.resolveParentToken(token, email);
 
     const documentType: ParentDocumentType =
       identityType === ParentIdentityDocumentType.NID
@@ -261,8 +256,8 @@ export class ParentPublicService {
   }
 
   // ── GET: list all parent documents ─────────────────────────────────────────
-  async getDocuments(token: string) {
-    const link = await this.resolveParentToken(token);
+  async getDocuments(token: string, email?: string) {
+    const link = await this.resolveParentToken(token, email);
     const verification = await this.prisma.parentVerification.findUnique({
       where: { applicationId: link.applicationId },
     });
@@ -275,11 +270,16 @@ export class ParentPublicService {
   }
 
   // ── PATCH: rename a document's editable label ──────────────────────────────
-  async updateDocumentLabel(token: string, documentId: string, label: string) {
+  async updateDocumentLabel(
+    token: string,
+    documentId: string,
+    label: string,
+    email?: string,
+  ) {
     if (!label?.trim()) {
       throw new BadRequestException('Document label cannot be empty.');
     }
-    const link = await this.resolveParentToken(token);
+    const link = await this.resolveParentToken(token, email);
 
     const document = await this.prisma.parentDocument.findUnique({
       where: { id: documentId },

@@ -144,13 +144,17 @@ export class DocumentsService {
       );
     }
 
-    // Remove previous document of same type
-    const existing = await this.prisma.document.findFirst({
-      where: { applicationId, documentType },
-    });
-    if (existing) {
-      await this.storage.deleteFile(existing.bucketName, existing.filePath);
-      await this.prisma.document.delete({ where: { id: existing.id } });
+    // For ACADEMIC_RECORD, multiple documents are allowed (student may have
+    // several transcripts/certificates). For every other type we keep the
+    // existing one-at-a-time behaviour — delete the previous file first.
+    if (documentType !== DocumentType.ACADEMIC_RECORD) {
+      const existing = await this.prisma.document.findFirst({
+        where: { applicationId, documentType },
+      });
+      if (existing) {
+        await this.storage.deleteFile(existing.bucketName, existing.filePath);
+        await this.prisma.document.delete({ where: { id: existing.id } });
+      }
     }
 
     const uploadResult = await this.storage.uploadFile(

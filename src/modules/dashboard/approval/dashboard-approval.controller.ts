@@ -18,6 +18,9 @@ import { JwtPayload } from '../../../common/interfaces/jwt-payload.interface';
 import { UserRole } from '../../../common/enums';
 import { DASHBOARD_STAFF_ROLES } from '../dashboard-roles.constant';
 import {
+  SupportApplicationDto,
+  CheckApplicationDto,
+  ApproveApplicationDto,
   RejectApplicationDto,
   SendBackApplicationDto,
   PepScreeningDto,
@@ -88,8 +91,9 @@ export class DashboardApprovalController {
   support(
     @CurrentUser() user: JwtPayload,
     @Param('applicationId') applicationId: string,
+    @Body() dto: SupportApplicationDto,
   ) {
-    return this.dashboardApprovalService.support(user.sub, applicationId);
+    return this.dashboardApprovalService.support(user.sub, applicationId, dto);
   }
 
   @Post('check')
@@ -101,8 +105,9 @@ export class DashboardApprovalController {
   check(
     @CurrentUser() user: JwtPayload,
     @Param('applicationId') applicationId: string,
+    @Body() dto: CheckApplicationDto,
   ) {
-    return this.dashboardApprovalService.check(user.sub, applicationId);
+    return this.dashboardApprovalService.check(user.sub, applicationId, dto);
   }
 
   @Post('approve')
@@ -113,8 +118,9 @@ export class DashboardApprovalController {
   approve(
     @CurrentUser() user: JwtPayload,
     @Param('applicationId') applicationId: string,
+    @Body() dto: ApproveApplicationDto,
   ) {
-    return this.dashboardApprovalService.approve(user.sub, applicationId);
+    return this.dashboardApprovalService.approve(user.sub, applicationId, dto);
   }
 
   @Post('reject')

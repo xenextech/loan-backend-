@@ -446,6 +446,15 @@ export class DashboardDocumentsService {
           collateralPlotNo: firstFilled(dto.collateralPlotNo),
           collateralArea: firstFilled(dto.collateralArea),
           collateralRemarks: firstFilled(dto.collateralRemarks),
+          witnesses: dto.witnesses?.length
+            ? dto.witnesses.map((w) => ({
+                district: firstFilled(w.district),
+                municipality: firstFilled(w.municipality),
+                wardNo: firstFilled(w.wardNo),
+                age: firstFilled(w.age),
+                name: firstFilled(w.name),
+              }))
+            : null,
           approvalLetterDate: firstFilled(dto.approvalLetterDate),
           loanExpiryDate: firstFilled(dto.loanExpiryDate),
           borrowerPosition: firstFilled(dto.borrowerPosition),
