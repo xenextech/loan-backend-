@@ -83,4 +83,10 @@ export class Step1Dto {
   @Min(1)
   @Max(15_00_000)
   loanAmount?: number;
+
+  @ApiPropertyOptional({ description: 'Estimated monthly EMI based on the chosen loan amount and duration' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  estimatedEmi?: number;
 }

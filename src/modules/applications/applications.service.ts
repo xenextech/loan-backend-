@@ -74,6 +74,7 @@ export class ApplicationsService {
       boardUniversity,
       courseDuration,
       loanAmount,
+      estimatedEmi,
       expectedSalary,
       feeStructureMethod,
       feeStructureUrl,
@@ -107,6 +108,7 @@ export class ApplicationsService {
         loanInformation: {
           create: {
             loanAmount,
+            estimatedEmi,
             expectedSalary,
             feeStructureMethod,
             feeStructureUrl,
@@ -224,6 +226,7 @@ export class ApplicationsService {
       boardUniversity,
       courseDuration,
       loanAmount,
+      estimatedEmi,
       courseId,
       ...personalData
     } = dto;
@@ -290,8 +293,8 @@ export class ApplicationsService {
       }),
       this.prisma.loanInformation.upsert({
         where: { applicationId: id },
-        create: { applicationId: id, loanAmount },
-        update: { loanAmount },
+        create: { applicationId: id, loanAmount, estimatedEmi },
+        update: { loanAmount, estimatedEmi },
       }),
     ]);
 

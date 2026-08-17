@@ -657,6 +657,7 @@ model LoanInformation {
   applicationId String @unique
 
   loanAmount     Decimal? @db.Decimal(12, 2)
+  estimatedEmi   Decimal? @db.Decimal(12, 2)
   expectedSalary Decimal? @db.Decimal(12, 2)
 
   feeStructureMethod FeeStructureMethod?
