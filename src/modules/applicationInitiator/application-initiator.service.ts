@@ -377,7 +377,7 @@ export class ApplicationInitiatorService {
           createdAt: true,
           user: { select: { id: true, email: true, role: true } },
           studyInformation: { select: { courseName: true, studyType: true } },
-          loanInformation: { select: { loanAmount: true } },
+          loanInformation: { select: { loanAmount: true, estimatedEmi: true } },
           collegeVerification: true,
         },
       }),

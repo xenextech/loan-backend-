@@ -602,7 +602,7 @@ model LoanApplication {
   satisfactoryPerformance   Int?
   parentsBorrowingsWithBFIs String?
   sourceOfIncome            String?
-  loanToValueRatio          Decimal?                @db.Decimal(5, 2)
+  loanToValueRatio          Decimal?                @db.Decimal(7, 2)
   performanceYears          Int?
   bankingRelationshipScore  Int?
   sourceOfIncomeScore       Int?
@@ -657,6 +657,7 @@ model LoanInformation {
   applicationId String @unique
 
   loanAmount     Decimal? @db.Decimal(12, 2)
+  estimatedEmi   Decimal? @db.Decimal(12, 2)
   expectedSalary Decimal? @db.Decimal(12, 2)
 
   feeStructureMethod FeeStructureMethod?

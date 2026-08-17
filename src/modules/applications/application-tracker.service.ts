@@ -316,7 +316,7 @@ export class ApplicationTrackerService {
         bankAccountOpening: {
           select: { status: true, completedAt: true },
         },
-        loanInformation: { select: { loanAmount: true } },
+        loanInformation: { select: { loanAmount: true, estimatedEmi: true } },
         loanAccount: {
           select: {
             configuredAt: true,
