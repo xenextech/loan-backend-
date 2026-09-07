@@ -40,9 +40,7 @@ import {
  * Empty strings count as "not provided" — an untouched form input submits ""
  * and must not blank out a field the application already knows.
  */
-function firstFilled(
-  ...values: (string | null | undefined)[]
-): string | null {
+function firstFilled(...values: (string | null | undefined)[]): string | null {
   for (const value of values) {
     const trimmed = value?.trim();
     if (trimmed) return trimmed;

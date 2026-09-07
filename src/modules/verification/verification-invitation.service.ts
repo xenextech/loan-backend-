@@ -73,14 +73,16 @@ export class VerificationInvitationService {
     });
   }
 
-  private toSafeView(link: {
-    recipientEmail: string | null;
-    verificationCode: string | null;
-    status: string;
-    createdAt: Date;
-    expiresAt: Date;
-    verifiedAt: Date | null;
-  } | null): VerificationInvitationView | null {
+  private toSafeView(
+    link: {
+      recipientEmail: string | null;
+      verificationCode: string | null;
+      status: string;
+      createdAt: Date;
+      expiresAt: Date;
+      verifiedAt: Date | null;
+    } | null,
+  ): VerificationInvitationView | null {
     if (!link) return null;
 
     let status: VerificationInvitationView['status'];
@@ -207,7 +209,10 @@ export class VerificationInvitationService {
     linkType: RecipientType,
     rawEmail: string,
   ): Promise<VerificationInvitationView> {
-    const application = await this.assertOwnedApplication(applicationId, userId);
+    const application = await this.assertOwnedApplication(
+      applicationId,
+      userId,
+    );
     const email = this.normalizeEmail(rawEmail);
     const active = await this.findActive(applicationId, linkType);
 
@@ -236,7 +241,10 @@ export class VerificationInvitationService {
     userId: string,
     linkType: RecipientType,
   ): Promise<VerificationInvitationView> {
-    const application = await this.assertOwnedApplication(applicationId, userId);
+    const application = await this.assertOwnedApplication(
+      applicationId,
+      userId,
+    );
     const latest = await this.findLatest(applicationId, linkType);
     if (!latest || !latest.recipientEmail) {
       throw new NotFoundException(
@@ -296,7 +304,6 @@ export class VerificationInvitationService {
       });
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-enum-comparison
     if (!link || link.linkType !== linkType) {
       throw new NotFoundException('Invalid link');
     }
@@ -314,11 +321,10 @@ export class VerificationInvitationService {
     if (link.recipientEmail) {
       const normalized = email?.trim().toLowerCase();
       if (!normalized || normalized !== link.recipientEmail.toLowerCase()) {
-        await this.logRecipientAudit(
-          link,
-          AuditAction.VERIFICATION_FAILED,
-          { recipientType: linkType, reason: 'email_mismatch' },
-        );
+        await this.logRecipientAudit(link, AuditAction.VERIFICATION_FAILED, {
+          recipientType: linkType,
+          reason: 'email_mismatch',
+        });
         throw new BadRequestException(
           'The email address does not match this invitation.',
         );

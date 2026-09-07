@@ -100,7 +100,9 @@ export class CreateInitiatorApplicationDto {
   bankingRelationship?: string;
 
   // Collected only when bankingRelationship is "EXISTING".
-  @ApiPropertyOptional({ description: 'Name of the bank for the existing account' })
+  @ApiPropertyOptional({
+    description: 'Name of the bank for the existing account',
+  })
   @IsOptional()
   @IsString()
   existingBankName?: string;
@@ -115,7 +117,9 @@ export class CreateInitiatorApplicationDto {
   @IsMoneyAmount()
   existingBankSavingsAmount?: number;
 
-  @ApiPropertyOptional({ description: 'Existing outstanding loan amount at the bank' })
+  @ApiPropertyOptional({
+    description: 'Existing outstanding loan amount at the bank',
+  })
   @IsOptional()
   @IsMoneyAmount()
   existingBankLoanAmount?: number;

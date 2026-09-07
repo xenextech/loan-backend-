@@ -20,6 +20,7 @@ interface CreateCallArgs {
 
 describe('ApplicationsService', () => {
   let createMock: jest.Mock<unknown, [CreateCallArgs]>;
+  let findFirstMock: jest.Mock;
   let auditLogMock: jest.Mock;
   let service: ApplicationsService;
 
@@ -37,10 +38,13 @@ describe('ApplicationsService', () => {
           loanInformation: data.loanInformation?.create ?? null,
         }),
       );
+    // No existing draft by default — individual tests override this to
+    // exercise the "reuse existing draft" branch.
+    findFirstMock = jest.fn().mockResolvedValue(null);
     auditLogMock = jest.fn().mockResolvedValue(undefined);
 
     const prisma = {
-      loanApplication: { create: createMock },
+      loanApplication: { create: createMock, findFirst: findFirstMock },
     } as unknown as PrismaService;
     const audit = { log: auditLogMock } as unknown as AuditService;
     const notifications = {} as unknown as NotificationsService;
@@ -53,6 +57,11 @@ describe('ApplicationsService', () => {
     it('creates a bare draft owned by the given student and audit-logs it', async () => {
       const result = await service.create('student-1');
 
+      expect(findFirstMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { userId: 'student-1', status: 'DRAFT' },
+        }),
+      );
       expect(createMock).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
@@ -68,6 +77,20 @@ describe('ApplicationsService', () => {
         'app-1',
       );
       expect(result.id).toBe('app-1');
+    });
+
+    it('returns the existing DRAFT instead of creating a second one', async () => {
+      findFirstMock.mockResolvedValue({
+        id: 'existing-draft',
+        userId: 'student-1',
+        status: 'DRAFT',
+      });
+
+      const result = await service.create('student-1');
+
+      expect(result).toEqual(expect.objectContaining({ id: 'existing-draft' }));
+      expect(createMock).not.toHaveBeenCalled();
+      expect(auditLogMock).not.toHaveBeenCalled();
     });
   });
 

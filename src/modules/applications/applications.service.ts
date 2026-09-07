@@ -13,7 +13,11 @@ import { Step2Dto } from './dto/step2.dto';
 import { Step3Dto } from './dto/step3.dto';
 import { Step4Dto } from './dto/step4.dto';
 import { QueryApplicationDto } from './dto/query-application.dto';
-import { ApplicationStatus, AuditAction, ApplicationSource } from '../../common/enums';
+import {
+  ApplicationStatus,
+  AuditAction,
+  ApplicationSource,
+} from '../../common/enums';
 import {
   paginate,
   buildPaginatedResponse,
@@ -39,7 +43,21 @@ export class ApplicationsService {
   ) {}
 
   // ── Create draft application ───────────────────────────────────────────────
+  // A student may only have one active DRAFT at a time — reused across the
+  // whole apply wizard (step saves PATCH this same id) so that page
+  // refreshes, remounts, or repeated "start application" calls never spawn
+  // a second orphaned draft. Existing-and-DRAFT wins over creating a new row;
+  // only a genuinely new applicant (or one whose only draft was already
+  // submitted/deleted) gets a fresh one.
   async create(userId: string) {
+    const existingDraft = await this.prisma.loanApplication.findFirst({
+      where: { userId, status: ApplicationStatus.DRAFT },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (existingDraft) {
+      return existingDraft;
+    }
+
     const application = await this.prisma.loanApplication.create({
       data: {
         userId,
@@ -60,7 +78,6 @@ export class ApplicationsService {
 
     return application;
   }
-
 
   async createComplete(
     actorUserId: string,

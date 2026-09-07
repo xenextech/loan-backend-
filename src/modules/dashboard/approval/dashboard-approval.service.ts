@@ -116,7 +116,13 @@ export class DashboardApprovalService {
     branch?: string | null,
   ) {
     if (!approvedAt) return null;
-    return { id: userId, name, approvedAt, post: post ?? null, branch: branch ?? null };
+    return {
+      id: userId,
+      name,
+      approvedAt,
+      post: post ?? null,
+      branch: branch ?? null,
+    };
   }
 
   // The Branch Name/Designation the acting role recorded for their own
@@ -135,9 +141,15 @@ export class DashboardApprovalService {
             : null;
     if (!prefix) return {};
     return {
-      ...(dto.designation !== undefined && { [`${prefix}Post`]: dto.designation }),
-      ...(dto.branchName !== undefined && { [`${prefix}Branch`]: dto.branchName }),
-      ...(dto.signature !== undefined && { [`${prefix}Signature`]: dto.signature }),
+      ...(dto.designation !== undefined && {
+        [`${prefix}Post`]: dto.designation,
+      }),
+      ...(dto.branchName !== undefined && {
+        [`${prefix}Branch`]: dto.branchName,
+      }),
+      ...(dto.signature !== undefined && {
+        [`${prefix}Signature`]: dto.signature,
+      }),
     };
   }
 
