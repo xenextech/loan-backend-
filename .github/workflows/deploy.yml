@@ -1,0 +1,100 @@
+name: Deploy to VPS
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Never let two deploys overlap — but don't cancel one mid-flight either,
+# since a cancelled run could leave migrations applied with no matching code.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+      - run: npm run test:vitest
+      - run: npm run build
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    # Scopes the secrets below and lets you add required reviewers or a
+    # branch rule in Settings > Environments. Migrations and the restart are
+    # one job on purpose: two would mean two approvals, and a gap in which
+    # the schema is ahead of the running code.
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # Against the Supabase session-mode pooler on 5432, which bypasses
+      # pgbouncer — the transaction pooler in DATABASE_URL cannot run DDL.
+      # prisma.config.ts reads DIRECT_URL for exactly this.
+      - name: Apply migrations
+        env:
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+        run: npx prisma migrate deploy
+
+      - name: Configure SSH
+        env:
+          SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+
+      - name: Build and restart on VPS
+        env:
+          VPS: ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}
+          DEPLOY_PATH: ${{ vars.DEPLOY_PATH || '/opt/edu-loan-backend' }}
+          SHA: ${{ github.sha }}
+        run: |
+          ssh -o BatchMode=yes "$VPS" "bash -euo pipefail -s" <<SCRIPT
+          cd "$DEPLOY_PATH"
+
+          git fetch origin main
+          # reset, never clean: .env.production lives here untracked, and
+          # git clean -fd would delete it.
+          git reset --hard "$SHA"
+
+          # Build and swap as two steps. Combining them into one up --build
+          # works too, but splitting means a compile failure aborts before
+          # the running container is touched.
+          docker compose build api
+          docker compose up -d api
+
+          docker image prune -f
+          SCRIPT
+
+      - name: Verify service is healthy
+        env:
+          VPS: ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}
+        run: |
+          ssh -o BatchMode=yes "$VPS" "bash -euo pipefail -s" <<'SCRIPT'
+          # Port 3001 is bound to loopback, so this has to run on the box.
+          curl -fsS --retry 15 --retry-delay 2 --retry-connrefused \
+            http://127.0.0.1:3001/api/v1 > /dev/null
+          echo "API is responding."
+          SCRIPT

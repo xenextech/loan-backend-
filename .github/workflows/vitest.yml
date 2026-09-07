@@ -1,8 +1,10 @@
 name: Vitest Test Runner
 
 on:
+  # main is covered by deploy.yml, which runs the same suite as its first
+  # gate — excluded here so pushes to main don't test twice.
   push:
-    branches: [main, document-vault]
+    branches-ignore: [main]
   pull_request:
 
 jobs:
@@ -13,9 +15,9 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version: 22
           cache: npm
 
-      - run: npm install
+      - run: npm ci
 
       - run: npm run test:vitest

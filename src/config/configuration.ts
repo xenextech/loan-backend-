@@ -37,6 +37,17 @@ export default () => ({
     frontendUrl: process.env.FRONTEND_URL ?? 'http://localhost:3000',
   },
 
+  cors: {
+    // Extra browser origins allowed to call the API, comma-separated. The
+    // frontend is deployed separately (Vercel), so every request is
+    // cross-origin — FRONTEND_URL is always allowed on top of this list.
+    // Add Vercel preview domains here if previews point at this API.
+    origins: (process.env.CORS_ORIGINS ?? '')
+      .split(',')
+      .map((origin) => origin.trim())
+      .filter(Boolean),
+  },
+
   verification: {
     // Parent/college verification invitation TTL. Same 3-day default the
     // links have always used (previously hardcoded as LINK_TTL_MS in

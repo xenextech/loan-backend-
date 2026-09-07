@@ -23,12 +23,31 @@ async function bootstrap() {
 
   // ── Security ──────────────────────────────────────────────────────────────
   app.use(helmet());
+
+  const allowedOrigins = new Set(
+    [
+      ...(config.get<string[]>('cors.origins') ?? []),
+      config.get<string>('app.frontendUrl'),
+    ].filter((origin): origin is string => Boolean(origin)),
+  );
+  // Dev convenience only — production must name its origins via
+  // FRONTEND_URL / CORS_ORIGINS.
+  if (config.get<string>('nodeEnv') !== 'production') {
+    allowedOrigins.add('http://localhost:3000');
+  }
+
   app.enableCors({
-    origin: [
-      config.get<string>('app.frontendUrl') ?? 'http://localhost:3000',
-      'http://localhost:3000',
-      'https://edu-loan-frontend.vercel.app',
-    ],
+    origin: (
+      origin: string | undefined,
+      callback: (err: Error | null, allow?: boolean) => void,
+    ) => {
+      // No Origin header means a non-browser caller (curl, server-to-server,
+      // health checks) — there is no cross-origin risk to guard against.
+      if (!origin || allowedOrigins.has(origin)) {
+        return callback(null, true);
+      }
+      callback(new Error(`Origin not allowed by CORS: ${origin}`));
+    },
     credentials: true,
   });
 
