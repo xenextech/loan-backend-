@@ -37,6 +37,29 @@ export default () => ({
     frontendUrl: process.env.FRONTEND_URL ?? 'http://localhost:3000',
   },
 
+  // Express' `trust proxy`. Behind one reverse proxy (Nginx) this must be 1,
+  // otherwise req.ip is the proxy's address for every caller and the whole
+  // internet shares a single rate-limit bucket. Left at 0 by default so a
+  // directly-exposed app never trusts a forged X-Forwarded-For header.
+  trustProxy: parseInt(process.env.TRUST_PROXY ?? '0', 10),
+
+  // Rate limiting. ttl values are milliseconds (throttler v6). Every limit is
+  // per client IP; see AppThrottlerGuard for how a route picks its policy.
+  throttle: {
+    global: {
+      ttl: parseInt(process.env.THROTTLE_GLOBAL_TTL ?? '60000', 10),
+      limit: parseInt(process.env.THROTTLE_GLOBAL_LIMIT ?? '100', 10),
+    },
+    auth: {
+      ttl: parseInt(process.env.THROTTLE_AUTH_TTL ?? '60000', 10),
+      limit: parseInt(process.env.THROTTLE_AUTH_LIMIT ?? '5', 10),
+    },
+    sensitive: {
+      ttl: parseInt(process.env.THROTTLE_SENSITIVE_TTL ?? '60000', 10),
+      limit: parseInt(process.env.THROTTLE_SENSITIVE_LIMIT ?? '3', 10),
+    },
+  },
+
   cors: {
     // Extra browser origins allowed to call the API, comma-separated. The
     // frontend is deployed separately (Vercel), so every request is

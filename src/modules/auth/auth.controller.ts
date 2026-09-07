@@ -19,6 +19,7 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
+import { AuthThrottle } from '../../common/decorators/throttle-policy.decorator';
 import { JwtPayload } from '../../common/interfaces/jwt-payload.interface';
 
 @ApiTags('Auth')
@@ -28,6 +29,7 @@ export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Public()
+  @AuthThrottle()
   @Post('register')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Register a new student account' })
@@ -36,6 +38,7 @@ export class AuthController {
   }
 
   @Public()
+  @AuthThrottle()
   @Post('login')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Login and receive JWT token' })
@@ -44,6 +47,7 @@ export class AuthController {
   }
 
   @Public()
+  @AuthThrottle()
   @Get('verify-email')
   @ApiOperation({ summary: 'Verify email with token from email link' })
   verifyEmail(@Query() dto: VerifyEmailDto) {
@@ -51,6 +55,7 @@ export class AuthController {
   }
 
   @Public()
+  @AuthThrottle()
   @Post('forgot-password')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Request a password reset email' })
@@ -59,6 +64,7 @@ export class AuthController {
   }
 
   @Public()
+  @AuthThrottle()
   @Post('reset-password')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Reset password using token from email' })

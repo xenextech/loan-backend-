@@ -13,7 +13,6 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import type { Request } from 'express';
-import { ThrottlerGuard, Throttle } from '@nestjs/throttler';
 import {
   ApiTags,
   ApiOperation,
@@ -33,6 +32,7 @@ import { ApplicationTrackerResponseDto } from './dto/application-tracker.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { SensitiveThrottle } from '../../common/decorators/throttle-policy.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { UserRole } from '../../common/enums';
 import { JwtPayload } from '../../common/interfaces/jwt-payload.interface';
@@ -173,8 +173,7 @@ export class ApplicationsController {
   @Post(':id/verification/parent/resend')
   @HttpCode(HttpStatus.OK)
   @Roles(UserRole.STUDENT)
-  @UseGuards(ThrottlerGuard)
-  @Throttle({ default: { limit: 3, ttl: 60_000 } })
+  @SensitiveThrottle()
   @ApiOperation({
     summary: 'Resend the parent verification invitation (rate-limited)',
   })
@@ -205,8 +204,7 @@ export class ApplicationsController {
   @Post(':id/verification/college/resend')
   @HttpCode(HttpStatus.OK)
   @Roles(UserRole.STUDENT)
-  @UseGuards(ThrottlerGuard)
-  @Throttle({ default: { limit: 3, ttl: 60_000 } })
+  @SensitiveThrottle()
   @ApiOperation({
     summary: 'Resend the college verification invitation (rate-limited)',
   })

@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { APP_GUARD } from '@nestjs/core';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { ScheduleModule } from '@nestjs/schedule';
 import configuration from './config/configuration';
@@ -27,11 +28,22 @@ import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { DashboardJobsModule } from './modules/dashboard/jobs/dashboard-jobs.module';
 import { PermissionsModule } from './modules/permissions/permissions.module';
 import { BankAccountOpeningModule } from './modules/bank-account/bank-account-opening.module';
+import { AppThrottlerGuard } from './common/guards/app-throttler.guard';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true, load: [configuration] }),
-    ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }]),
+    // Named policies, all env-driven via configuration.ts. Every request is
+    // billed against exactly one of them — AppThrottlerGuard picks which, so
+    // an auth attempt never draws down the caller's normal API budget.
+    ThrottlerModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => [
+        { name: 'global', ...config.getOrThrow('throttle.global') },
+        { name: 'auth', ...config.getOrThrow('throttle.auth') },
+        { name: 'sensitive', ...config.getOrThrow('throttle.sensitive') },
+      ],
+    }),
     ScheduleModule.forRoot(),
     PrismaModule,
     AuthModule,
@@ -57,6 +69,11 @@ import { BankAccountOpeningModule } from './modules/bank-account/bank-account-op
     DashboardJobsModule,
     PermissionsModule,
     BankAccountOpeningModule,
+  ],
+  providers: [
+    // Global so throttling runs ahead of JwtAuthGuard and floods are rejected
+    // before any bcrypt or database work happens.
+    { provide: APP_GUARD, useClass: AppThrottlerGuard },
   ],
 })
 export class AppModule {}
