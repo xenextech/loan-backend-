@@ -1,0 +1,34 @@
+services:
+  api:
+    build:
+      context: .
+      target: runner
+    image: edu-loan-backend:latest
+    restart: unless-stopped
+    # main.ts does not call enableShutdownHooks(), so nothing handles SIGTERM.
+    # As PID 1 with no handler Node ignores it and `docker stop` hangs until
+    # SIGKILL; init: true gives us a real init process to reap and forward.
+    init: true
+    env_file: .env.production
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      TZ: Asia/Kathmandu
+    # Bound to loopback deliberately. Docker's port publishing writes iptables
+    # rules that bypass ufw, so "3001:3001" would expose the API to the public
+    # internet past both the firewall and Nginx.
+    ports:
+      - "127.0.0.1:3001:3001"
+
+  # One-shot, run before starting a new api container:
+  #   docker compose run --rm migrate
+  # Uses the builder stage because `migrate deploy` needs the prisma CLI and
+  # prisma.config.ts's dotenv import — both devDeps the runner stage prunes.
+  # Never run migrations on app boot; instances would race.
+  migrate:
+    build:
+      context: .
+      target: builder
+    env_file: .env.production
+    profiles: ["tools"]
+    command: npx prisma migrate deploy

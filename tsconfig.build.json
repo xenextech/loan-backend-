@@ -1,4 +1,8 @@
 {
   "extends": "./tsconfig.json",
+  // Scoped to src so the inferred rootDir is `src` and the build emits
+  // dist/main.js. Without this, prisma/*.ts widens rootDir to the project
+  // root and everything lands a level deeper under dist/src/.
+  "include": ["src/**/*"],
   "exclude": ["node_modules", "test", "dist", "**/*spec.ts", "prisma.config.ts"]
 }
