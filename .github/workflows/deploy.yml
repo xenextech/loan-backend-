@@ -2,7 +2,7 @@ name: Deploy to VPS
 
 on:
   push:
-    branches: [document_vault]
+    branches: [document-vault]
   workflow_dispatch:
 
 # Never allow two production deployments to overlap.
@@ -90,7 +90,7 @@ jobs:
           echo "Syncing repository"
           echo "================================"
 
-          git fetch origin document_vault
+          git fetch origin document-vault
           git reset --hard "$sha"
 
           # Do NOT run git clean.
