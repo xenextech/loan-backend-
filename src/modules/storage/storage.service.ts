@@ -23,6 +23,17 @@ export interface UploadResult {
   publicUrl: string;
 }
 
+// Browsers send multipart filenames as raw UTF-8 bytes, but multer/busboy
+// decodes multipart header values as Latin-1 by default (per the older HTTP
+// header spec busboy still follows) — re-decoding through a Buffer bridges
+// that gap. ASCII filenames are byte-identical in both encodings, so this
+// is a no-op for them; only multi-byte UTF-8 names (Devanagari, emoji, ...)
+// actually change. Without this, a filename like "कर्जा प्रस्ताब पत्र.pdf"
+// gets stored as mojibake ("à¤à¤°à¥à¤à¤¾ ...").
+function fixMultipartFilename(name: string): string {
+  return Buffer.from(name, 'latin1').toString('utf8');
+}
+
 @Injectable()
 export class StorageService {
   private readonly client: SupabaseClient;
@@ -56,7 +67,8 @@ export class StorageService {
       );
     }
 
-    const ext = extname(file.originalname);
+    const originalFileName = fixMultipartFilename(file.originalname);
+    const ext = extname(originalFileName);
     const fileName = `${randomUUID()}${ext}`;
     const filePath = `${folder}/${fileName}`;
 
@@ -76,7 +88,7 @@ export class StorageService {
 
     return {
       fileName,
-      originalFileName: file.originalname,
+      originalFileName,
       mimeType: file.mimetype,
       size: file.size,
       bucketName: bucket,

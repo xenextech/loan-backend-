@@ -1,0 +1,16 @@
+-- Placeholder reconstruction.
+--
+-- This migration folder was applied to the database (recorded in
+-- _prisma_migrations, applied 2026-07-07T13:45:46Z) but was never committed
+-- to git — an untracked local migration folder that was lost to an
+-- accidental `node_modules` cleanup. Its original SQL is unrecoverable.
+--
+-- No reconstruction is needed for schema correctness: `satisfactoryPerformance`
+-- (Int?, on loan_applications) was already added by the earlier
+-- 20260702080544_changed migration and has not changed since — this
+-- migration's actual effect, whatever it was, left no trace in the current
+-- schema. This file is a deliberate no-op, present only so Prisma's local
+-- migration history lines up with what the database has recorded, and so
+-- `prisma migrate deploy` against a fresh database still reaches the correct
+-- final schema.
+SELECT 1;

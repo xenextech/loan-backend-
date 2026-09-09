@@ -43,20 +43,24 @@ export class ApplicationsService {
   ) {}
 
   // ── Create draft application ───────────────────────────────────────────────
-  // A student may only have one active DRAFT at a time — reused across the
-  // whole apply wizard (step saves PATCH this same id) so that page
-  // refreshes, remounts, or repeated "start application" calls never spawn
-  // a second orphaned draft. Existing-and-DRAFT wins over creating a new row;
-  // only a genuinely new applicant (or one whose only draft was already
-  // submitted/deleted) gets a fresh one.
+  // Called only when the student explicitly starts a new application — the
+  // wizard keeps its application id for the rest of the session (and across
+  // refreshes), so a refresh or remount never reaches this method again.
+  //
+  // A student may keep any number of *explicitly saved* drafts (draftSavedAt
+  // set) side by side, but only one unsaved scratch application at a time:
+  // starting a new application discards the previous scratch row, which by
+  // definition holds work the student never asked to keep, and would
+  // otherwise pile up invisibly (it is hidden from their Drafts list).
+  // Saved drafts and submitted applications are never touched here.
   async create(userId: string) {
-    const existingDraft = await this.prisma.loanApplication.findFirst({
-      where: { userId, status: ApplicationStatus.DRAFT },
-      orderBy: { createdAt: 'desc' },
+    await this.prisma.loanApplication.deleteMany({
+      where: {
+        userId,
+        status: ApplicationStatus.DRAFT,
+        draftSavedAt: null,
+      },
     });
-    if (existingDraft) {
-      return existingDraft;
-    }
 
     const application = await this.prisma.loanApplication.create({
       data: {
@@ -442,7 +446,49 @@ export class ApplicationsService {
     return this.findOne(id, userId, 'STUDENT');
   }
 
+  // ── Resume position: which wizard page to land on ─────────────────────────
+  // Deliberately separate from saveStep1/2/3 — fired on every navigation
+  // (Next, Back, progress-bar click), not just successful data saves, so
+  // stepping back to review an earlier page and refreshing lands back on
+  // that same page. No audit log: this fires far more often than a
+  // meaningful data change and isn't one.
+  async updateCurrentStep(id: string, userId: string, currentStep: number) {
+    await this.assertEditableByUser(id, userId);
+    const { id: applicationId, currentStep: step } =
+      await this.prisma.loanApplication.update({
+        where: { id },
+        data: { currentStep },
+        select: { id: true, currentStep: true },
+      });
+    return { id: applicationId, currentStep: step };
+  }
+
   // ── Step 4: Submit declaration ────────────────────────────────────────────
+  // ── Save as draft ──────────────────────────────────────────────────────────
+  // The one action that promotes an in-progress application into a draft the
+  // student can leave and come back to from /dashboard/drafts. Deliberately
+  // does nothing else: no status change (it is already DRAFT), no stage, no
+  // submission, no credit assessment, no notifications — the step data itself
+  // is saved by the step1/step2/step3 endpoints the wizard calls just before
+  // this one.
+  async saveDraft(id: string, userId: string, currentStep: number) {
+    await this.assertEditableByUser(id, userId);
+
+    const application = await this.prisma.loanApplication.update({
+      where: { id },
+      data: { currentStep, draftSavedAt: new Date() },
+    });
+
+    await this.audit.log(
+      userId,
+      AuditAction.APPLICATION_UPDATED,
+      { action: 'DRAFT_SAVED', currentStep },
+      id,
+    );
+
+    return this.withComputedDob(application);
+  }
+
   async submit(id: string, userId: string, dto: Step4Dto) {
     const application = await this.assertEditableByUser(id, userId);
     if (!application.applicationNumber) {
@@ -461,6 +507,10 @@ export class ApplicationsService {
       where: {
         applicationId: id,
         documentType: { in: IDENTITY_DOCUMENT_TYPES },
+        // Match the identity type actually being submitted — otherwise a
+        // leftover document from a type the student briefly selected and
+        // abandoned earlier in Step 2 would count toward completeness here.
+        identityType: application.identityType,
       },
       select: { documentType: true, mimeType: true },
     });

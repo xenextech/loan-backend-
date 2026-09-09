@@ -26,6 +26,7 @@ import { Step1Dto } from './dto/step1.dto';
 import { Step2Dto } from './dto/step2.dto';
 import { Step3Dto } from './dto/step3.dto';
 import { Step4Dto } from './dto/step4.dto';
+import { UpdateStepDto } from './dto/update-step.dto';
 import { SendVerificationDto } from './dto/send-verification.dto';
 import { QueryApplicationDto } from './dto/query-application.dto';
 import { ApplicationTrackerResponseDto } from './dto/application-tracker.dto';
@@ -124,6 +125,49 @@ export class ApplicationsController {
     @Body() dto: Step3Dto,
   ) {
     return this.applicationsService.saveStep3(id, user.sub, dto);
+  }
+
+  @Patch(':id/step')
+  @Roles(UserRole.STUDENT)
+  @ApiOperation({
+    summary: 'Record which wizard page to resume on',
+    description:
+      "Lightweight — just persists the wizard's current page position " +
+      '(1-4) so a refresh or later visit returns to the same page, ' +
+      'independent of the heavier per-step data saves (step1/step2/step3). ' +
+      'Called on every step change (Next, Back, progress-bar click), not ' +
+      'just forward progress.',
+  })
+  updateStep(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+    @Body() dto: UpdateStepDto,
+  ) {
+    return this.applicationsService.updateCurrentStep(
+      id,
+      user.sub,
+      dto.currentStep,
+    );
+  }
+
+  @Patch(':id/save-draft')
+  @Roles(UserRole.STUDENT)
+  @ApiOperation({
+    summary: 'Save the application as a draft (explicit user action)',
+    description:
+      'Marks an in-progress application as a draft the student chose to keep, ' +
+      'so it appears under their Drafts list and can be resumed later. ' +
+      'Only the "Save as Draft" button calls this — opening or refreshing the ' +
+      'wizard deliberately never does, so browsing the form never turns into a ' +
+      'saved draft. Records the wizard page to resume on; performs no ' +
+      'submission, approval, or credit-assessment work.',
+  })
+  saveDraft(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+    @Body() dto: UpdateStepDto,
+  ) {
+    return this.applicationsService.saveDraft(id, user.sub, dto.currentStep);
   }
 
   @Post(':id/submit')

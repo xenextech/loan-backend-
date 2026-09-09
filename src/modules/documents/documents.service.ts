@@ -8,6 +8,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
 import {
   DocumentType,
+  IdentityType,
   ApplicationStatus,
   ApplicationSource,
   UserRole,
@@ -121,17 +122,39 @@ export class DocumentsService {
     return application;
   }
 
+  // Only IDENTITY_FRONT/IDENTITY_BACK/IDENTITY_DOCUMENT are ever scoped by
+  // identity type — every other documentType always stores/queries
+  // identityType as null, regardless of what (if anything) the caller sent,
+  // so a stray query param on e.g. an ACADEMIC_RECORD upload can't create an
+  // extra, unintended slot.
+  private normalizeIdentityType(
+    documentType: DocumentType,
+    identityType: string | undefined,
+  ): IdentityType | null {
+    if (!isIdentityDocumentType(documentType)) return null;
+    if (!identityType) return null;
+    if (!Object.values(IdentityType).includes(identityType as IdentityType)) {
+      throw new BadRequestException(`Invalid identityType: ${identityType}`);
+    }
+    return identityType as IdentityType;
+  }
+
   async uploadDocument(
     applicationId: string,
     userId: string,
     role: UserRole,
     documentType: DocumentType,
+    identityTypeParam: string | undefined,
     file: Express.Multer.File,
   ) {
     const application = await this.assertApplicationAccess(
       applicationId,
       userId,
       role,
+    );
+    const identityType = this.normalizeIdentityType(
+      documentType,
+      identityTypeParam,
     );
 
     const config = DOCUMENT_CONFIG[documentType];
@@ -145,11 +168,15 @@ export class DocumentsService {
     }
 
     // For ACADEMIC_RECORD, multiple documents are allowed (student may have
-    // several transcripts/certificates). For every other type we keep the
-    // existing one-at-a-time behaviour — delete the previous file first.
+    // several transcripts/certificates). For every other type — including
+    // every identity slot, now scoped by identityType too — we keep the
+    // existing one-at-a-time behaviour: delete the previous file for THIS
+    // exact (documentType, identityType) combination first. A different
+    // identityType's document in the same documentType slot is a completely
+    // separate row and is left untouched.
     if (documentType !== DocumentType.ACADEMIC_RECORD) {
       const existing = await this.prisma.document.findFirst({
-        where: { applicationId, documentType },
+        where: { applicationId, documentType, identityType },
       });
       if (existing) {
         await this.storage.deleteFile(existing.bucketName, existing.filePath);
@@ -169,12 +196,18 @@ export class DocumentsService {
       data: {
         applicationId,
         documentType,
+        identityType,
         ...uploadResult,
       },
     });
   }
 
-  async getDocuments(applicationId: string, userId: string, role: UserRole) {
+  async getDocuments(
+    applicationId: string,
+    userId: string,
+    role: UserRole,
+    identityTypeParam?: string,
+  ) {
     const application = await this.prisma.loanApplication.findUnique({
       where: { id: applicationId },
     });
@@ -187,15 +220,43 @@ export class DocumentsService {
       throw new ForbiddenException('Access denied');
     }
 
+    if (identityTypeParam !== undefined) {
+      if (
+        !Object.values(IdentityType).includes(identityTypeParam as IdentityType)
+      ) {
+        throw new BadRequestException(
+          `Invalid identityType: ${identityTypeParam}`,
+        );
+      }
+      return this.prisma.document.findMany({
+        where: {
+          applicationId,
+          identityType: identityTypeParam as IdentityType,
+        },
+      });
+    }
+
     return this.prisma.document.findMany({ where: { applicationId } });
   }
 
-  async deleteDocument(documentId: string, userId: string, role: UserRole) {
+  async deleteDocument(
+    applicationId: string,
+    documentId: string,
+    userId: string,
+    role: UserRole,
+  ) {
     const document = await this.prisma.document.findUnique({
       where: { id: documentId },
       include: { application: true },
     });
     if (!document) throw new NotFoundException('Document not found');
+    // The document must actually belong to the application named in the
+    // URL — without this, a valid documentId for Application A deleted via
+    // Application B's URL would silently succeed as long as the same user
+    // owned both, which is confusing (if not exploitable) REST semantics.
+    if (document.applicationId !== applicationId) {
+      throw new NotFoundException('Document not found');
+    }
     if (
       document.application.userId !== userId &&
       !this.isInitiatorOwnApplication(document.application, role)

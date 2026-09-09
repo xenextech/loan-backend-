@@ -359,6 +359,24 @@ model LoanApplication {
   source            ApplicationSource @default(STUDENT)
   userId            String?
   branch            String?
+  // Which page of the 4-step student apply wizard (About You / Identity /
+  // Family & Education / Review & Submit) to resume on — distinct from
+  // `stage`, which only starts tracking once a DRAFT is SUBMITTED. Reflects
+  // where the student currently is, not which steps are fully validated —
+  // e.g. currentStep=2 just means "show Step 2", even if Step 2 itself is
+  // still incomplete.
+  currentStep       Int               @default(1)
+
+  // When the student last clicked "Save as Draft" in the apply wizard.
+  // A DRAFT row is created as soon as the wizard opens (it has to exist for
+  // document uploads and per-step saves to have something to attach to), but
+  // that alone is NOT the student saying "keep this" — merely opening or
+  // refreshing the wizard must never produce something that shows up under
+  // "My Drafts". This column is what draws that line: null = an in-progress
+  // scratch application, only ever visible to the wizard session that owns
+  // it; set = an explicitly saved draft, listed on /dashboard/drafts and
+  // never auto-discarded.
+  draftSavedAt      DateTime?
 
   // Step 1: Personal Information
   fullName    String?
@@ -676,6 +694,14 @@ model Document {
   id            String       @id @default(uuid())
   applicationId String
   documentType  DocumentType
+  // Only meaningful for the identity-document slots (IDENTITY_FRONT/BACK/
+  // DOCUMENT), which are otherwise shared per application regardless of
+  // which identity type (citizenship/passport/...) they were uploaded for.
+  // Null for every other documentType, and null here also means "the
+  // generic 'upload a document' identity option, with no specific legal
+  // identity type" — kept distinct from e.g. CITIZENSHIP so the two never
+  // collide in the same slot.
+  identityType  IdentityType?
 
   fileName         String
   originalFileName String

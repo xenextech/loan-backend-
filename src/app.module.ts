@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { AppController } from './app.controller';
+import { AppService } from './app.service';
 import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ThrottlerModule } from '@nestjs/throttler';
@@ -70,7 +72,9 @@ import { AppThrottlerGuard } from './common/guards/app-throttler.guard';
     PermissionsModule,
     BankAccountOpeningModule,
   ],
+  controllers: [AppController],
   providers: [
+    AppService,
     // Global so throttling runs ahead of JwtAuthGuard and floods are rejected
     // before any bcrypt or database work happens.
     { provide: APP_GUARD, useClass: AppThrottlerGuard },

@@ -21,6 +21,7 @@ interface CreateCallArgs {
 describe('ApplicationsService', () => {
   let createMock: jest.Mock<unknown, [CreateCallArgs]>;
   let findFirstMock: jest.Mock;
+  let deleteManyMock: jest.Mock;
   let auditLogMock: jest.Mock;
   let service: ApplicationsService;
 
@@ -38,13 +39,16 @@ describe('ApplicationsService', () => {
           loanInformation: data.loanInformation?.create ?? null,
         }),
       );
-    // No existing draft by default — individual tests override this to
-    // exercise the "reuse existing draft" branch.
     findFirstMock = jest.fn().mockResolvedValue(null);
+    deleteManyMock = jest.fn().mockResolvedValue({ count: 0 });
     auditLogMock = jest.fn().mockResolvedValue(undefined);
 
     const prisma = {
-      loanApplication: { create: createMock, findFirst: findFirstMock },
+      loanApplication: {
+        create: createMock,
+        findFirst: findFirstMock,
+        deleteMany: deleteManyMock,
+      },
     } as unknown as PrismaService;
     const audit = { log: auditLogMock } as unknown as AuditService;
     const notifications = {} as unknown as NotificationsService;
@@ -57,11 +61,6 @@ describe('ApplicationsService', () => {
     it('creates a bare draft owned by the given student and audit-logs it', async () => {
       const result = await service.create('student-1');
 
-      expect(findFirstMock).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: { userId: 'student-1', status: 'DRAFT' },
-        }),
-      );
       expect(createMock).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
@@ -79,18 +78,15 @@ describe('ApplicationsService', () => {
       expect(result.id).toBe('app-1');
     });
 
-    it('returns the existing DRAFT instead of creating a second one', async () => {
-      findFirstMock.mockResolvedValue({
-        id: 'existing-draft',
-        userId: 'student-1',
-        status: 'DRAFT',
+    // Explicitly saved drafts are the student's to keep — any number of them
+    // can coexist, so starting an application never reuses or replaces one.
+    it('discards only the previous unsaved scratch application', async () => {
+      await service.create('student-1');
+
+      expect(deleteManyMock).toHaveBeenCalledWith({
+        where: { userId: 'student-1', status: 'DRAFT', draftSavedAt: null },
       });
-
-      const result = await service.create('student-1');
-
-      expect(result).toEqual(expect.objectContaining({ id: 'existing-draft' }));
-      expect(createMock).not.toHaveBeenCalled();
-      expect(auditLogMock).not.toHaveBeenCalled();
+      expect(createMock).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -326,6 +322,84 @@ describe('ApplicationsService', () => {
           }) as unknown,
         }),
       );
+    });
+  });
+
+  describe('updateCurrentStep', () => {
+    let findUniqueApplicationMock: jest.Mock;
+    let updateMock: jest.Mock;
+    let stepService: ApplicationsService;
+
+    beforeEach(() => {
+      findUniqueApplicationMock = jest.fn().mockResolvedValue({
+        id: 'app-1',
+        userId: 'student-1',
+        status: 'DRAFT',
+      });
+      updateMock = jest
+        .fn()
+        .mockImplementation(({ data }: { data: { currentStep: number } }) =>
+          Promise.resolve({ id: 'app-1', currentStep: data.currentStep }),
+        );
+
+      const prisma = {
+        loanApplication: {
+          findUnique: findUniqueApplicationMock,
+          update: updateMock,
+        },
+      } as unknown as PrismaService;
+      const audit = { log: jest.fn() } as unknown as AuditService;
+      const notifications = {} as unknown as NotificationsService;
+      const config = { get: jest.fn() } as unknown as ConfigService;
+
+      stepService = new ApplicationsService(
+        prisma,
+        audit,
+        notifications,
+        config,
+      );
+    });
+
+    it("persists the wizard's resume page for the owning student", async () => {
+      const result = await stepService.updateCurrentStep(
+        'app-1',
+        'student-1',
+        3,
+      );
+
+      expect(updateMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'app-1' },
+          data: { currentStep: 3 },
+        }),
+      );
+      expect(result).toEqual({ id: 'app-1', currentStep: 3 });
+    });
+
+    it("rejects a different student's application", async () => {
+      findUniqueApplicationMock.mockResolvedValue({
+        id: 'app-1',
+        userId: 'someone-else',
+        status: 'DRAFT',
+      });
+
+      await expect(
+        stepService.updateCurrentStep('app-1', 'student-1', 2),
+      ).rejects.toThrow();
+      expect(updateMock).not.toHaveBeenCalled();
+    });
+
+    it('rejects updating the step on an already-submitted application', async () => {
+      findUniqueApplicationMock.mockResolvedValue({
+        id: 'app-1',
+        userId: 'student-1',
+        status: 'SUBMITTED',
+      });
+
+      await expect(
+        stepService.updateCurrentStep('app-1', 'student-1', 2),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(updateMock).not.toHaveBeenCalled();
     });
   });
 });
