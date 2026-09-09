@@ -2,99 +2,172 @@ name: Deploy to VPS
 
 on:
   push:
-    branches: [main]
+    branches: [document_vault]
   workflow_dispatch:
 
-# Never let two deploys overlap — but don't cancel one mid-flight either,
-# since a cancelled run could leave migrations applied with no matching code.
+# Never allow two production deployments to overlap.
 concurrency:
-  group: deploy-production
+  group: unnati-api-production
   cancel-in-progress: false
 
 permissions:
   contents: read
 
-jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+env:
+  DEPLOY_PATH: /home/deploy/projects/unnati-api
 
-      - uses: actions/setup-node@v4
+jobs:
+  ci:
+    name: Test and build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
 
-      - run: npm ci
-      - run: npm run test:vitest
-      - run: npm run build
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm run test:vitest
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Build application
+        run: npm run build
+
 
   deploy:
-    needs: test
+    name: Deploy to VPS
+    needs: ci
     runs-on: ubuntu-latest
-    # Scopes the secrets below and lets you add required reviewers or a
-    # branch rule in Settings > Environments. Migrations and the restart are
-    # one job on purpose: two would mean two approvals, and a gap in which
-    # the schema is ahead of the running code.
     environment: production
+
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-
-      - run: npm ci
-
-      # Against the Supabase session-mode pooler on 5432, which bypasses
-      # pgbouncer — the transaction pooler in DATABASE_URL cannot run DDL.
-      # prisma.config.ts reads DIRECT_URL for exactly this.
-      - name: Apply migrations
-        env:
-          DIRECT_URL: ${{ secrets.DIRECT_URL }}
-        run: npx prisma migrate deploy
-
       - name: Configure SSH
         env:
           SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
           KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
         run: |
-          mkdir -p ~/.ssh && chmod 700 ~/.ssh
-          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
-          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
-          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
 
-      - name: Build and restart on VPS
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+
+
+      - name: Deploy application
         env:
           VPS: ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}
-          DEPLOY_PATH: ${{ vars.DEPLOY_PATH || '/opt/edu-loan-backend' }}
           SHA: ${{ github.sha }}
+          DEPLOY_PATH: ${{ env.DEPLOY_PATH }}
         run: |
-          ssh -o BatchMode=yes "$VPS" "bash -euo pipefail -s" <<SCRIPT
-          cd "$DEPLOY_PATH"
+          ssh \
+            -i ~/.ssh/id_ed25519 \
+            -o BatchMode=yes \
+            -o StrictHostKeyChecking=yes \
+            "$VPS" \
+            'bash -s' -- "$DEPLOY_PATH" "$SHA" <<'REMOTE'
 
-          git fetch origin main
-          # reset, never clean: .env.production lives here untracked, and
-          # git clean -fd would delete it.
-          git reset --hard "$SHA"
+          set -euo pipefail
 
-          # Build and swap as two steps. Combining them into one up --build
-          # works too, but splitting means a compile failure aborts before
-          # the running container is touched.
+          deploy_path="$1"
+          sha="$2"
+
+          cd "$deploy_path"
+
+          echo "================================"
+          echo "Syncing repository"
+          echo "================================"
+
+          git fetch origin document_vault
+          git reset --hard "$sha"
+
+          # Do NOT run git clean.
+          # .env.production is intentionally untracked and lives only on VPS.
+
+
+          echo "================================"
+          echo "Building Docker image"
+          echo "================================"
+
+          # Build before touching the currently running API.
+          # A build failure leaves the existing container untouched.
           docker compose build api
-          docker compose up -d api
+
+
+          echo "================================"
+          echo "Applying Prisma migrations"
+          echo "================================"
+
+          docker compose --profile tools run --rm migrate
+
+
+          echo "================================"
+          echo "Recreating API container"
+          echo "================================"
+
+          docker compose up -d --force-recreate api
+
+
+          echo "================================"
+          echo "Pruning dangling images"
+          echo "================================"
 
           docker image prune -f
-          SCRIPT
 
-      - name: Verify service is healthy
+          REMOTE
+
+
+      - name: Verify deployment
         env:
           VPS: ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}
         run: |
-          ssh -o BatchMode=yes "$VPS" "bash -euo pipefail -s" <<'SCRIPT'
-          # Port 3001 is bound to loopback, so this has to run on the box.
-          curl -fsS --retry 15 --retry-delay 2 --retry-connrefused \
-            http://127.0.0.1:3001/api/v1 > /dev/null
-          echo "API is responding."
-          SCRIPT
+          ssh \
+            -i ~/.ssh/id_ed25519 \
+            -o BatchMode=yes \
+            -o StrictHostKeyChecking=yes \
+            "$VPS" \
+            'bash -s' <<'REMOTE'
+
+          set -euo pipefail
+
+          DEPLOY_PATH="/home/deploy/projects/unnati-api"
+
+          check() {
+            local name="$1"
+            local url="$2"
+
+            for i in $(seq 1 15); do
+              if curl -fsS --max-time 5 "$url" > /dev/null; then
+                echo "${name} healthy after ${i} attempt(s)"
+                return 0
+              fi
+
+              echo "Waiting for ${name}... (${i}/15)"
+              sleep 4
+            done
+
+            echo "::error::${name} failed health check"
+
+            cd "$DEPLOY_PATH"
+            docker compose logs --tail=100 api || true
+
+            return 1
+          }
+
+          check \
+            "Unnati API" \
+            "http://127.0.0.1:3001/api/v1/health"
+
+          REMOTE
