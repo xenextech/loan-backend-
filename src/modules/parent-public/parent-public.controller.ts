@@ -51,8 +51,7 @@ export class ParentPublicController {
   @ApiQuery({
     name: 'email',
     required: false,
-    description:
-      'Email that received the invitation — required to confirm invitations that captured a recipient email',
+
   })
   getApplication(
     @Param('token') token: string,
