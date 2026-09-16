@@ -10,10 +10,10 @@ const INTEREST_RATE = 10.5;
 const DEFAULT_TENURE_MONTHS = 60; // 5 years
 
 const MAX_LOAN_BY_STUDY_TYPE: Record<StudyType, number> = {
-  [StudyType.PROGRAM]: 1_000_000,
-  [StudyType.COURSE]: 500_000,
-  [StudyType.DIPLOMA]: 750_000,
-  [StudyType.CERTIFICATION]: 300_000,
+  [StudyType.PROGRAM]: 10_000_000,
+  [StudyType.COURSE]: 5_000_000,
+  [StudyType.DIPLOMA]: 7_500_000,
+  [StudyType.CERTIFICATION]: 3_000_000,
 };
 
 @Injectable()

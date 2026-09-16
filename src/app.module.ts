@@ -8,6 +8,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 import configuration from './config/configuration';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './modules/auth/auth.module';
+import { MobileAuthModule } from './modules/mobile-auth/mobile-auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { ApplicationsModule } from './modules/applications/applications.module';
 import { DocumentsModule } from './modules/documents/documents.module';
@@ -49,6 +50,7 @@ import { AppThrottlerGuard } from './common/guards/app-throttler.guard';
     ScheduleModule.forRoot(),
     PrismaModule,
     AuthModule,
+    MobileAuthModule,
     UsersModule,
     ApplicationsModule,
     DocumentsModule,

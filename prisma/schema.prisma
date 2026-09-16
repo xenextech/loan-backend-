@@ -324,24 +324,24 @@ enum CourseCategory {
 // ─── Models ───────────────────────────────────────────────────────────────────
 
 model User {
-  id        String  @id @default(uuid())
-  email     String  @unique
-  firstName String?
-  lastName  String?
+  id                  String    @id @default(uuid())
+  email               String    @unique
+  firstName           String?
+  lastName            String?
   // Denormalized "firstName lastName" convenience field, kept in sync at
   // registration — still the one read everywhere else in the app (approval
   // records, notifications, dashboard displays), so those call sites don't
   // need to change now that the name is captured in two parts.
   fullName            String?
   passwordHash        String
-  role                UserRole   @default(STUDENT)
-  isEmailVerified     Boolean    @default(false)
+  role                UserRole  @default(STUDENT)
+  isEmailVerified     Boolean   @default(false)
   emailVerifyToken    String?
   emailVerifyExpiry   DateTime?
   passwordResetToken  String?
   passwordResetExpiry DateTime?
-  createdAt           DateTime   @default(now())
-  updatedAt           DateTime   @updatedAt
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
 
   applications  LoanApplication[]
   notifications Notification[]
@@ -349,6 +349,77 @@ model User {
   parentProfile ParentProfile?
 
   @@map("users")
+}
+
+// ── Mobile app auth (isolated from User) ────────────────────────────────────
+// A deliberately separate identity table for the consumer mobile app: phone
+// number + password instead of email + password. Kept fully isolated from
+// `User` (own table, own JWT strategy/secret — see modules/mobile-auth)
+// rather than folded in as an alternate login method, since mobile app
+// accounts and web/staff accounts are two distinct populations that don't
+// need to interoperate.
+model MobileUser {
+  id              String   @id @default(uuid())
+  // Local 10-digit Nepali mobile number (e.g. "9812345678"), no country code —
+  // normalized by the service layer before every read/write. +977 is prefixed
+  // only at the point of dispatching an SMS. Still the login identifier even
+  // though OTPs are currently emailed (see MobileOtpService) — this field is
+  // what a re-enabled SMS path would dispatch to.
+  phoneNumber     String   @unique
+  // Collected at registration solely so OTPs (phone-verification + password
+  // reset) have somewhere to go while real SMS delivery to Nepali numbers
+  // isn't wired up — see MobileOtpService's temporary email dispatch. Not
+  // used for login; phoneNumber + password remain the only credentials.
+  email           String   @unique
+  firstName       String
+  lastName        String
+  // Denormalized "firstName lastName", mirrors User.fullName's convention —
+  // kept in sync at registration.
+  fullName        String
+  passwordHash    String
+  isPhoneVerified Boolean  @default(false)
+  // Bridges this phone account to a real `User` row so a phone session can
+  // actually use the rest of the app (Applications, Dashboard, Apply wizard,
+  // …) — none of which accept a mobile-auth JWT, since they're gated by the
+  // separate JwtStrategy that looks up `User`, not `MobileUser`. Created
+  // lazily (first verify-otp or login) by MobileAuthService.getOrCreateLinkedUser,
+  // matched/reused by email when one already exists. Plain scalar id, no
+  // Prisma-level relation, so this stays a purely additive change to
+  // MobileUser — the User model itself is untouched.
+  linkedUserId    String?  @unique
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  otps MobileOtp[]
+
+  @@map("mobile_users")
+}
+
+enum MobileOtpPurpose {
+  REGISTRATION
+  PASSWORD_RESET
+}
+
+model MobileOtp {
+  id           String           @id @default(uuid())
+  mobileUserId String
+  phoneNumber  String
+  // SHA-256 of the 6-digit code (see verification-token.util.ts) — the code
+  // itself is never persisted, matching the emailed-token pattern on User.
+  codeHash     String
+  purpose      MobileOtpPurpose
+  expiresAt    DateTime
+  consumedAt   DateTime?
+  // Failed-guess counter — locks the code after N wrong attempts (see
+  // MobileOtpService) so a 6-digit space can't just be brute-forced within
+  // its expiry window.
+  attempts     Int              @default(0)
+  createdAt    DateTime         @default(now())
+
+  mobileUser MobileUser @relation(fields: [mobileUserId], references: [id], onDelete: Cascade)
+
+  @@index([mobileUserId, purpose])
+  @@map("mobile_otps")
 }
 
 model LoanApplication {
@@ -376,7 +447,7 @@ model LoanApplication {
   // scratch application, only ever visible to the wizard session that owns
   // it; set = an explicitly saved draft, listed on /dashboard/drafts and
   // never auto-discarded.
-  draftSavedAt      DateTime?
+  draftSavedAt DateTime?
 
   // Step 1: Personal Information
   fullName    String?
@@ -560,17 +631,17 @@ model LoanApplication {
   rejectedByUserId String?
 
   // Send-back tracking — toStage is the stage it's being rewound to
-  sentBackReason   String?
-  sentBackAt       DateTime?
-  sentBackByUserId String?
-  sentBackToStage  ApplicationStage?
+  sentBackReason     String?
+  sentBackAt         DateTime?
+  sentBackByUserId   String?
+  sentBackToStage    ApplicationStage?
   // True only when the Approver themself sent it back (Supporter/Checker/
   // Credit Manager send-backs never set this). While true, the next
   // support()/check() call routes the application straight to CHECKING
   // (Approver-actionable) instead of its normal next stage, skipping
   // whichever intermediate role(s) sit between the chosen target and the
   // Approver — consumed (reset to false) the moment that happens.
-  sentBackByApprover Boolean @default(false)
+  sentBackByApprover Boolean           @default(false)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -594,7 +665,7 @@ model LoanApplication {
   agreements             Agreement[]
   enrollmentCertificates EnrollmentCertificate[]
   // security
-  securityDetails     String?
+  securityDetails        String?
 
   fmv          Decimal? @db.Decimal(18, 2)
   proposedLoan Decimal? @db.Decimal(18, 2)
@@ -632,8 +703,8 @@ model LoanApplication {
   // NRB loan classification — recomputed daily from the oldest unpaid EMI
   // installment's days-overdue (see NrbLoanClassification). Display label only;
   // does not gate any other behavior.
-  nrbClassification         NrbLoanClassification   @default(PASS)
-  nrbClassifiedAt           DateTime?
+  nrbClassification NrbLoanClassification @default(PASS)
+  nrbClassifiedAt   DateTime?
 
   @@index([userId])
   @@index([status])
@@ -691,7 +762,7 @@ model LoanInformation {
 }
 
 model Document {
-  id            String       @id @default(uuid())
+  id            String        @id @default(uuid())
   applicationId String
   documentType  DocumentType
   // Only meaningful for the identity-document slots (IDENTITY_FRONT/BACK/
@@ -835,7 +906,7 @@ model Insurance {
 
   insuredName          String?
   insuranceCompanyName String?
-  sumInsured           Decimal? @db.Decimal(18, 2)
+  sumInsured           Decimal?  @db.Decimal(18, 2)
   maturityDate         DateTime?
   policyNo             String?
 
@@ -932,7 +1003,7 @@ model AuditLog {
 }
 
 model ApplicationLink {
-  id             String              @id @default(uuid())
+  id               String              @id @default(uuid())
   // Raw token, kept ONLY while the invitation is still SENT/OPENED so the
   // authenticated college "My Verifications" dashboard can re-link to it
   // (CollegeService.getMyVerifications). It is never used to authenticate a
@@ -1001,9 +1072,9 @@ enum BankAccountOpeningStatus {
 // MVP stand-in for a future real bank webhook/callback — see
 // BankAccountOpeningService for how that swap is isolated.
 model BankAccountOpening {
-  id            String                    @id @default(uuid())
-  applicationId String                    @unique
-  status        BankAccountOpeningStatus  @default(PENDING)
+  id            String                   @id @default(uuid())
+  applicationId String                   @unique
+  status        BankAccountOpeningStatus @default(PENDING)
 
   bankUrl String
 
@@ -1358,11 +1429,11 @@ model LoanAccount {
   configuredAt       DateTime?
   borrowerNotifiedAt DateTime?
 
-  clearedAt        DateTime?
+  clearedAt       DateTime?
   // Who confirmed clearance via the explicit complete-clearance action —
   // null when a loan auto-cleared purely because markPaid() saw the last
   // installment paid off (no separate manual confirmation happened).
-  clearedByUserId  String?
+  clearedByUserId String?
 
   // Needs Review (Stage 6) — manually raised by the Credit Manager, not
   // auto-triggered by any threshold, since no such threshold was specified.
@@ -1544,8 +1615,8 @@ model InsurancePolicy {
   // applicant's name; LoanApplication.fullName remains that.
   applicantName String?
 
-  policyNumber String
-  insurer      String
+  policyNumber  String
+  insurer       String
   policyType    String?
   sumInsured    Decimal   @db.Decimal(18, 2)
   premiumAmount Decimal?  @db.Decimal(18, 2)
@@ -1627,16 +1698,16 @@ model University {
 }
 
 model College {
-  id          String  @id @default(uuid())
-  name        String
-  slug        String  @unique
-  description String?
+  id           String  @id @default(uuid())
+  name         String
+  slug         String  @unique
+  description  String?
   // Long-form "About" content (multiple paragraphs) for a future richer
   // About section — distinct from `description`, which stays the short
   // card/summary blurb. Frontend rendering is deferred; schema only for now.
   aboutContent String?
-  logoUrl     String?
-  bannerUrl   String?
+  logoUrl      String?
+  bannerUrl    String?
 
   address      String?
   province     String?
@@ -1700,7 +1771,7 @@ model Course {
   // section instead of adding a dedicated column per fee type.
   feeBreakdown Json?
 
-  bannerUrl String?
+  bannerUrl        String?
   // Course Detail page content — all optional so a course with none of these
   // set still renders a complete page, just without that section.
   learningOutcomes String[] @default([])
@@ -1713,8 +1784,8 @@ model Course {
   credits          Int?
   medium           String?
   attendanceType   String?
-  isFeatured       Boolean @default(false)
-  isPopular        Boolean @default(false)
+  isFeatured       Boolean  @default(false)
+  isPopular        Boolean  @default(false)
 
   isActive Boolean @default(true)
 
@@ -1793,20 +1864,20 @@ model RolePermission {
 }
 
 model MenuItem {
-  id    String @id @default(cuid())
+  id           String  @id @default(cuid())
   /// Stable identifier independent of label text, e.g. "document-vault".
-  key   String @unique
-  label String
+  key          String  @unique
+  label        String
   /// Role-relative path (e.g. "/document-vault", "/legal-documents") — the
   /// frontend prepends useDashboardBasePath() exactly like every existing
   /// hardcoded NAV_GROUPS array already does, so the same row works for
   /// every role without per-role duplication.
-  href       String
+  href         String
   /// Lucide icon component name, resolved client-side via a name→component
   /// lookup map (icons cannot be serialized).
-  icon       String
-  groupLabel String?
-  order      Int     @default(0)
+  icon         String
+  groupLabel   String?
+  order        Int     @default(0)
   /// True = this route also has an API guarded by PermissionsGuard using
   /// this same key (see RequireMenuKey()) — informational for the admin UI.
   isApiGuarded Boolean @default(false)
@@ -1850,10 +1921,10 @@ model DashboardWidget {
 }
 
 model RoleWidget {
-  id        String  @id @default(cuid())
-  roleId    String
-  widgetId  String
-  visible   Boolean @default(true)
+  id       String  @id @default(cuid())
+  roleId   String
+  widgetId String
+  visible  Boolean @default(true)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

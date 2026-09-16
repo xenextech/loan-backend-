@@ -7,7 +7,7 @@ export class EmiCalculatorDto {
   @Type(() => Number)
   @IsNumber()
   @Min(1000)
-  @Max(1_000_000)
+  @Max(10_000_000)
   loanAmount: number;
 
   @ApiProperty({ description: 'Annual interest rate (%)', example: 10.5 })

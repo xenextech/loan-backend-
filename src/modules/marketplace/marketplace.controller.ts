@@ -39,6 +39,7 @@ import { PrefillQueryDto } from './dto/prefill-query.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { Public } from '../../common/decorators/public.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { JwtPayload } from '../../common/interfaces/jwt-payload.interface';
 import { UserRole } from '../../common/enums';
@@ -102,6 +103,7 @@ export class MarketplaceController {
   }
 
   @Get('universities')
+  @Public()
   @ApiOperation({
     summary: 'List universities (filter dropdown source)',
     description:
@@ -112,6 +114,7 @@ export class MarketplaceController {
   }
 
   @Get('colleges')
+  @Public()
   @ApiOperation({
     summary: 'Search/filter/paginate the college catalog',
     description:
@@ -124,6 +127,7 @@ export class MarketplaceController {
   }
 
   @Get('colleges/:id')
+  @Public()
   @ApiOperation({ summary: 'Get college detail with its active courses' })
   getCollege(@Param('id') id: string) {
     return this.collegeService.findOne(id);
@@ -142,12 +146,14 @@ export class MarketplaceController {
   }
 
   @Get('courses/:id')
+  @Public()
   @ApiOperation({ summary: 'Get a single course detail' })
   getCourse(@Param('id') id: string) {
     return this.courseService.findOne(id);
   }
 
   @Get('courses/:id/related')
+  @Public()
   @ApiOperation({
     summary: 'Get related courses for the Course Detail page',
     description:

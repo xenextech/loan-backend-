@@ -7,6 +7,29 @@ export default () => ({
     expiresIn: process.env.JWT_EXPIRES_IN ?? '7d',
   },
 
+  // Separate secret/expiry for the mobile app's phone-based auth (see
+  // modules/mobile-auth) — isolated from the web/staff JWT above, even
+  // though both fall back to JWT_SECRET so a fresh checkout still boots
+  // without extra env setup. Mobile sessions default longer-lived since
+  // re-login friction is worse on a phone than a browser.
+  mobileJwt: {
+    secret:
+      process.env.MOBILE_JWT_SECRET ??
+      process.env.JWT_SECRET ??
+      'fallback-secret',
+    expiresIn: process.env.MOBILE_JWT_EXPIRES_IN ?? '30d',
+  },
+
+  // SMS OTP (mobile app phone verification + password reset).
+  otp: {
+    ttlMinutes: parseInt(process.env.OTP_TTL_MINUTES ?? '10', 10),
+    resendCooldownSeconds: parseInt(
+      process.env.OTP_RESEND_COOLDOWN_SECONDS ?? '60',
+      10,
+    ),
+    maxAttempts: parseInt(process.env.OTP_MAX_ATTEMPTS ?? '5', 10),
+  },
+
   database: {
     url: process.env.DATABASE_URL,
   },

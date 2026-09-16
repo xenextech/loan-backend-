@@ -98,7 +98,15 @@ async function bootstrap() {
       { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' },
       'JWT',
     )
+    .addBearerAuth(
+      { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' },
+      'MobileJWT',
+    )
     .addTag('Auth', 'Authentication & account management')
+    .addTag(
+      'Mobile Auth',
+      'Mobile app authentication — phone + OTP (isolated from Auth)',
+    )
     .addTag('Applications', 'Student loan applications')
     .addTag('Documents', 'File uploads & document management')
     .addTag('Admin', 'Admin dashboard & exports')

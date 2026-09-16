@@ -537,6 +537,37 @@ export class NotificationsService {
     );
   }
 
+  // Mobile app OTP delivery (registration verification + password reset) —
+  // temporary stand-in for real SMS delivery to Nepali numbers (see
+  // MobileOtpService). Returns whether the send succeeded so the caller can
+  // log/report a dispatch failure instead of silently losing the code.
+  async sendMobileOtpEmail(
+    email: string,
+    code: string,
+    purpose: 'REGISTRATION' | 'PASSWORD_RESET',
+    ttlMinutes: number,
+  ): Promise<boolean> {
+    const isRegistration = purpose === 'REGISTRATION';
+    const subject = isRegistration
+      ? 'Verify your Unnati Loan mobile account'
+      : 'Reset your Unnati Loan mobile password';
+    const intro = isRegistration
+      ? 'Use the code below to verify your phone number and finish creating your account.'
+      : 'Use the code below to reset your password.';
+
+    return this.sendEmail(
+      email,
+      subject,
+      `
+      <h2>${subject}</h2>
+      <p>${intro}</p>
+      <p style="margin:20px 0;font-size:28px;font-weight:700;letter-spacing:4px;">${code}</p>
+      <p>This code expires in ${ttlMinutes} minutes. Do not share it with anyone.</p>
+      <p>If you did not request this, please ignore this email.</p>
+    `,
+    );
+  }
+
   async sendPasswordReset(email: string, token: string) {
     const frontendUrl = this.config.get<string>('app.frontendUrl');
     const link = `${frontendUrl}/auth/reset-password?token=${token}`;
