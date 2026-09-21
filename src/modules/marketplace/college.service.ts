@@ -52,7 +52,9 @@ export class CollegeService {
     return courseWhere;
   }
 
-  private toCardResponse(
+  // Public: reused by RecommendationService to build the same catalog card
+  // shape before layering matchScore/matchReasons on top.
+  toCardResponse(
     college: Prisma.CollegeGetPayload<{
       include: { university: true; courses: true };
     }>,

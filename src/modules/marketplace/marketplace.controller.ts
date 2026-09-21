@@ -27,7 +27,9 @@ import { memoryStorage } from 'multer';
 import { CollegeService } from './college.service';
 import { CourseService } from './course.service';
 import { UniversityService } from './university.service';
+import { RecommendationService } from './recommendation.service';
 import { QueryCollegesDto } from './dto/query-colleges.dto';
+import { RecommendCollegesQueryDto } from './dto/recommend-colleges-query.dto';
 import { CreateCollegeDto } from './dto/create-college.dto';
 import { UpdateCollegeDto } from './dto/update-college.dto';
 import { CreateCourseDto } from './dto/create-course.dto';
@@ -65,6 +67,7 @@ export class MarketplaceController {
     private readonly courseService: CourseService,
     private readonly universityService: UniversityService,
     private readonly storageService: StorageService,
+    private readonly recommendationService: RecommendationService,
   ) {}
 
   @Post('uploads/image')
@@ -162,6 +165,26 @@ export class MarketplaceController {
   })
   getRelatedCourses(@Param('id') id: string) {
     return this.courseService.findRelated(id);
+  }
+
+  @Get('recommendations')
+  @Roles(UserRole.STUDENT)
+  @ApiOperation({
+    summary: 'Get colleges recommended for the current student (mobile app)',
+    description:
+      "Ranks the active catalog against the student's most recent application " +
+      '(province/district, course category & degree level via their linked ' +
+      'marketplace course, and budget from loan amount / tuition fee snapshot). ' +
+      'Falls back to featured colleges if the student has no application yet. ' +
+      "Excludes the student's currently-selected college unless " +
+      'includeCurrentCollege=true is passed. Each result includes matchScore ' +
+      'and human-readable matchReasons.',
+  })
+  getRecommendations(
+    @CurrentUser() user: JwtPayload,
+    @Query() query: RecommendCollegesQueryDto,
+  ) {
+    return this.recommendationService.getRecommendations(user.sub, query);
   }
 
   @Get('prefill')
